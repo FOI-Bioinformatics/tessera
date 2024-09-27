@@ -85,10 +85,10 @@ Dataset distance stats:
 Located in the output folder are two plots:
 
 A plot is  generated for the x5 nearest datasets, showing similarity across the MSA.
-![image](wiki/plot_x5.png)
+![image](wiki/plot_x5.png) \
 **The image show similarity in each window of the nearest five sequences to the query. Values towards 1 indicate high similarity. In the image, the query is most similar to a Cowpox sequence (light-blue line) but has a region at the middle that is similar to a Variola sequence (brown line). Concluding from the image is a putative recombination event at approximately 60-140 kbp in the MSA. Please keep in mind that these coordinates need to be mapped to the query sequence.**
 
 
 The software tries to determine the one or two collection sequences most likely to recombine in the query:
-![image](wiki/plot_x2.png)
-**The image show the similarity in each window of the nearest two sequences to the query. It may give a clearer view than the previous plot with x5 datasets. **
+![image](wiki/plot_x2.png) \
+**The image show the similarity in each window of the nearest two sequences to the query. It may give a clearer view than the previous plot with x5 datasets.**
