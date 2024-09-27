@@ -16,7 +16,7 @@ pip install repgenr/
 ```
 
 # Example dataset
-Find example dataset of orthopoxvirus in `example_data/`. The query is a short-read assembly of a synthetic cowpox sample. The collection are reference-labelled orthopoxvirus sequences from `BV-BRC.org`
+Find example dataset of orthopoxvirus in `example_data/`. The query is a short-read assembly (x8 contigs) of a synthetic cowpox sample with a variola segment. The collection are reference-labelled orthopoxvirus sequences from `BV-BRC.org`
 
 # Usage
 Example folder structure. Query is `cowpox_with_variolaInsert.fasta.gz`
