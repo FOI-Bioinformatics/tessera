@@ -10,6 +10,7 @@ from statistics import mean,median,stdev
 import argparse
 import shutil
 import os
+import sys
 
 
 ##### INPUTS
@@ -24,24 +25,20 @@ parser = argparse.ArgumentParser(description=software_description)
 
 parser.add_argument('-i','--input','--MSA','--msa',required=True,help='Path to multiple sequence alignment file')
 parser.add_argument('-o','--output',required=True,help='Path to output directory')
-parser.add_argument('-q','--query',required=True,help='Name of query to identiy recombination events (file name of query without extension)')
+parser.add_argument('-q','--query',required=True,help='Name of query to identiy recombination events (file name of query without extension, will try to strip the common extensions if provided)')
 
 ##/
 ## parse input
-if 1 and 'run':
-    args = parser.parse_args()
-else:
-    print('IDE MODE',flush=True)
-    if 1:
-        args = parser.parse_args(['--input','msa.fasta',
-                                  '--output','try_output',
-                                  '--query','Sample01_idbaud'])
+args = parser.parse_args()
 
 msa_file_path = args.input
 output_dir = args.output
 recombination_dataset = args.query
 ##/
 ## format
+if recombination_dataset.endswith('.gz'):           recombination_dataset = recombination_dataset.replace('.gz','')
+for extension in ('.fna','.fasta','.fa',):
+    if recombination_dataset.endswith(extension):   recombination_dataset = recombination_dataset.replace(extension,'')
 ##/
 
 window_size = 1000
@@ -105,6 +102,10 @@ for enum,record in enumerate(sim_obj.alignment_roll_window.align):
     if record.id == recombination_dataset:
         idx_recombination_dataset = enum
         break
+if idx_recombination_dataset == None:
+    print('FATAL: Could not determine query from MSA sequence. Please make sure to supply query name exactly as it is stated in the MSA.fasta (posted above), it should be the file-name of your query')
+    print('Terminating!')
+    sys.exit()
 #/
 
 sim_obj.simgen(window=window_size, shift=window_step, pot_rec=idx_recombination_dataset, dist=dist_method_to_use, )
@@ -214,7 +215,7 @@ if 1:
     #/
     
     # INFO-print
-    print(f'Top x5 nearest datasets determined as: {" and ".join(datasets_to_include)}')
+    print(f'Top x5 nearest datasets determined as: {", ".join(datasets_to_include)}')
     #/
     
     # Transpose the dataframe to make columns the x-axis and rows the data for plotting
@@ -323,6 +324,44 @@ if 1:
     plot_pairwise(seq1_name=top2_datasets[0], seq2_name=top2_datasets[1], savepath=plot_savepath)
     print(f'Plot saved at: {plot_savepath}')
     ##/
+###/
+
+### Output interactive plot
+if 1:
+    import plotly.graph_objects as go
+    
+    # INFO-print
+    print(f'Top x5 nearest datasets determined as: {", ".join(datasets_to_include)}')
+    #/
+    
+    # Get top X candidates (from oDatasets_num_wins_wTies)
+    datasets_to_include = []
+    for dataset,num_wins_wTies in sorted(oDatasets_num_wins_wTies.items(),key=lambda x: x[1], reverse=True):
+        datasets_to_include.append(dataset)
+        if len(datasets_to_include) == 5: break
+    #/
+    # init figure
+    fig = go.Figure()
+    #/
+    # add lines for each dataset
+    for dataset in dist_data.index:
+        # skip dataset if not part of topX
+        if not dataset in datasets_to_include: continue
+        #/
+        # add to plot
+        fig.add_trace(go.Scatter(x=dist_data.columns, y=dist_data.loc[dataset], mode='lines', name=dataset))
+        #/
+    #/
+    # add layout to plot
+    fig.update_layout(title=f'Similarity plot for query {recombination_dataset}', xaxis_title='Window', yaxis_title='Similarity', hovermode='closest', dragmode='zoom', showlegend=True)
+    #/
+    # save
+    plot_savepath = output_dir+'/'+'plot.html'
+    fig.write_html(plot_savepath)
+    #/
+    # INFO-print
+    print(f'Plot saved at: {plot_savepath}')
+    #/
 ###/
 
 ### Finalize
