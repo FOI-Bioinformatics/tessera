@@ -199,13 +199,46 @@ print_formatted_table(sorted(oDatasets_dists_stats.items(),key=lambda x: (x[1][3
 print() # add empty line in-between tables
 ##/
 
-### init outdir
+
+### Output
+## init outdir
 print(separator_line)
 print(f'Init output directory: {output_dir}')
 if not os.path.exists(output_dir):          os.makedirs(output_dir)
-###/
+##/
 
-### Plot against top 5 queries
+## Write distances table
+tmp_output_table_path = output_dir+'/'+'distances.tsv'
+print(f'Write distances table at {tmp_output_table_path}')
+with open(tmp_output_table_path,'w') as nf:
+    # write header
+    header = oDatasets_dists_stats_header
+    nf.write('\t'.join(map(str,header))+'\n')
+    #/
+    # write rows
+    for dataset,colvalues in sorted(oDatasets_dists_stats.items(),key=lambda x: (x[1][3],x[1][4],x[1][5],x[1][6]), reverse=True): # sort by 99/95/90/80/70 in order
+        writeArr = [dataset] + colvalues
+        nf.write('\t'.join(map(str,writeArr))+'\n')
+    #/
+##/
+
+## Write number of windows where each dataset was a winner
+tmp_output_table_path = output_dir+'/'+'distances_winners.tsv'
+print(f'Write window winners (with ties) at {tmp_output_table_path}')
+with open(tmp_output_table_path,'w') as nf:
+    # write header
+    header = ['Dataset','Number of windows (ties included)']
+    nf.write('\t'.join(map(str,header))+'\n')
+    #/
+    # write rows
+    for dataset,num_windows in sorted(oDatasets_num_wins_wTies.items(),key=lambda x: x[1], reverse=True):
+        writeArr = [dataset,num_windows]
+        nf.write('\t'.join(map(str,writeArr))+'\n')
+    #/
+#/
+##/
+
+## Plot against top 5 queries
 if 1:
     # Get top 5 candidates (from oDatasets_num_wins_wTies)
     datasets_to_include = []
@@ -281,10 +314,9 @@ if 1:
     plot_savepath = output_dir+'/'+'top5.pdf'
     plt.savefig(plot_savepath)
     print(f'Plot saved at: {plot_savepath}')
-###/
+##/
 
-
-### Plot specific
+## Plot specific
 if 1:
     ## Plotting function
     def plot_pairwise(seq1_name=None,seq2_name=None,savepath=None):
@@ -362,6 +394,7 @@ if 1:
     # INFO-print
     print(f'Plot saved at: {plot_savepath}')
     #/
+##/
 ###/
 
 ### Finalize
