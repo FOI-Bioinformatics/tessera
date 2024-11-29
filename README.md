@@ -16,7 +16,7 @@ pip install repgenr/
 ```
 
 # Description
-Recomfi is developed to identify recombination in relatively similar datasets, such as between (sub)species of a genus or family. It generates a "pseudo-MSA (multiple sequence alignment)"  based on SNPs by using one sequence in the collection as a back-bone. This makes Recomfi fast but limits the resolution. With the "pseudo-MSA" strategy, the query may contain a fragmented genome, for example in the form of contigs. The many sequences of the query will be organized relative to the back-bone.
+Recomfi is developed to identify recombination in relatively similar datasets, such as between (sub)species of a genus or family. It generates a "pseudo-MSA (multiple sequence alignment)"  based on SNPs by using one sequence in the collection as a back-bone. This makes Recomfi fast but limits the resolution. With the "pseudo-MSA" strategy, the query may contain a fragmented genome, for example in the form of contigs, and Recomfi organize the contigs relative to the back-bone.
 
 Recombination events are detected by sliding windows over the MSA and computing the distance between the query sequence and the collection of reference sequences. A recombination event is suggested when a majority of the query is near reference sequence A and has a region where it is near another reference sequence B.
 
