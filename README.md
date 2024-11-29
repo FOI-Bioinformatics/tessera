@@ -82,7 +82,9 @@ Dataset distance stats:
   monkeypox        2058         0.97             1877          13              1532            1829            1862            1873
 ```
 
-Located in the output folder are two plots (and, in an updated version, an interactive HTML-plot):
+The above tables are written to output files `distances.tsv` and `distances_winners.tsv`.
+
+Located in the output folder are two plots (and an equivalent interactive HTML-plot):
 
 A plot is  generated for the x5 nearest datasets, showing similarity across the MSA.
 ![image](wiki/plot_x5.png) \
