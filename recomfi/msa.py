@@ -22,6 +22,7 @@ parser.add_argument('-q','--query',required=True,help='Path to query file')
 parser.add_argument('-c','--collection',required=True,help='Path to sequence collection')
 parser.add_argument('-o','--output',required=True,help='Path to output MSA file (e.g. msa.fasta)')
 parser.add_argument('--progressivemauve_single',action='store_true',help='If specified, will not parallelize progressivemauve. Sometimes this leads to a yet unknown error. Running one process at a time has solved the issue.')
+parser.add_argument('--query_as_backbone',action='store_true',help='If specified, will use the query as backbone in MSA. Only apply this option if you have a single-contig genome (default: use a reference-sequence as backbone)')
 
 
 ##/
@@ -41,6 +42,7 @@ output_file_path = args.output
 recombination_dataset = args.query
 
 progressivemauve_single = args.progressivemauve_single
+query_as_backbone = args.query_as_backbone
 ##/
 ## format
 query_file_path = os.getcwd() + '/' + query_file_path
@@ -107,9 +109,16 @@ link_or_decompress_file_into_genomes_dir(file_=query_basename,file_source_dir=qu
 ### Determine which genome to use as reference in MSA build
 pmauve_ref = None
 for file_ in os.listdir(genomes_dir):
-    if file_.find(query_basename_noExt) == -1:
+    # unless query should be the backbone, use a "random" reference in the collection as backbone
+    if not query_as_backbone and file_.find(query_basename_noExt) == -1:
         pmauve_ref = file_
         break # break on first
+    #/
+    # else, use the query
+    else:
+        if file_.find(query_basename_noExt) != -1:
+            pmauve_ref = file_
+    #/
 
 if pmauve_ref == None:
     print('WARNING: Could not determine a reference for progressivemauve. Please ensure that your collection consist of sequence files.')
