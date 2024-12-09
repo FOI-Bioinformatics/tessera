@@ -15,6 +15,11 @@ git clone https://github.com/FOI-Bioinformatics/repgenr.git
 pip install repgenr/
 ```
 
+# Description
+RecomFi is developed to identify recombination in relatively similar datasets, such as between (sub)species of a genus or family. It generates a "pseudo-MSA (multiple sequence alignment)"  based on SNPs by using one sequence in the collection as a back-bone. This makes RecomFi fast but limits the resolution. With the "pseudo-MSA" strategy, the query may contain a fragmented genome, for example in the form of contigs, and RecomFi organize the contigs relative to the back-bone.
+
+Recombination events are detected by sliding a window over the MSA, computing the distance between the query sequence and each of the collection of reference sequences. A recombination event is identified where a majority of the query is near reference sequence A and has a region where it is near another reference sequence B.
+
 # Example dataset
 Find example dataset of orthopoxvirus in `example_data/`. The query is a short-read assembly (x8 contigs) of a synthetic cowpox sample with a variola segment. The collection are reference-labelled orthopoxvirus sequences from `BV-BRC.org`
 
@@ -82,7 +87,9 @@ Dataset distance stats:
   monkeypox        2058         0.97             1877          13              1532            1829            1862            1873
 ```
 
-Located in the output folder are two plots (and, in an updated version, an interactive HTML-plot):
+The above tables are written to output files `distances.tsv` and `distances_winners.tsv`.
+
+Located in the output folder are two plots (and an equivalent interactive HTML-plot):
 
 A plot is  generated for the x5 nearest datasets, showing similarity across the MSA.
 ![image](wiki/plot_x5.png) \
