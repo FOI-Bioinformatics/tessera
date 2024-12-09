@@ -41,7 +41,13 @@ Example folder structure. Query is `cowpox_with_variolaInsert.fasta.gz`
 Generate multiple sequence alignment
 ```
 recomfi msa --query cowpox_with_variolaInsert.fasta.gz --collection collection/ --output msa.fasta
+
+# Short notice on MSA:
+#   If you have a single-contig query then you can apply flag --query_as_backbone to
+#   use the query sequence as backbone in MSA instead of a reference from the collection.
 ```
+
+
 
 Identify recombination events
 ```
