@@ -45,8 +45,8 @@ progressivemauve_single = args.progressivemauve_single
 query_as_backbone = args.query_as_backbone
 ##/
 ## format
-query_file_path = os.getcwd() + '/' + query_file_path
-collection_path = os.getcwd() + '/' + collection_path
+if not query_file_path[0] == '/':        query_file_path = os.getcwd() + '/' + query_file_path
+if not collection_path[0] == '/':        collection_path = os.getcwd() + '/' + collection_path
 ##/
 #####/
 
