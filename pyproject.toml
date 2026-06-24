@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "recomfi"
+version = "2.0.0"
+description = "RecomFi: identify recombination events in a query sequence against a collection of reference sequences"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "jaclew" }, { name = "FOI-Bioinformatics" }]
+# Upper caps to the next major: RecomFi is an application (a pinned CLI, not a
+# library others resolve against), so capping guards a fresh install from a
+# surprise breaking major (e.g. numpy 3, biopython 2). For fully reproducible
+# runs, pin via the conda lock (see environment.yml), which also covers the
+# external bioinformatics tools (progressiveMauve, SibeliaZ, Cactus).
+dependencies = [
+    "typer>=0.12,<1.0",
+    "numpy>=1.26,<3.0",
+    "pandas>=2.0,<4.0",
+    "matplotlib>=3.8,<4.0",
+    "seaborn>=0.13,<1.0",
+    "plotly>=5.18,<7.0",
+    "biopython>=1.83,<2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+recomfi = "recomfi.cli.main:app"
+
+# In-tree aligner adapters are discovered via the same entry-point mechanism a
+# third party would use, so core never imports a specific adapter directly.
+[project.entry-points."recomfi.aligners"]
+progressivemauve = "recomfi.aligners.progressivemauve:ProgressiveMauveAligner"
+sibeliaz = "recomfi.aligners.sibeliaz:SibeliazAligner"
+cactus = "recomfi.aligners.cactus:CactusAligner"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "requires_binary: test needs an external bioinformatics binary present on PATH",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# B008: Typer declares options as call-valued argument defaults by design.
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# Subcommands are registered by importing the cmd_* modules for their side
+# effects, after the Typer app is defined -- hence the late import.
+"src/recomfi/cli/main.py" = ["E402", "I001"]
