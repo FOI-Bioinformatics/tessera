@@ -1,6 +1,7 @@
 """End-to-end MSA build + recomb on the bundled example data.
 
-Requires the ``progressiveMauve`` binary; skipped when it is not installed.
+Parametrised over the supported MSA aligners; each case is skipped when its
+binary is not installed.
 """
 
 from __future__ import annotations
@@ -20,11 +21,18 @@ pytestmark = pytest.mark.requires_binary
 
 EXAMPLE = Path(__file__).resolve().parents[2] / "example_data"
 
+# Aligner key -> the executable that must be on PATH for that aligner to run.
+ALIGNER_BINARIES = {
+    "progressivemauve": "progressiveMauve",
+    "sibeliaz": "sibeliaz",
+}
 
-@pytest.mark.skipif(
-    shutil.which("progressiveMauve") is None, reason="progressiveMauve not installed"
-)
-def test_msa_then_recomb_on_example_data(tmp_path: Path) -> None:
+
+@pytest.mark.parametrize("aligner", sorted(ALIGNER_BINARIES))
+def test_msa_then_recomb_on_example_data(aligner: str, tmp_path: Path) -> None:
+    if shutil.which(ALIGNER_BINARIES[aligner]) is None:
+        pytest.skip(f"{ALIGNER_BINARIES[aligner]} not installed")
+
     query = EXAMPLE / "cowpox_with_variolaInsert.fasta.gz"
     collection = EXAMPLE / "collection"
     msa_out = tmp_path / "msa.fasta"
@@ -32,7 +40,7 @@ def test_msa_then_recomb_on_example_data(tmp_path: Path) -> None:
     build_msa(
         MsaParams(
             query=query, collection=collection, output=msa_out,
-            aligner="progressivemauve", threads=1,
+            aligner=aligner, threads=1,
         ),
         _LOG,
     )
