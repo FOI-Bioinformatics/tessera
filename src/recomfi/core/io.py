@@ -12,12 +12,70 @@ from __future__ import annotations
 import gzip
 import logging
 import shutil
+from collections.abc import Sequence
 from pathlib import Path
+from typing import TextIO
 
 from .errors import UserInputError
 
 # Extensions stripped to derive a genome's label (its leaf name in the MSA).
 SEQUENCE_EXTENSIONS = (".fna", ".fasta", ".fa")
+
+
+def read_fasta(path: str | Path) -> list[tuple[str, str]]:
+    """Read a FASTA file into a list of ``(header-first-token, sequence)``."""
+    records: list[tuple[str, str]] = []
+    name: str | None = None
+    seq: list[str] = []
+    with open(path) as fo:
+        for line in fo:
+            line = line.rstrip("\n")
+            if line.startswith(">"):
+                if name is not None:
+                    records.append((name, "".join(seq)))
+                name = line[1:].split()[0] if len(line) > 1 else ""
+                seq = []
+            else:
+                seq.append(line)
+    if name is not None:
+        records.append((name, "".join(seq)))
+    return records
+
+
+def write_fasta_record(handle: TextIO, name: str, seq: str, width: int = 80) -> None:
+    """Write one ``>name`` record to ``handle``, wrapping the sequence at ``width``."""
+    handle.write(f">{name}\n")
+    for pos in range(0, len(seq), width):
+        handle.write(seq[pos : pos + width] + "\n")
+
+
+def normalize_reference(
+    genomes: Sequence[Path],
+    reference: Path | None,
+    *,
+    tool: str,
+    min_genomes: int = 1,
+    ensure_member: bool = False,
+) -> tuple[list[Path], Path]:
+    """Resolve the backbone reference and validate the genome set for an aligner.
+
+    The reference defaults to the first genome. With ``ensure_member`` an explicit
+    reference not already in ``genomes`` is prepended (the pairwise backends align
+    every query against it, so it must be present). Raises :class:`UserInputError`
+    when fewer than ``min_genomes`` genomes remain.
+    """
+    genomes = list(genomes)
+    if not genomes:
+        raise UserInputError(f"{tool} alignment needs at least {min_genomes} genomes.")
+    if reference is None:
+        reference = genomes[0]
+    elif ensure_member and reference not in genomes:
+        genomes = [reference, *genomes]
+    if len(genomes) < min_genomes:
+        raise UserInputError(
+            f"{tool} alignment needs at least {min_genomes} genomes."
+        )
+    return genomes, reference
 
 
 def strip_sequence_extension(name: str) -> str:

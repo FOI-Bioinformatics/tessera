@@ -17,6 +17,7 @@ from ..converters.hal_to_maf import hal_to_maf
 from ..converters.maf_to_fasta import maf_to_fasta
 from ..core.binaries import BinarySpec
 from ..core.errors import OutputError
+from ..core.io import normalize_reference
 from ..core.plugins import ToolCapabilities
 from ..core.process import run_tool
 from .base import Aligner, AlignParams, AlignResult
@@ -42,9 +43,7 @@ class CactusAligner(Aligner):
         params: AlignParams,
         logger: logging.Logger,
     ) -> AlignResult:
-        genomes = list(genomes)
-        if reference is None:
-            reference = genomes[0]
+        genomes, reference = normalize_reference(genomes, reference, tool="Cactus")
         out_dir.mkdir(parents=True, exist_ok=True)
 
         genome_paths = [os.path.abspath(g) for g in genomes]

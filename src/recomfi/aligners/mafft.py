@@ -17,10 +17,10 @@ import logging
 from collections.abc import Sequence
 from pathlib import Path
 
-from ..converters.mafft_merge import merge_added_fragments, read_fasta
+from ..converters.mafft_merge import merge_added_fragments
 from ..core.binaries import BinarySpec
-from ..core.errors import UserInputError
 from ..core.executors import parallel_map
+from ..core.io import normalize_reference, read_fasta, write_fasta_record
 from ..core.plugins import ToolCapabilities
 from ..core.process import run_tool
 from .base import Aligner, AlignParams, AlignResult
@@ -51,14 +51,9 @@ class MafftAligner(Aligner):
         params: AlignParams,
         logger: logging.Logger,
     ) -> AlignResult:
-        genomes = list(genomes)
-        if reference is None:
-            reference = genomes[0]
-        if reference not in genomes:
-            genomes = [reference, *genomes]
-        if len(genomes) < 2:
-            raise UserInputError("MAFFT alignment needs at least 2 genomes.")
-
+        genomes, reference = normalize_reference(
+            genomes, reference, tool="MAFFT", min_genomes=2, ensure_member=True
+        )
         out_dir.mkdir(parents=True, exist_ok=True)
 
         # MAFFT anchors to a single-sequence backbone; concatenate a multi-contig
@@ -94,13 +89,7 @@ class MafftAligner(Aligner):
 
         msa = out_dir / "msa.fasta"
         with open(msa, "w") as out:
-            _write_row(out, reference.stem, ref_seq)
+            write_fasta_record(out, reference.stem, ref_seq)
             for stem, row in rows:
-                _write_row(out, stem, row)
+                write_fasta_record(out, stem, row)
         return AlignResult(msa_fasta=msa)
-
-
-def _write_row(out, name: str, seq: str, width: int = 80) -> None:
-    out.write(f">{name}\n")
-    for pos in range(0, len(seq), width):
-        out.write(seq[pos : pos + width] + "\n")

@@ -20,6 +20,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..core.io import write_fasta_record
+
 _COMPLEMENTS = bytes.maketrans(
     b"acgtrymkbdhvACGTRYMKBDHV", b"tgcayrkmvhdbTGCAYRKMVHDB"
 )
@@ -142,10 +144,7 @@ def maf_to_fasta(
 
     with open(out_path, "w") as fo:
         for s in ordered_species:
-            seq = out[s].decode("latin-1")
-            fo.write(f">{s}\n")
-            for pos in range(0, len(seq), 80):
-                fo.write(seq[pos : pos + 80] + "\n")
+            write_fasta_record(fo, s, out[s].decode("latin-1"))
     return out_path
 
 

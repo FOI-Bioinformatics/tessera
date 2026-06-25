@@ -13,25 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
-def read_fasta(path: str | Path) -> list[tuple[str, str]]:
-    """Read a FASTA file into a list of (header-first-token, sequence)."""
-    records: list[tuple[str, str]] = []
-    name: str | None = None
-    seq: list[str] = []
-    with open(path) as fo:
-        for line in fo:
-            line = line.rstrip("\n")
-            if line.startswith(">"):
-                if name is not None:
-                    records.append((name, "".join(seq)))
-                name = line[1:].split()[0] if len(line) > 1 else ""
-                seq = []
-            else:
-                seq.append(line)
-    if name is not None:
-        records.append((name, "".join(seq)))
-    return records
+from ..core.io import read_fasta
 
 
 def merge_added_fragments(aligned_path: str | Path) -> tuple[str, str]:

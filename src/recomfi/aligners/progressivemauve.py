@@ -17,8 +17,8 @@ from pathlib import Path
 
 from ..converters.xmfa_to_fasta import xmfa_to_fasta
 from ..core.binaries import BinarySpec
-from ..core.errors import UserInputError
 from ..core.executors import parallel_map
+from ..core.io import normalize_reference, read_fasta, write_fasta_record
 from ..core.plugins import ToolCapabilities
 from ..core.process import run_tool
 from .base import Aligner, AlignParams, AlignResult
@@ -41,17 +41,9 @@ class ProgressiveMauveAligner(Aligner):
         params: AlignParams,
         logger: logging.Logger,
     ) -> AlignResult:
-        genomes = list(genomes)
-        if reference is None:
-            reference = genomes[0]
-        if reference not in genomes:
-            genomes = [reference, *genomes]
-        if len(genomes) < 3:
-            raise UserInputError(
-                "progressiveMauve alignment needs at least 3 genomes "
-                "(query plus a reference collection)."
-            )
-
+        genomes, reference = normalize_reference(
+            genomes, reference, tool="progressiveMauve", min_genomes=3, ensure_member=True
+        )
         out_dir.mkdir(parents=True, exist_ok=True)
         xmfa_dir = out_dir / "xmfa"
         xmfa_dir.mkdir(exist_ok=True)
@@ -60,7 +52,7 @@ class ProgressiveMauveAligner(Aligner):
         # Pin every per-query projection to the full reference length so the
         # rows concatenate into a rectangular MSA regardless of how far each
         # query aligns.
-        ref_length = sum(len(seq) for _, seq in _read_fasta(reference))
+        ref_length = sum(len(seq) for _, seq in read_fasta(reference))
 
         queries = [g for g in genomes if g != reference]
 
@@ -102,29 +94,10 @@ def _concatenate(per_query_fastas: list[Path], reference: Path, out_path: Path) 
     written_ref = False
     with open(out_path, "w") as out:
         for fa in per_query_fastas:
-            for name, seq in _read_fasta(fa):
+            for name, seq in read_fasta(fa):
                 leaf = Path(name).stem
                 if leaf == ref_stem:
                     if written_ref:
                         continue
                     written_ref = True
-                out.write(f">{leaf}\n")
-                for pos in range(0, len(seq), 80):
-                    out.write(seq[pos : pos + 80] + "\n")
-
-
-def _read_fasta(path: Path):
-    name = None
-    seq: list[str] = []
-    with open(path) as fo:
-        for line in fo:
-            line = line.rstrip("\n")
-            if line.startswith(">"):
-                if name is not None:
-                    yield name, "".join(seq)
-                name = line[1:]
-                seq = []
-            else:
-                seq.append(line)
-    if name is not None:
-        yield name, "".join(seq)
+                write_fasta_record(out, leaf, seq)

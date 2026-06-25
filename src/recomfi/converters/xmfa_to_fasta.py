@@ -14,6 +14,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from ..core.io import write_fasta_record
+
 # Complement table over the IUPAC subset the original handled.
 _COMPLEMENTS = bytes.maketrans(b"acgtrymkbdhvACGTRYMKBDHV", b"tgcayrkmvhdbTGCAYRKMVHDB")
 
@@ -186,8 +188,5 @@ def xmfa_to_fasta(
     return out_path
 
 
-def _write_sequence(fo, name: str, seq: bytearray, width: int = 80) -> None:
-    fo.write(f">{name}\n")
-    text = bytes(seq).decode("latin-1")
-    for pos in range(0, len(text), width):
-        fo.write(text[pos : pos + width] + "\n")
+def _write_sequence(fo, name: str, seq: bytearray) -> None:
+    write_fasta_record(fo, name, bytes(seq).decode("latin-1"))
