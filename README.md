@@ -36,13 +36,13 @@ All backends produce a reference-anchored alignment, which is what the recombina
 
 | Backend | Best for | Notes |
 |---|---|---|
-| `progressivemauve` (default) | Genomes with rearrangements/inversions | Tolerant but slow and heavy; `seed_weight`, `single` |
-| `mafft` | Similar, largely collinear genomes (the typical case) | True base-level alignment, the canonical input for the window method; adds a fragmented query with `--addfragments`. `maxiterate`, `retree`, `op`, `ep`, `sixmerpair` |
+| `sibeliaz` (default) | Moderately divergent genomes, including rearrangements | Installs cleanly via conda; `kmer`, `abundance`, `bubble`, `filtermemory` |
+| `mafft` | Similar, largely collinear genomes | True base-level alignment, the canonical input for the window method; adds a fragmented query with `--addfragments`. `maxiterate`, `retree`, `op`, `ep`, `sixmerpair` |
 | `minimap2` | Speed and assembly/contig queries | Fast assembly-to-reference projection; `preset` (default `asm20`, e.g. `asm10` for closer genomes) |
-| `sibeliaz` | Many moderately divergent bacterial genomes | `kmer`, `abundance`, `bubble`, `filtermemory` |
+| `progressivemauve` | Genomes with large rearrangements/inversions | Tolerant but slow, heavy, and not available as a conda build on all platforms; `seed_weight`, `single` |
 | `cactus` | Same-species pangenomes | Resource heavy (Toil/containers) |
 
-For relatively similar genomes within a genus, `mafft` gives the most faithful similarity signal and `minimap2` the fastest run (and the best fit for a fragmented query); `progressivemauve` remains preferable when the genomes carry large rearrangements. Reference-anchored backends drop material inserted relative to the backbone; `mafft` keeps it as a true alignment.
+`sibeliaz` is the default: it installs cleanly across platforms and, on the example data, reproduces `progressivemauve`'s recombination coordinates. For very similar, collinear genomes `mafft` gives the most faithful base-level signal and `minimap2` the fastest run (and the best fit for a fragmented query); `progressivemauve` remains an option for genomes with large rearrangements. Reference-anchored backends drop material inserted relative to the backbone; `mafft` keeps it as a true alignment.
 
 Example: `recomfi msa ... --aligner minimap2 --aligner-arg preset=asm10` or `recomfi msa ... --aligner mafft --aligner-arg maxiterate=1000`.
 

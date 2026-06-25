@@ -19,8 +19,8 @@ def msa(
         ..., "-o", "--output", help="Path to the output MSA file (e.g. msa.fasta)."
     ),
     aligner: str = typer.Option(
-        "progressivemauve", "--aligner",
-        help="Aligner backend: progressivemauve (default), mafft, minimap2, sibeliaz, cactus.",
+        "sibeliaz", "--aligner",
+        help="Aligner backend: sibeliaz (default), mafft, minimap2, progressivemauve, cactus.",
     ),
     reference: str | None = typer.Option(
         None, "--reference",

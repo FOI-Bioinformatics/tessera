@@ -18,7 +18,7 @@ from ..aligners.base import registry as aligner_registry
 from ..core.errors import OutputError
 from ..core.io import select_reference, stage_genomes
 
-DEFAULT_ALIGNER = "progressivemauve"
+DEFAULT_ALIGNER = "sibeliaz"
 
 
 @dataclass
