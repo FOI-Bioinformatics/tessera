@@ -34,8 +34,47 @@ def test_maf_projects_onto_reference_and_drops_ref_gaps(tmp_path: Path) -> None:
     )
     out = maf_to_fasta(maf, "ref", tmp_path / "msa.fasta")
     seqs = _read_fasta(out)
-    # ref keeps its non-gap columns: ACGT (block1) + ACG (block2) = ACGTACG
-    assert seqs["ref"] == "ACGTACG"
+    # Full reference length is 8 (srcSize); blocks cover positions 0-6, so the
+    # uncovered reference position 7 is a trailing gap for every sequence.
+    # ref: ACGT (block1, pos 0-3) + ACG (block2, pos 4-6) + gap (pos 7)
+    assert seqs["ref"] == "ACGTACG-"
     # qry projected onto ref columns: ACGA (block1) + ACG (block2, gap col dropped)
-    assert seqs["qry"] == "ACGAACG"
-    assert len(seqs["ref"]) == len(seqs["qry"])
+    assert seqs["qry"] == "ACGAACG-"
+    assert len(seqs["ref"]) == len(seqs["qry"]) == 8
+
+
+def test_maf_reverse_strand_reference_is_placed_forward(tmp_path: Path) -> None:
+    # A block whose reference row is on the '-' strand must be reverse-complemented
+    # into forward-reference coordinates, not kept reversed.
+    maf = tmp_path / "rc.maf"
+    # reference srcSize 8; this block covers forward positions 4-7.
+    #   '-' strand, start=0 size=4 -> fstart = 8 - 0 - 4 = 4
+    #   ref text on '-' strand "ACGT" -> forward revcomp "ACGT"
+    #   qry text "AAGT" -> forward revcomp "ACTT"
+    maf.write_text(
+        "a\n"
+        "s ref.chr 0 4 - 8 ACGT\n"
+        "s qry.chr 0 4 + 4 AAGT\n"
+    )
+    out = maf_to_fasta(maf, "ref", tmp_path / "msa.fasta")
+    seqs = _read_fasta(out)
+    assert len(seqs["ref"]) == 8
+    # forward positions 4-7 carry the reverse-complemented block; 0-3 are gaps
+    assert seqs["ref"] == "----ACGT"
+    assert seqs["qry"] == "----ACTT"
+
+
+def test_maf_name_map_relabels_to_real_stems(tmp_path: Path) -> None:
+    # Mirrors the cactus fix: dot-sanitised MAF sample names map back to the real
+    # genome stems (which may themselves contain dots) for the recomb lookup.
+    maf = tmp_path / "a.maf"
+    maf.write_text(
+        "a\n"
+        "s cowpox_KC813504.chr 0 4 + 4 ACGT\n"
+        "s sample_1.chr 0 4 + 4 ACGA\n"
+    )
+    name_map = {"cowpox_KC813504": "cowpox_KC813504", "sample_1": "sample.1"}
+    out = maf_to_fasta(maf, "cowpox_KC813504", tmp_path / "msa.fasta", name_map=name_map)
+    seqs = _read_fasta(out)
+    assert set(seqs) == {"cowpox_KC813504", "sample.1"}  # dotted stem restored
+    assert seqs["sample.1"] == "ACGA"

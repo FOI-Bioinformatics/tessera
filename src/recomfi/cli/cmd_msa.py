@@ -20,7 +20,7 @@ def msa(
     ),
     aligner: str = typer.Option(
         "progressivemauve", "--aligner",
-        help="Aligner backend: progressivemauve (default, recommended), sibeliaz, cactus.",
+        help="Aligner backend: progressivemauve (default), mafft, minimap2, sibeliaz, cactus.",
     ),
     reference: str | None = typer.Option(
         None, "--reference",

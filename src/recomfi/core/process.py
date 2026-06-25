@@ -27,6 +27,7 @@ def run_tool(
     logger: logging.Logger,
     log_prefix: str = "",
     extra_mounts: Sequence[str] | None = None,
+    stdout_path: Path | None = None,
 ) -> str:
     """Run ``command`` (an argument list) without a shell, returning its output.
 
@@ -34,13 +35,23 @@ def run_tool(
     (and future container backends); ``extra_mounts`` is likewise accepted and
     ignored when running natively. Raises :class:`ToolExecutionError` on a
     non-zero exit.
+
+    When ``stdout_path`` is given the tool's standard output is written there
+    (not captured), and only standard error is captured for diagnostics. Use this
+    for tools whose primary result is emitted on stdout (e.g. MAFFT alignment,
+    minimap2 SAM), so verbose progress on stderr does not corrupt the output.
     """
     cmd = [str(part) for part in command]
     prefix = f"[{log_prefix}] " if log_prefix else ""
     logger.debug("%srunning: %s", prefix, " ".join(cmd))
 
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    output = (proc.stdout or "") + (proc.stderr or "")
+    if stdout_path is not None:
+        with open(stdout_path, "w") as out:
+            proc = subprocess.run(cmd, stdout=out, stderr=subprocess.PIPE, text=True)
+        output = proc.stderr or ""
+    else:
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        output = (proc.stdout or "") + (proc.stderr or "")
     if proc.returncode != 0:
         tail = "\n".join(output.strip().splitlines()[-_OUTPUT_TAIL_LINES:])
         raise ToolExecutionError(cmd, proc.returncode, tail or None)

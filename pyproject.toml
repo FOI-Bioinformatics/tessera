@@ -39,6 +39,8 @@ recomfi = "recomfi.cli.main:app"
 # third party would use, so core never imports a specific adapter directly.
 [project.entry-points."recomfi.aligners"]
 progressivemauve = "recomfi.aligners.progressivemauve:ProgressiveMauveAligner"
+mafft = "recomfi.aligners.mafft:MafftAligner"
+minimap2 = "recomfi.aligners.minimap2:Minimap2Aligner"
 sibeliaz = "recomfi.aligners.sibeliaz:SibeliazAligner"
 cactus = "recomfi.aligners.cactus:CactusAligner"
 

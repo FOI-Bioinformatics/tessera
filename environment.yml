@@ -5,8 +5,12 @@ channels:
 dependencies:
   - python>=3.11
   - pip
-  # Aligner backends (external tools). progressivemauve is the default and
-  # recommended backend; sibeliaz and cactus are optional alternatives.
+  # Aligner backends (external tools). progressivemauve is the default;
+  # mafft (accurate base-level MSA for similar genomes) and minimap2 (fast
+  # assembly-to-reference, ideal for a fragmented query) are recommended; sibeliaz
+  # and cactus are optional alternatives.
+  - bioconda::mafft
+  - bioconda::minimap2
   - bioconda::mauve
   - conda-forge::boost-cpp=1.74.0
   - bioconda::sibeliaz

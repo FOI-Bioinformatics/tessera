@@ -8,13 +8,15 @@ from recomfi.aligners.base import Aligner
 from recomfi.aligners.base import registry as aligner_registry
 from recomfi.core.errors import PluginError
 
+ALL_ALIGNERS = ("progressivemauve", "mafft", "minimap2", "sibeliaz", "cactus")
 
-def test_registry_lists_the_three_aligners() -> None:
-    assert {"progressivemauve", "sibeliaz", "cactus"} <= set(aligner_registry.names())
+
+def test_registry_lists_all_aligners() -> None:
+    assert set(ALL_ALIGNERS) <= set(aligner_registry.names())
 
 
 def test_registry_create_returns_aligner_instances() -> None:
-    for name in ("progressivemauve", "sibeliaz", "cactus"):
+    for name in ALL_ALIGNERS:
         aligner = aligner_registry.create(name)
         assert isinstance(aligner, Aligner)
         assert aligner.capabilities.name == name

@@ -77,8 +77,12 @@ class CactusAligner(Aligner):
         maf = out_dir / "pangenome.maf"
         hal_to_maf(hal, ref_name, maf, logger, caps=self.capabilities)
         msa = out_dir / "msa.fasta"
+        # Cactus sample names are dot-sanitised; map them back to the real genome
+        # stems so the MSA leaf names match what `recomb --query` looks up (a
+        # dotted query filename would otherwise be unfindable downstream).
+        name_map = {_sample_name(g): g.stem for g in genomes}
         # Drop the Minigraph-Cactus backbone pseudo-genome so it is not a taxon.
-        maf_to_fasta(maf, ref_name, msa, exclude={"_MINIGRAPH_"})
+        maf_to_fasta(maf, ref_name, msa, name_map=name_map, exclude={"_MINIGRAPH_"})
         return AlignResult(msa_fasta=msa, native_format=hal)
 
 

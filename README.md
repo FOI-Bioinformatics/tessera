@@ -32,7 +32,19 @@ conda activate recomfi
 ```
 
 # Aligner backends
-`progressivemauve` is the default and recommended backend: it produces a reference-anchored alignment, which is what the recombination scan assumes. `sibeliaz` and `cactus` are available as alternatives for cases where they fit the data better, but their output should be reviewed for the recombination use case (their coordinate anchoring differs).
+All backends produce a reference-anchored alignment, which is what the recombination scan assumes. Choose with `--aligner` and tune with repeatable `--aligner-arg key=value`:
+
+| Backend | Best for | Notes |
+|---|---|---|
+| `progressivemauve` (default) | Genomes with rearrangements/inversions | Tolerant but slow and heavy; `seed_weight`, `single` |
+| `mafft` | Similar, largely collinear genomes (the typical case) | True base-level alignment, the canonical input for the window method; adds a fragmented query with `--addfragments`. `maxiterate`, `retree`, `op`, `ep`, `sixmerpair` |
+| `minimap2` | Speed and assembly/contig queries | Fast assembly-to-reference projection; `preset` (default `asm20`, e.g. `asm10` for closer genomes) |
+| `sibeliaz` | Many moderately divergent bacterial genomes | `kmer`, `abundance`, `bubble`, `filtermemory` |
+| `cactus` | Same-species pangenomes | Resource heavy (Toil/containers) |
+
+For relatively similar genomes within a genus, `mafft` gives the most faithful similarity signal and `minimap2` the fastest run (and the best fit for a fragmented query); `progressivemauve` remains preferable when the genomes carry large rearrangements. Reference-anchored backends drop material inserted relative to the backbone; `mafft` keeps it as a true alignment.
+
+Example: `recomfi msa ... --aligner minimap2 --aligner-arg preset=asm10` or `recomfi msa ... --aligner mafft --aligner-arg maxiterate=1000`.
 
 # Example dataset
 Find an example dataset of orthopoxvirus in `example_data/`. The query is a short-read assembly (8 contigs) of a synthetic cowpox sample with a variola segment. The collection are reference-labelled orthopoxvirus sequences from `BV-BRC.org`.

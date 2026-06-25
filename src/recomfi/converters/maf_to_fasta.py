@@ -1,11 +1,18 @@
 """MAF -> reference-anchored MSA-FASTA.
 
 Projects a MAF (SibeliaZ, MULTIZ, or Cactus via hal2maf) onto the coordinate
-system of a chosen reference: within each alignment block, columns where the
-reference has a gap are dropped, every other sequence contributes its
-gap-trimmed row, and sequences absent from a block are padded with gaps. Blocks
-are concatenated in reference order. The result has no insertions relative to
-the reference -- a fixed-width MSA.
+system of a chosen reference, placing every block at its **true reference
+coordinate** in a full-reference-length alignment -- the same model as
+:mod:`recomfi.converters.xmfa_to_fasta`. Each reference base maps to one column,
+positions no block covers are left as gaps, and blocks whose reference row is on
+the ``-`` strand are reverse-complemented into forward-reference orientation.
+
+This matters: SibeliaZ routinely reports a large fraction of blocks with the
+reference on the ``-`` strand, so a converter that merely concatenated
+reference-covered columns in start order (ignoring strand) scrambled coordinates
+by tens of kilobases. Placing blocks at their forward-reference coordinate keeps
+the output coordinates equal to the reference's own, so the recombination scan
+reports positions that line up with the reference genome.
 """
 
 from __future__ import annotations
@@ -13,11 +20,23 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+_COMPLEMENTS = bytes.maketrans(
+    b"acgtrymkbdhvACGTRYMKBDHV", b"tgcayrkmvhdbTGCAYRKMVHDB"
+)
+
+
+def _revcomp(text: str) -> str:
+    """Reverse-complement an aligned string; gaps stay gaps."""
+    return text.encode("latin-1").translate(_COMPLEMENTS).decode("latin-1")[::-1]
+
 
 @dataclass
 class _Row:
     name: str
-    ref_start: int
+    start: int
+    size: int
+    strand: str
+    src_size: int
     text: str
 
 
@@ -52,60 +71,66 @@ def maf_to_fasta(
             return name_map.get(src, name_map.get(src.split(".")[0], _species(src)))
         return _species(src)
 
-    blocks = list(_iter_blocks(maf_path))
-    # The reference is passed as a genome label (e.g. a filename stem), which may
-    # itself contain dots. With a name_map the row names are contig IDs that map
-    # to those same labels, so resolve the reference to a label WITHOUT
-    # version-stripping: map it only if it is itself a contig key, otherwise use
-    # it verbatim.
     ref_key = name_map.get(reference, reference) if name_map else _species(reference)
 
+    blocks = list(_iter_blocks(maf_path))
+
+    # Reference length (one column per reference base) and the set of genomes.
+    ref_length: int | None = None
     species: set[str] = set()
     for block in blocks:
         for row in block:
             species.add(genome_of(row.name))
+            if genome_of(row.name) == ref_key and ref_length is None:
+                ref_length = row.src_size
     species -= exclude
+
+    if ref_length is None:
+        raise ValueError(
+            f"MAF projection onto reference '{ref_key}' found no reference rows. "
+            f"Check that the reference label matches the MAF/name_map sequence names."
+        )
+
     species.discard(ref_key)
     ordered_species = [ref_key, *sorted(species)]
+    out: dict[str, bytearray] = {s: bytearray(b"-" * ref_length) for s in ordered_species}
 
-    # collect, per species, its concatenated aligned text in reference order
-    pieces: dict[str, list[str]] = {s: [] for s in ordered_species}
-
-    placed_blocks: list[tuple[int, dict[str, str]]] = []
     for block in blocks:
         ref_row = next((r for r in block if genome_of(r.name) == ref_key), None)
         if ref_row is None:
             continue
-        keep = [i for i, ch in enumerate(ref_row.text) if ch != "-"]
-        if not keep:
-            continue
-        width = len(keep)
-        block_cols: dict[str, str] = {}
-        for s in ordered_species:
-            row = next((r for r in block if genome_of(r.name) == s), None)
-            if row is None:
-                block_cols[s] = "-" * width
-            else:
-                block_cols[s] = "".join(row.text[i] for i in keep)
-        placed_blocks.append((ref_row.ref_start, block_cols))
+        if ref_row.strand == "-":
+            # Reverse-complement the whole block into forward-reference orientation.
+            fstart = ref_row.src_size - ref_row.start - ref_row.size
+            rows = [(genome_of(r.name), _revcomp(r.text)) for r in block]
+            ref_text = _revcomp(ref_row.text)
+        else:
+            fstart = ref_row.start
+            rows = [(genome_of(r.name), r.text) for r in block]
+            ref_text = ref_row.text
 
-    for _, block_cols in sorted(placed_blocks, key=lambda x: x[0]):
-        for s in ordered_species:
-            pieces[s].append(block_cols[s])
+        pos = fstart
+        for col, ref_char in enumerate(ref_text):
+            if ref_char == "-":
+                continue  # insertion relative to the reference: dropped
+            if 0 <= pos < ref_length:
+                for label, text in rows:
+                    if label in out and out[label][pos] == ord("-"):
+                        ch = text[col]
+                        if ch != "-":
+                            out[label][pos] = ord(ch)
+            pos += 1
 
-    width = sum(len(p) for p in pieces[ref_key]) if ref_key in pieces else 0
-    if width == 0:
+    if not any(c != ord("-") for c in out[ref_key]):
         raise ValueError(
-            f"MAF projection onto reference '{ref_key}' produced a zero-length "
-            f"alignment (no usable blocks). Check that the reference label matches "
-            f"the MAF/name_map sequence names, or that the genomes share alignable "
-            f"regions (whole-genome aligners need collinearity not present across "
-            f"highly divergent inputs)."
+            f"MAF projection onto reference '{ref_key}' produced an empty alignment "
+            f"(no usable blocks). Check that the reference label matches the "
+            f"MAF/name_map sequence names, or that the genomes share alignable regions."
         )
 
     with open(out_path, "w") as fo:
         for s in ordered_species:
-            seq = "".join(pieces[s])
+            seq = out[s].decode("latin-1")
             fo.write(f">{s}\n")
             for pos in range(0, len(seq), 80):
                 fo.write(seq[pos : pos + 80] + "\n")
@@ -124,7 +149,10 @@ def _iter_blocks(maf_path: Path):
                 parts = line.split()
                 # s src start size strand srcSize text
                 if len(parts) >= 7:
-                    block.append(_Row(name=parts[1], ref_start=int(parts[2]), text=parts[6]))
+                    block.append(_Row(
+                        name=parts[1], start=int(parts[2]), size=int(parts[3]),
+                        strand=parts[4], src_size=int(parts[5]), text=parts[6],
+                    ))
             elif line.strip() == "" and block:
                 yield block
                 block = []
