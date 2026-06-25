@@ -57,6 +57,11 @@ class ProgressiveMauveAligner(Aligner):
         xmfa_dir.mkdir(exist_ok=True)
         ref_arg = str(reference.resolve())
 
+        # Pin every per-query projection to the full reference length so the
+        # rows concatenate into a rectangular MSA regardless of how far each
+        # query aligns.
+        ref_length = sum(len(seq) for _, seq in _read_fasta(reference))
+
         queries = [g for g in genomes if g != reference]
 
         # A lower --seed-weight raises sensitivity for divergent genomes (more,
@@ -81,7 +86,7 @@ class ProgressiveMauveAligner(Aligner):
                 logger=logger,
                 log_prefix=f"progressivemauve:{stem}",
             )
-            xmfa_to_fasta(xmfa, ref_arg, 0, fa)
+            xmfa_to_fasta(xmfa, ref_arg, 0, fa, reference_length=ref_length)
             return fa
 
         per_query_fastas = parallel_map(align_query, queries, workers, logger=logger)

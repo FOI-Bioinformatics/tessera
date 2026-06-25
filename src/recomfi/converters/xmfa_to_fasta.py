@@ -33,11 +33,18 @@ def xmfa_to_fasta(
     reference_name: str,
     flank: int,
     out_path: str | Path,
+    reference_length: int | None = None,
 ) -> Path:
     """Convert a progressiveMauve XMFA file to a reference-anchored FASTA.
 
     ``reference_name`` must match a ``#SequenceNFile`` entry in the XMFA.
     ``flank`` (>=0) screens deletion flanks by that many bases.
+
+    ``reference_length`` pins the output width to the full reference genome
+    length. Without it the width is the furthest aligned reference position in
+    this XMFA, which varies per query; pinning it keeps every per-query
+    projection on the same coordinate system so they concatenate into a
+    rectangular MSA.
     """
     xmfa_path = Path(xmfa_path)
     out_path = Path(out_path)
@@ -89,12 +96,16 @@ def xmfa_to_fasta(
 
     reference_num = name2num[reference_name]
 
-    # Length of the reference = furthest aligned reference position.
+    # Output width: the full reference length when known, otherwise the furthest
+    # aligned reference position in this XMFA. The max() guards against a p2 that
+    # somehow exceeds the supplied length, which would otherwise extend one row.
     length_of_reference = 0
     for alignment in a_gen:
         ref = a_gen[alignment].get(reference_num)
         if ref is not None and ref["p2"] > length_of_reference:
             length_of_reference = ref["p2"]
+    if reference_length is not None:
+        length_of_reference = max(length_of_reference, reference_length)
 
     outseqs: dict[int, bytearray] = {
         num: bytearray(b"-" * length_of_reference) for num in num2name

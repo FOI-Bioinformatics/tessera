@@ -9,6 +9,7 @@ import pytest
 
 from recomfi.aligners import mafft as mafft_mod
 from recomfi.aligners import minimap2 as mm_mod
+from recomfi.aligners import progressivemauve as pm_mod
 from recomfi.aligners.base import AlignParams
 from recomfi.converters.mafft_merge import merge_added_fragments
 from recomfi.converters.sam_to_fasta import project_sam_to_row
@@ -146,6 +147,42 @@ def test_mafft_assembles_reference_anchored_msa(monkeypatch, tmp_path: Path) -> 
     msa = _read_msa(result.msa_fasta)
     assert set(msa) == {"ref", "qry"}
     assert len(msa["ref"]) == len(msa["qry"]) == 12
+
+
+def test_progressivemauve_concatenation_is_rectangular(monkeypatch, tmp_path: Path) -> None:
+    # The reference is 8 bp. Query A aligns to only the first 4 reference bases,
+    # query B to all 8. Each per-query XMFA must still project onto the full
+    # reference length so the concatenated MSA has equal-length rows.
+    ref = tmp_path / "ref.fasta"
+    ref.write_text(">ref\nACGTACGT\n")
+    qry_a = tmp_path / "qryA.fasta"
+    qry_a.write_text(">qryA\nACGT\n")
+    qry_b = tmp_path / "qryB.fasta"
+    qry_b.write_text(">qryB\nACGTACGT\n")
+
+    def fake_run(caps, cmd, **kw):
+        cmd = [str(c) for c in cmd]
+        xmfa = Path(cmd[cmd.index("--output") + 1])
+        ref_path, query_path = cmd[-2], cmd[-1]
+        extent = 4 if "qryA" in Path(query_path).stem else 8
+        bases = "ACGTACGT"[:extent]
+        xmfa.write_text(
+            f"#Sequence1File\t{ref_path}\n"
+            f"#Sequence2File\t{query_path}\n"
+            f"> 1:1-{extent} + {ref_path}\n{bases}\n"
+            f"> 2:1-{extent} + {query_path}\n{bases}\n"
+            "=\n"
+        )
+        return ""
+
+    monkeypatch.setattr(pm_mod, "run_tool", fake_run)
+    result = pm_mod.ProgressiveMauveAligner().align(
+        [ref, qry_a, qry_b], ref, tmp_path / "out", AlignParams(threads=1), _LOG
+    )
+    msa = _read_msa(result.msa_fasta)
+    assert set(msa) == {"ref", "qryA", "qryB"}
+    widths = {len(seq) for seq in msa.values()}
+    assert widths == {8}, f"rows are ragged: {[(k, len(v)) for k, v in msa.items()]}"
 
 
 def test_minimap2_assembles_reference_anchored_msa(monkeypatch, tmp_path: Path) -> None:
