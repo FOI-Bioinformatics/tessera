@@ -15,9 +15,13 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
+from ..core.errors import UserInputError
 from ..core.plugins import Registry, ToolCapabilities, preflight
 
 registry: Registry[Aligner] = Registry("recomfi.aligners")
+
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+_FALSY = frozenset({"0", "false", "no", "off", ""})
 
 
 class OutputKind(Enum):
@@ -29,6 +33,26 @@ class AlignParams:
     threads: int = 1
     reference: Path | None = None
     extra: dict = field(default_factory=dict)
+
+    def flag(self, key: str, default: bool = False) -> bool:
+        """Interpret a boolean-style ``--aligner-arg`` extra (e.g. ``single=true``).
+
+        Extras arrive as strings, so a plain truthiness test would read
+        ``single=false`` as ``True``. Values are matched case-insensitively
+        against a small true/false vocabulary; an unrecognised value raises
+        :class:`UserInputError` rather than silently defaulting.
+        """
+        if key not in self.extra:
+            return default
+        value = str(self.extra[key]).strip().lower()
+        if value in _TRUTHY:
+            return True
+        if value in _FALSY:
+            return False
+        raise UserInputError(
+            f"--aligner-arg {key}={self.extra[key]!r} is not a boolean; "
+            f"use one of true/false (or yes/no, 1/0)."
+        )
 
 
 @dataclass

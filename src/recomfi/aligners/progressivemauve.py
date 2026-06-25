@@ -74,7 +74,7 @@ class ProgressiveMauveAligner(Aligner):
         # thread budget, each aligning an independent query to the reference.
         # Setting threads to 1 (or extra single=true) serialises them, which has
         # resolved a yet-unexplained progressiveMauve error on some systems.
-        workers = 1 if params.extra.get("single") else params.threads
+        workers = 1 if params.flag("single") else params.threads
 
         def align_query(query: Path) -> Path:
             stem = query.stem

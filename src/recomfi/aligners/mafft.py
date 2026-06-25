@@ -71,7 +71,7 @@ class MafftAligner(Aligner):
         for key, flag in _VALUE_TUNING.items():
             if key in params.extra:
                 tuning += [flag, str(params.extra[key])]
-        if params.extra.get("sixmerpair"):
+        if params.flag("sixmerpair"):
             tuning.append("--6merpair")
 
         threads = str(max(1, params.threads))
