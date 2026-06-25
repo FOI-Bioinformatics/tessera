@@ -64,6 +64,26 @@ def test_maf_reverse_strand_reference_is_placed_forward(tmp_path: Path) -> None:
     assert seqs["qry"] == "----ACTT"
 
 
+def test_maf_multicontig_reference_concatenates_contigs(tmp_path: Path) -> None:
+    # A reference split across two contigs (ref.c1, ref.c2) must be laid out as a
+    # concatenation, not collapsed into one contig's coordinate space. Each contig
+    # is 4 bp, so the reference coordinate system is 8 bp wide.
+    maf = tmp_path / "mc.maf"
+    maf.write_text(
+        "a\n"
+        "s ref.c1 0 4 + 4 ACGT\n"
+        "s qry.x 0 4 + 8 ACGT\n"
+        "\n"
+        "a\n"
+        "s ref.c2 0 4 + 4 TTTT\n"
+        "s qry.x 4 4 + 8 TTTT\n"
+    )
+    seqs = _read_fasta(maf_to_fasta(maf, "ref", tmp_path / "msa.fasta"))
+    assert len(seqs["ref"]) == len(seqs["qry"]) == 8
+    assert seqs["ref"] == "ACGTTTTT"  # c1 at 0-3, c2 at 4-7
+    assert seqs["qry"] == "ACGTTTTT"
+
+
 def test_maf_name_map_relabels_to_real_stems(tmp_path: Path) -> None:
     # Mirrors the cactus fix: dot-sanitised MAF sample names map back to the real
     # genome stems (which may themselves contain dots) for the recomb lookup.

@@ -75,21 +75,31 @@ def maf_to_fasta(
 
     blocks = list(_iter_blocks(maf_path))
 
-    # Reference length (one column per reference base) and the set of genomes.
-    ref_length: int | None = None
+    # A multi-contig reference is laid out as a concatenation of its contigs:
+    # each distinct reference source name is one contig (length = its src_size),
+    # placed at a cumulative offset. Collapsing them into a single contig's
+    # coordinate space would make later contigs overwrite earlier ones.
+    ref_contigs: dict[str, int] = {}  # source name -> contig length
     species: set[str] = set()
     for block in blocks:
         for row in block:
-            species.add(genome_of(row.name))
-            if genome_of(row.name) == ref_key and ref_length is None:
-                ref_length = row.src_size
+            label = genome_of(row.name)
+            species.add(label)
+            if label == ref_key:
+                ref_contigs.setdefault(row.name, row.src_size)
     species -= exclude
 
-    if ref_length is None:
+    if not ref_contigs:
         raise ValueError(
             f"MAF projection onto reference '{ref_key}' found no reference rows. "
             f"Check that the reference label matches the MAF/name_map sequence names."
         )
+
+    ref_offsets: dict[str, int] = {}
+    ref_length = 0
+    for name in sorted(ref_contigs):
+        ref_offsets[name] = ref_length
+        ref_length += ref_contigs[name]
 
     species.discard(ref_key)
     ordered_species = [ref_key, *sorted(species)]
@@ -99,6 +109,7 @@ def maf_to_fasta(
         ref_row = next((r for r in block if genome_of(r.name) == ref_key), None)
         if ref_row is None:
             continue
+        contig_offset = ref_offsets[ref_row.name]
         if ref_row.strand == "-":
             # Reverse-complement the whole block into forward-reference orientation.
             fstart = ref_row.src_size - ref_row.start - ref_row.size
@@ -108,6 +119,7 @@ def maf_to_fasta(
             fstart = ref_row.start
             rows = [(genome_of(r.name), r.text) for r in block]
             ref_text = ref_row.text
+        fstart += contig_offset
 
         pos = fstart
         for col, ref_char in enumerate(ref_text):
