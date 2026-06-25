@@ -68,7 +68,7 @@ Generate a multiple sequence alignment:
 ```
 recomfi msa --query cowpox_with_variolaInsert.fasta.gz --collection collection/ --output msa.fasta
 
-# Choose an aligner backend (default: progressivemauve) and pass tuning options:
+# Choose an aligner backend (default: sibeliaz) and pass tuning options:
 #   recomfi msa ... --aligner sibeliaz --aligner-arg kmer=15
 #   recomfi msa ... --aligner progressivemauve --aligner-arg seed_weight=11
 #

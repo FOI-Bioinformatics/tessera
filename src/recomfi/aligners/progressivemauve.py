@@ -5,8 +5,8 @@ reference with progressiveMauve, project each pairwise XMFA onto reference
 coordinates (:mod:`recomfi.converters.xmfa_to_fasta`), then concatenate into one
 reference-anchored MSA-FASTA. Aligning to a single reference keeps the work
 linear in the number of genomes and yields the reference-anchored coordinates
-the recombination scan assumes. This is RecomFi's default and recommended
-backend.
+the recombination scan assumes. It tolerates large rearrangements but is slow
+and heavy; ``sibeliaz`` is RecomFi's default backend.
 """
 
 from __future__ import annotations

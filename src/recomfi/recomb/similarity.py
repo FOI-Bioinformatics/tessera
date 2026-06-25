@@ -2,9 +2,9 @@
 
 Replaces the ``recan`` dependency. For each window of alignment columns the
 similarity between the query and a reference is the fraction of identical
-positions among columns where neither sequence has a gap (``1.0`` = identical,
-``0.0`` = no shared positions match). Windows where no position is comparable
-score ``0.0``.
+positions among columns where both sequences carry a canonical base (``1.0`` =
+identical, ``0.0`` = no shared positions match). Windows where no position is
+comparable score ``nan`` (see below).
 
 The query sequence itself is excluded from the returned per-dataset similarities
 (it is the thing being compared against everything else, so it would otherwise
