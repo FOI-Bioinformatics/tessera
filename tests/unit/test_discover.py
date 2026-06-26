@@ -63,6 +63,50 @@ def test_find_references_blasts_the_gap_and_marks_existing(monkeypatch, tmp_path
     assert any("NEW123" in line for line in tsv[1:])
 
 
+def test_self_hit_is_auto_skipped(monkeypatch, tmp_path, logger):
+    # A near-identical, near-full-coverage hit is the query's own record -> skipped.
+    def fake_blast(seq, *, max_hits, logger, email=None):
+        return [
+            Hit("SELF999", "the query itself", 99.8, 100.0, 0.0),  # self-hit
+            Hit("NEW123", "novel donor", 90.0, 95.0, 1e-40),       # genuine candidate
+        ]
+
+    monkeypatch.setattr(discover_run, "blast_subsequence", fake_blast)
+    params = FindRefParams(
+        msa=_msa(tmp_path), query="q", output=tmp_path / "out",
+        window_size=60, window_step=30, top_gaps=1,
+    )
+    candidates = find_references(params, logger)
+    assert {c.hit.accession for c in candidates} == {"NEW123"}  # self-hit dropped
+
+    # ...unless explicitly kept
+    kept = find_references(
+        FindRefParams(
+            msa=_msa(tmp_path), query="q", output=tmp_path / "out2",
+            window_size=60, window_step=30, top_gaps=1, keep_self_hits=True,
+        ),
+        logger,
+    )
+    assert "SELF999" in {c.hit.accession for c in kept}
+
+
+def test_exclude_drops_accession_version_insensitively(monkeypatch, tmp_path, logger):
+    def fake_blast(seq, *, max_hits, logger, email=None):
+        return [
+            Hit("U54771.1", "query own strain", 95.0, 90.0, 0.0),
+            Hit("NEW123", "novel donor", 90.0, 95.0, 1e-40),
+        ]
+
+    monkeypatch.setattr(discover_run, "blast_subsequence", fake_blast)
+    params = FindRefParams(
+        msa=_msa(tmp_path), query="q", output=tmp_path / "out",
+        window_size=60, window_step=30, top_gaps=1,
+        exclude=("U54771",),  # bare accession matches the versioned hit
+    )
+    candidates = find_references(params, logger)
+    assert {c.hit.accession for c in candidates} == {"NEW123"}
+
+
 def test_no_gap_means_no_blast(monkeypatch, tmp_path, logger):
     # query identical to a reference everywhere -> no coverage gap -> no BLAST
     path = tmp_path / "msa.fasta"

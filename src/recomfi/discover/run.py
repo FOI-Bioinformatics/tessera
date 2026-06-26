@@ -20,6 +20,10 @@ from .blast import BlastError, Hit, blast_subsequence
 from .fetch import efetch_available, efetch_fasta
 
 MIN_SUBSEQ = 50  # too short to BLAST meaningfully
+# A hit this close over near-full coverage is almost certainly the query's own
+# record (the MSA labels the query by lineage, so BLAST can't recognise it).
+SELF_HIT_IDENTITY = 99.5
+SELF_HIT_COVERAGE = 95.0
 
 
 @dataclass
@@ -36,6 +40,8 @@ class FindRefParams:
     top_gaps: int = 3
     email: str | None = None
     download: Path | None = None
+    exclude: tuple[str, ...] = ()  # accessions to drop from candidates
+    keep_self_hits: bool = False  # keep near-identical hits (the query's own record)
 
 
 @dataclass
@@ -81,9 +87,12 @@ def find_references(params: FindRefParams, logger: logging.Logger) -> list[Candi
             f"{', '.join(sorted(records))}"
         )
     existing = _existing_labels(result, params.collection, query_label)
+    exclude = {_base_accession(e) for e in params.exclude}
 
     targets = sorted(gaps, key=lambda g: g.length_bp, reverse=True)[: params.top_gaps]
     candidates: list[Candidate] = []
+    skipped_self: list[str] = []
+    skipped_excluded: list[str] = []
     for gap in targets:
         subseq = query_row[gap.msa_start : gap.msa_end].replace("-", "")
         if len(subseq) < MIN_SUBSEQ:
@@ -104,7 +113,22 @@ def find_references(params: FindRefParams, logger: logging.Logger) -> list[Candi
             logger.warning("  BLAST failed for this gap, skipping: %s", exc)
             continue
         for hit in hits:
-            candidates.append(Candidate(gap, hit, hit.accession in existing))
+            if _base_accession(hit.accession) in exclude:
+                skipped_excluded.append(hit.accession)
+            elif _is_self_hit(hit, params.keep_self_hits):
+                skipped_self.append(hit.accession)
+            else:
+                candidates.append(Candidate(gap, hit, hit.accession in existing))
+
+    if skipped_self:
+        logger.info(
+            "Skipped %d near-identical hit(s) as the query's own record (>= %.1f%% "
+            "identity): %s. Use --keep-self-hits to keep them.",
+            len(skipped_self), SELF_HIT_IDENTITY, ", ".join(skipped_self),
+        )
+    if skipped_excluded:
+        logger.info("Excluded %d hit(s) by --exclude: %s",
+                    len(skipped_excluded), ", ".join(skipped_excluded))
 
     _write_candidates(params.output, candidates, logger)
     _print_candidates(candidates, logger)
@@ -117,6 +141,20 @@ def find_references(params: FindRefParams, logger: logging.Logger) -> list[Candi
             "then rebuild the MSA with 'recomfi msa'."
         )
     return candidates
+
+
+def _base_accession(accession: str) -> str:
+    """Drop the version suffix so 'U54771' and 'U54771.1' compare equal."""
+    return accession.split(".")[0].strip()
+
+
+def _is_self_hit(hit: Hit, keep_self_hits: bool) -> bool:
+    """A near-identical, near-full-length hit -- almost certainly the query itself."""
+    return (
+        not keep_self_hits
+        and hit.pct_identity >= SELF_HIT_IDENTITY
+        and hit.query_coverage >= SELF_HIT_COVERAGE
+    )
 
 
 def _existing_labels(result, collection: Path | None, query_label: str) -> set[str]:

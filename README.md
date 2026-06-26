@@ -150,7 +150,10 @@ recomfi find-references --msa msa.fasta --query cowpox_with_variolaInsert \
     --collection collection/ --email you@example.org --download collection/
 ```
 This contacts NCBI over the network; `--download` needs Entrez Direct
-(`conda install -c bioconda entrez-direct`).
+(`conda install -c bioconda entrez-direct`). BLAST often returns the query's own
+GenBank record (the MSA labels the query by name, not accession), so a
+near-identical, near-full-length hit is auto-skipped; use `--keep-self-hits` to
+keep it, or `--exclude <accession>` to drop specific records.
 
 # Known limitations
 The region calling is a transparent heuristic, not a statistical test. In

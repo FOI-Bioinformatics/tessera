@@ -40,6 +40,16 @@ def find_references(
     email: str | None = typer.Option(
         None, "--email", help="Contact email for NCBI (etiquette; or set NCBI_EMAIL)."
     ),
+    exclude: list[str] = typer.Option(
+        [], "--exclude",
+        help="Accession(s) to drop from the candidates, e.g. the query's own record "
+        "(repeatable; version-insensitive).",
+    ),
+    keep_self_hits: bool = typer.Option(
+        False, "--keep-self-hits",
+        help="Keep near-identical hits; by default a hit matching the query almost "
+        "exactly (the query's own record) is auto-skipped.",
+    ),
     download: Path | None = typer.Option(
         None, "--download",
         help="Download the best new reference per gap into this collection directory.",
@@ -62,6 +72,7 @@ def find_references(
             coverage_floor=coverage_floor, coverage_rel_drop=coverage_rel_drop,
             max_hits=max_hits, top_gaps=top_gaps,
             email=email or os.environ.get("NCBI_EMAIL"),
+            exclude=tuple(exclude), keep_self_hits=keep_self_hits,
             download=download,
         )
         find_references(params, logger)
