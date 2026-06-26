@@ -103,7 +103,7 @@ def main(
 
 
 # Register subcommands (import for side effects).
-from . import cmd_msa, cmd_recomb  # noqa: E402,F401
+from . import cmd_find_references, cmd_msa, cmd_recomb  # noqa: E402,F401
 
 
 if __name__ == "__main__":

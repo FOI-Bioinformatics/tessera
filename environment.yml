@@ -16,5 +16,8 @@ dependencies:
   - bioconda::cactus
   - bioconda::mauve
   - conda-forge::boost-cpp=1.74.0
+  # Optional: only needed by `recomfi find-references --download` to fetch
+  # candidate reference genomes from NCBI.
+  - bioconda::entrez-direct
   - pip:
       - -e .

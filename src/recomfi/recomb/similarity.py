@@ -29,7 +29,7 @@ multi-contig query the mapping follows MSA order.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -68,6 +68,14 @@ class WindowSimilarity:
     query: str
     width: int
     query_cumulative: np.ndarray  # length width+1: non-gap counts of the query row
+    # Per-window "best any reference can do": the closest reference and its
+    # similarity. A low best_sim is the fingerprint of an absent reference --
+    # the query's true source for that window is not in the collection.
+    best_sim: list[float] = field(default_factory=list)
+    best_label: list[str | None] = field(default_factory=list)
+    # Comparable query bases per window (canonical A/C/G/T): how much evidence the
+    # window carries, used to tell a genuinely divergent gap from a sparse one.
+    informative: list[int] = field(default_factory=list)
 
     def to_dataframe(self) -> pd.DataFrame:
         """Return a DataFrame indexed by dataset label, columns = MSA positions."""
@@ -183,6 +191,14 @@ def compute_similarity(
             query_canonical, query, seq, window_size, window_step
         )
 
+    best_sim, best_label = _best_per_window(similarities, len(positions))
+
+    # Comparable query bases per window: a window may be a "gap" because the query
+    # is genuinely divergent from every reference (high informative) or merely
+    # because it has few comparable bases (low informative); the two differ.
+    qcanon_cumsum = np.concatenate(([0], np.cumsum(query_canonical)))
+    informative = [int(qcanon_cumsum[s + window_size] - qcanon_cumsum[s]) for s in starts]
+
     return WindowSimilarity(
         positions=positions,
         query_positions=query_positions,
@@ -190,4 +206,29 @@ def compute_similarity(
         query=query_label,
         width=width,
         query_cumulative=query_cumulative,
+        best_sim=best_sim,
+        best_label=best_label,
+        informative=informative,
     )
+
+
+def _best_per_window(
+    similarities: dict[str, list[float]], n_windows: int
+) -> tuple[list[float], list[str | None]]:
+    """Per window, the closest reference and its similarity (nan / None if all nan)."""
+    labels = list(similarities)
+    if not labels:
+        return [float("nan")] * n_windows, [None] * n_windows
+    matrix = np.array([similarities[label] for label in labels], dtype=float)
+    best_sim: list[float] = []
+    best_label: list[str | None] = []
+    for i in range(n_windows):
+        col = matrix[:, i]
+        if np.isfinite(col).any():
+            j = int(np.nanargmax(col))
+            best_sim.append(float(col[j]))
+            best_label.append(labels[j])
+        else:
+            best_sim.append(float("nan"))
+            best_label.append(None)
+    return best_sim, best_label

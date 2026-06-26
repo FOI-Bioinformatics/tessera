@@ -65,6 +65,9 @@ class Region:
     mean_sim_minor: float
     mean_sim_major: float
     margin: float
+    # Set by coverage analysis: the donor's own similarity is poor, so it may be a
+    # stand-in for an absent true donor. Default False (not yet evaluated).
+    donor_undercovered: bool = False
 
 
 @dataclass

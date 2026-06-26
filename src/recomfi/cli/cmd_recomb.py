@@ -40,6 +40,16 @@ def recomb(
         help="Merge same-parent regions separated by at most this many bp "
         "(default: the window size).",
     ),
+    coverage_floor: float | None = typer.Option(
+        None, "--coverage-floor",
+        help="Flag windows whose closest reference is below this similarity as a "
+        "possible missing reference (default: adaptive, relative to the query).",
+    ),
+    coverage_rel_drop: float = typer.Option(
+        0.05, "--coverage-rel-drop",
+        help="Adaptive coverage: flag windows more than this far below the query's "
+        "typical best similarity (ignored when --coverage-floor is set).",
+    ),
 ) -> None:
     """Identify recombination events in a multiple sequence alignment."""
     from ..recomb.run import RecombParams, run_recomb
@@ -59,5 +69,7 @@ def recomb(
             min_region=min_region,
             margin=margin,
             merge_gap=merge_gap,
+            coverage_floor=coverage_floor,
+            coverage_rel_drop=coverage_rel_drop,
         )
         run_recomb(params, logger)

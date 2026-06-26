@@ -10,8 +10,9 @@ from pathlib import Path
 from .. import __version__
 from ..core.io import strip_sequence_extension
 from .analyze import analyze, winners_per_window
+from .coverage import CoverageParams, call_coverage_gaps, flag_undercovered_regions
 from .regions import RegionParams, call_regions
-from .report import print_regions, print_summary, write_reports
+from .report import print_coverage, print_regions, print_summary, write_reports
 from .similarity import compute_similarity
 
 
@@ -29,6 +30,9 @@ class RecombParams:
     min_region: int | None = None
     margin: float = 0.0
     merge_gap: int | None = None
+    # Reference-coverage diagnostic.
+    coverage_floor: float | None = None  # None -> adaptive baseline
+    coverage_rel_drop: float = 0.05
 
 
 def run_recomb(params: RecombParams, logger: logging.Logger) -> None:
@@ -61,9 +65,26 @@ def run_recomb(params: RecombParams, logger: logging.Logger) -> None:
         major_parent or "n/a", len(regions),
     )
 
+    coverage_params = CoverageParams.with_defaults(
+        params.window_size,
+        floor=params.coverage_floor,
+        rel_drop=params.coverage_rel_drop,
+    )
+    coverage_gaps, coverage_threshold = call_coverage_gaps(
+        result, params.window_size, coverage_params
+    )
+    flag_undercovered_regions(regions, coverage_threshold)
+    if coverage_gaps:
+        logger.info(
+            "Reference coverage: %d region(s) where the closest reference is below "
+            "%.3f -- a better reference may be missing.",
+            len(coverage_gaps), coverage_threshold,
+        )
+
     # Summary + regions go to the logger (so they reach the run log) and stdout.
     print_summary(analysis, echo=logger.info)
     print_regions(regions, major_parent, echo=logger.info)
+    print_coverage(coverage_gaps, coverage_threshold, echo=logger.info)
 
     provenance = {
         "recomfi version": __version__,
@@ -76,6 +97,7 @@ def run_recomb(params: RecombParams, logger: logging.Logger) -> None:
         "region min length / margin / merge gap":
             f"{region_params.min_region} / {region_params.margin} / {region_params.merge_gap}",
         "major parent": major_parent or "n/a",
+        "coverage threshold / gaps": f"{coverage_threshold:.3f} / {len(coverage_gaps)}",
     }
 
     output_dir = Path(params.output)
@@ -83,5 +105,6 @@ def run_recomb(params: RecombParams, logger: logging.Logger) -> None:
     write_reports(
         result, analysis, regions, per_window_winners, provenance, output_dir,
         top_n=params.top_n, plot_format=params.plot_format, logger=logger,
+        coverage_gaps=coverage_gaps, coverage_threshold=coverage_threshold,
     )
     logger.info("All done.")

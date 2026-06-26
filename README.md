@@ -112,6 +112,7 @@ Output files in the chosen directory:
 | `similarity_windows.tsv` | Full per-window matrix: `msa_position`, `query_position`, `winner`, and one similarity column per dataset |
 | `similarity_stats.tsv` | Per-dataset similarity statistics (median, windows above identity thresholds) |
 | `window_winners.tsv` | Per-dataset count of windows won (ties included) |
+| `coverage_gaps.tsv` | Stretches where even the closest reference is a poor match — possible missing references |
 | `similarity_top{N}.{fmt}` | Static plot of the nearest `--top-n` datasets, called regions shaded |
 | `similarity_pair.{fmt}` | Static plot of the major vs leading minor parent, region shaded |
 | `report.html` | Self-contained report: run provenance, the region table, the per-dataset stats, and an embedded interactive plot |
@@ -127,6 +128,38 @@ A plot is generated for the nearest datasets (`--top-n`, default 5), showing sim
 The pairwise plot shows the major parent against the leading minor parent:
 ![image](wiki/plot_x2.png) \
 **The two sequences most likely involved in the recombination, with the called region shaded.**
+
+# Is a reference missing?
+RecomFi always reports the *closest* reference, even when every reference is far
+from the query — so a recombinant whose true donor is not in the collection is
+still assigned to the least-bad reference. To catch this, the scan also reports
+**reference coverage**: stretches where even the closest reference is below a
+best-similarity threshold (adaptive by default, or set with `--coverage-floor`).
+These are written to `coverage_gaps.tsv`, shaded on the report, and flagged with a
+caveat banner; a region labelled `divergent` (ample comparable bases, yet a poor
+match) is the signature of an absent reference, as opposed to `low_information`
+(too few comparable bases to judge).
+
+When a gap is found, `recomfi find-references` searches NCBI for the missing
+genome: it BLASTs the under-covered query subsequence against `nt`, reports
+candidate references (accession, identity, whether already in your collection),
+and — with `--download` — fetches the best new one into a collection directory to
+re-run with.
+```
+recomfi find-references --msa msa.fasta --query cowpox_with_variolaInsert \
+    --collection collection/ --email you@example.org --download collection/
+```
+This contacts NCBI over the network; `--download` needs Entrez Direct
+(`conda install -c bioconda entrez-direct`).
+
+# Known limitations
+The region calling is a transparent heuristic, not a statistical test. In
+particular: overlapping windows (step < window) make the per-window series
+autocorrelated, so the window counts are not independent observations; the
+default `--margin 0.0` calls a region on any positive similarity difference (raise
+it to require a meaningful margin); and there is no significance test, null model
+or multiple-testing correction. Treat regions as candidates for follow-up with a
+dedicated method (3SEQ, RDP).
 
 # Development
 ```

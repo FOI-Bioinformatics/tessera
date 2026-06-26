@@ -19,6 +19,7 @@ from math import isnan
 from pathlib import Path
 
 from .analyze import AnalysisResult, rank_datasets, stats_sort_key, winner_label
+from .coverage import CoverageGap
 from .regions import Region
 from .similarity import WindowSimilarity
 
@@ -111,6 +112,29 @@ def print_regions(regions: list[Region], major_parent: str | None, echo=print) -
     echo("")
 
 
+COVERAGE_HEADER = [
+    "Best ref", "Query start", "Query end", "Length(bp)", "Windows", "Mean best", "Kind",
+]
+
+
+def print_coverage(gaps: list[CoverageGap], threshold: float, echo=print) -> None:
+    """Print under-covered regions (possible missing references), or a clear note."""
+    echo(f"Reference coverage (best-similarity threshold {threshold:.3f}):")
+    if not gaps:
+        echo("  no coverage gaps -- every region has a close reference")
+        echo("")
+        return
+    rows = [
+        (g.best_label, [g.query_start, g.query_end, g.length_bp, g.n_windows,
+                        g.mean_best, g.kind])
+        for g in gaps
+    ]
+    print_formatted_table(rows, header=COVERAGE_HEADER, echo=echo)
+    echo("  ^ the closest reference here is poor; the true source may be missing. "
+         "Run 'recomfi find-references' to search NCBI.")
+    echo("")
+
+
 # ---------------------------------------------------------------------------
 # TSV outputs
 # ---------------------------------------------------------------------------
@@ -175,6 +199,26 @@ def write_regions_tsv(regions: list[Region], output_dir: Path, logger: logging.L
                     r.mean_sim_minor, r.mean_sim_major, r.margin,
                 ])) + "\n"
             )
+
+
+def write_coverage_tsv(
+    gaps: list[CoverageGap], threshold: float, output_dir: Path, logger: logging.Logger
+) -> None:
+    """Write the under-covered regions (possible missing references)."""
+    path = output_dir / "coverage_gaps.tsv"
+    logger.info("Writing reference-coverage gaps: %s", path)
+    header = [
+        "msa_start", "msa_end", "query_start", "query_end", "length_bp",
+        "n_windows", "best_reference", "mean_best_similarity", "kind",
+    ]
+    with open(path, "w") as fo:
+        fo.write(f"# best-similarity threshold\t{threshold:.4f}\n")
+        fo.write("\t".join(header) + "\n")
+        for g in gaps:
+            fo.write("\t".join(map(str, [
+                g.msa_start, g.msa_end, g.query_start, g.query_end, g.length_bp,
+                g.n_windows, g.best_label, g.mean_best, g.kind,
+            ])) + "\n")
 
 
 # ---------------------------------------------------------------------------
@@ -301,7 +345,8 @@ def plot_pairwise(
 
 
 def build_interactive_figure(
-    result: WindowSimilarity, datasets: list[str], regions: list[Region]
+    result: WindowSimilarity, datasets: list[str], regions: list[Region],
+    coverage_gaps: list[CoverageGap] | None = None,
 ):
     """Plotly figure of the top-N similarities with called regions shaded."""
     import plotly.graph_objects as go
@@ -309,6 +354,13 @@ def build_interactive_figure(
     df = result.to_dataframe()
     colors = _color_map(datasets)
     fig = go.Figure()
+    for gap in coverage_gaps or []:
+        fig.add_vrect(
+            x0=gap.msa_start, x1=gap.msa_end,
+            fillcolor="#94a3b8", opacity=0.18, line_width=0, layer="below",
+            annotation_text="low coverage", annotation_position="bottom left",
+            annotation_font_size=10, annotation_font_color="#5b6573",
+        )
     seen: set[str] = set()
     for region in regions:
         color = colors.get(region.minor_parent, GREY)
@@ -380,8 +432,17 @@ header h1{font-size:30px;font-weight:600;margin:.35em 0 .55em;letter-spacing:-.0
   box-shadow:inset 0 1px 2px rgba(0,0,0,.05)}
 .mosaic .seg{position:absolute;top:0;bottom:0;min-width:1px;box-shadow:0 0 0 1px rgba(255,255,255,.25) inset}
 .mosaic .axis{display:flex;justify-content:space-between;margin-top:6px;font-family:var(--mono);font-size:11px;color:var(--faint)}
+.mosaic .gap{position:absolute;top:0;bottom:0;min-width:1px;border-left:1px solid #64748b;border-right:1px solid #64748b;
+  background:repeating-linear-gradient(45deg,rgba(100,116,139,.42) 0 4px,rgba(100,116,139,.14) 4px 8px)}
 .mosaic .legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:13px;font-size:13px}
 .mosaic .leg{display:inline-flex;align-items:center;color:var(--muted)}
+.mosaic .leg .hatch{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;
+  background:repeating-linear-gradient(45deg,#64748b 0 3px,#cbd5e1 3px 6px)}
+.caveat{display:flex;gap:11px;align-items:flex-start;background:#fff7ed;border:1px solid #fed7aa;
+  border-left:3px solid #dd6b20;border-radius:10px;padding:13px 16px;margin:20px 0 0;font-size:14px;color:#7c4a13;max-width:76ch}
+.caveat .ic{font-weight:700;color:#dd6b20;font-size:16px;line-height:1.3}
+.flag{display:inline-block;margin-left:7px;font-size:10.5px;color:#92600a;border:1px solid #e6c98a;
+  background:#fdf6e7;border-radius:4px;padding:0 5px;font-weight:600;letter-spacing:.02em;vertical-align:middle}
 .scroll{overflow-x:auto}
 table.table{border-collapse:collapse;width:100%;font-size:14px}
 table.table th{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);
@@ -498,7 +559,9 @@ def _cards_html(s: dict, colors: dict[str, str]) -> str:
     return f'<div class="cards">{items}</div>'
 
 
-def _mosaic_html(regions: list[Region], colors: dict[str, str], s: dict) -> str:
+def _mosaic_html(
+    regions: list[Region], colors: dict[str, str], s: dict, gaps: list[CoverageGap]
+) -> str:
     query_len = s["query_len"] or 1
     backbone = colors.get(s["major"], GREY)
     segs = "".join(
@@ -509,6 +572,13 @@ def _mosaic_html(regions: list[Region], colors: dict[str, str], s: dict) -> str:
         f'{_fmt_int(r.query_start)}-{_fmt_int(r.query_end)} bp"></div>'
         for r in regions
     )
+    segs += "".join(
+        f'<div class="gap" style="left:{100.0 * g.query_start / query_len:.3f}%;'
+        f'width:{100.0 * max(0, g.query_end - g.query_start) / query_len:.3f}%" '
+        f'title="low coverage ({g.kind}): closest reference {html.escape(g.best_label)} '
+        f'~{g.mean_best:.2f}"></div>'
+        for g in gaps
+    )
     axis = "".join(
         f"<span>{_fmt_kb(frac * query_len)}</span>" for frac in (0, 0.25, 0.5, 0.75, 1.0)
     )
@@ -517,11 +587,14 @@ def _mosaic_html(regions: list[Region], colors: dict[str, str], s: dict) -> str:
         f'<span class="leg">{_swatch(colors.get(m, GREY))}{html.escape(m)} (donor)</span>'
         for m in s["minors"]
     )
+    if gaps:
+        legend += '<span class="leg"><span class="hatch"></span>low coverage</span>'
     return (
         f'<div class="mosaic"><div class="track" style="--bb:{backbone}">{segs}</div>'
         f'<div class="axis">{axis}</div><div class="legend">{legend}</div>'
         f'<p class="cap">The query genome painted by its closest reference per window: solid '
-        f'backbone is the major parent; coloured segments are donor regions in query coordinates.</p></div>'
+        f'backbone is the major parent; coloured segments are donor regions; hatched bands are '
+        f'low-coverage stretches where even the closest reference is a poor match.</p></div>'
     )
 
 
@@ -538,9 +611,11 @@ def _regions_html(regions: list[Region], colors: dict[str, str], query_len: int)
         qlen = max(0, r.query_end - r.query_start)
         pct = (100.0 * qlen / query_len) if query_len else 0.0
         swatch = _swatch(colors.get(r.minor_parent, GREY))
+        flag = '<span class="flag" title="donor is itself a poor match">low conf</span>' \
+            if r.donor_undercovered else ""
         rows += (
             "<tr>"
-            f'<td class="lbl">{swatch}{html.escape(r.minor_parent)}</td>'
+            f'<td class="lbl">{swatch}{html.escape(r.minor_parent)}{flag}</td>'
             f'<td class="lbl">{html.escape(r.major_parent)}</td>'
             f'<td class="num">{_fmt_int(r.query_start)}&ndash;{_fmt_int(r.query_end)}</td>'
             f'<td class="num">{_fmt_kb(qlen)}</td>'
@@ -614,8 +689,9 @@ def _methods_html(provenance: dict[str, str]) -> str:
     return (
         '<details class="methods"><summary>Methods &amp; glossary</summary>'
         '<p class="cap">RecomFi is a fast heuristic screen for recombination, not a '
-        'statistical significance test (e.g. 3SEQ, RDP). Treat called regions as candidates '
-        'for follow-up.</p>'
+        'statistical significance test (e.g. 3SEQ, RDP). Overlapping windows make the '
+        'window counts non-independent, and the default margin calls a region on any positive '
+        'difference; treat called regions as candidates for follow-up.</p>'
         f'<dl class="glossary">{glossary}</dl>'
         f'<h3>Run parameters</h3><table class="kv">{params}</table></details>'
     )
@@ -623,8 +699,9 @@ def _methods_html(provenance: dict[str, str]) -> str:
 
 def _footer_html(provenance: dict[str, str]) -> str:
     files = [
-        "recombination_regions.tsv", "window_winners.tsv", "similarity_stats.tsv",
-        "similarity_windows.tsv", "similarity_top*.pdf", "similarity_pair.pdf",
+        "recombination_regions.tsv", "coverage_gaps.tsv", "window_winners.tsv",
+        "similarity_stats.tsv", "similarity_windows.tsv",
+        "similarity_top*.pdf", "similarity_pair.pdf",
     ]
     flist = ", ".join(f"<code>{f}</code>" for f in files)
     ver = html.escape(provenance.get("recomfi version", ""))
@@ -636,6 +713,51 @@ def _footer_html(provenance: dict[str, str]) -> str:
     )
 
 
+def _caveat_html(gaps: list[CoverageGap], threshold: float) -> str:
+    if not gaps:
+        return ""
+    n = len(gaps)
+    word = "region" if n == 1 else "regions"
+    return (
+        f'<div class="caveat"><span class="ic">&#9888;</span><div>'
+        f'<strong>Possible missing reference.</strong> In {n} {word} the closest reference '
+        f'is below <span class="mono">{threshold:.2f}</span> similarity &mdash; the query\'s '
+        f'true source there may not be in the collection. See <em>Reference coverage</em> '
+        f'below, or run <span class="mono">recomfi find-references</span> to search NCBI.</div></div>'
+    )
+
+
+def _coverage_html(gaps: list[CoverageGap], threshold: float) -> str:
+    intro = (
+        f'<p class="cap">Stretches where even the closest reference is below the '
+        f'<span class="mono">{threshold:.3f}</span> best-similarity threshold. '
+        f'<strong>divergent</strong> = the query is genuinely far from every reference '
+        f'(a likely missing reference); <strong>low information</strong> = too few comparable '
+        f'bases to judge.</p>'
+    )
+    if not gaps:
+        return (
+            '<p class="cap">Every region has a close reference &mdash; no coverage gaps at the '
+            f'<span class="mono">{threshold:.3f}</span> threshold.</p>'
+        )
+    head = (
+        "<tr><th>Closest reference</th><th>Query span (bp)</th><th>Length</th>"
+        "<th>Windows</th><th>Mean best sim</th><th>Kind</th></tr>"
+    )
+    rows = "".join(
+        "<tr>"
+        f'<td class="lbl">{html.escape(g.best_label)}</td>'
+        f'<td class="num">{_fmt_int(g.query_start)}&ndash;{_fmt_int(g.query_end)}</td>'
+        f'<td class="num">{_fmt_kb(g.length_bp)}</td>'
+        f'<td class="num">{_fmt_int(g.n_windows)}</td>'
+        f'<td class="num strong">{g.mean_best:.3f}</td>'
+        f'<td class="lbl">{html.escape(g.kind.replace("_", " "))}</td>'
+        "</tr>"
+        for g in gaps
+    )
+    return f'{intro}<div class="scroll"><table class="table">{head}{rows}</table></div>'
+
+
 def write_html_report(
     result: WindowSimilarity,
     analysis: AnalysisResult,
@@ -644,9 +766,12 @@ def write_html_report(
     provenance: dict[str, str],
     output_dir: Path,
     logger: logging.Logger,
+    coverage_gaps: list[CoverageGap] | None = None,
+    coverage_threshold: float = 0.0,
 ) -> Path:
     """Write a single self-contained ``report.html``."""
-    fig = build_interactive_figure(result, datasets, regions)
+    gaps = coverage_gaps or []
+    fig = build_interactive_figure(result, datasets, regions, gaps)
     plot_div = fig.to_html(full_html=False, include_plotlyjs="inline")
 
     colors = _color_map(datasets)
@@ -660,15 +785,19 @@ def write_html_report(
         f"<style>{_CSS}</style></head><body><div class=\"wrap\">"
         '<header><div class="eyebrow">RecomFi &middot; recombination report</div>'
         f'<h1 class="mono">{html.escape(result.query)}</h1>'
-        f"{_verdict_html(s, result.query, colors)}</header>"
+        f"{_verdict_html(s, result.query, colors)}"
+        f"{_caveat_html(gaps, coverage_threshold)}</header>"
         f"{_cards_html(s, colors)}"
         '<section class="section"><div class="eyebrow">Query mosaic</div>'
-        f"{_mosaic_html(regions, colors, s)}</section>"
+        f"{_mosaic_html(regions, colors, s, gaps)}</section>"
         '<section class="section"><div class="eyebrow">Recombinant regions</div>'
         f'{_regions_html(regions, colors, s["query_len"])}</section>'
+        '<section class="section"><div class="eyebrow">Reference coverage</div>'
+        f"{_coverage_html(gaps, coverage_threshold)}</section>"
         '<section class="section"><div class="eyebrow">Similarity across the alignment</div>'
         '<p class="cap">Each line is one reference\'s similarity to the query along the '
-        'alignment; shaded bands are called donor regions. Drag to zoom, hover for values.</p>'
+        'alignment; coloured bands are called donor regions, hatched bands are low-coverage '
+        'stretches. Drag to zoom, hover for values.</p>'
         f"{plot_div}</section>"
         '<section class="section"><div class="eyebrow">Window winners</div>'
         '<p class="cap">Windows in which each reference is the query\'s closest match '
@@ -700,14 +829,18 @@ def write_reports(
     top_n: int,
     plot_format: str,
     logger: logging.Logger,
+    coverage_gaps: list[CoverageGap] | None = None,
+    coverage_threshold: float = 0.0,
 ) -> None:
     """Write every table, plot and the HTML report for a completed scan."""
     output_dir.mkdir(parents=True, exist_ok=True)
+    gaps = coverage_gaps or []
 
     write_windows_tsv(result, per_window_winners, output_dir, logger)
     write_stats_tsv(analysis, output_dir, logger)
     write_winners_tsv(analysis, output_dir, logger)
     write_regions_tsv(regions, output_dir, logger)
+    write_coverage_tsv(gaps, coverage_threshold, output_dir, logger)
 
     top_datasets = rank_datasets(analysis, top_n)
     logger.info("Top %d nearest datasets: %s", len(top_datasets), ", ".join(top_datasets))
@@ -716,4 +849,7 @@ def write_reports(
     pair = rank_datasets(analysis, 2)
     plot_pairwise(result, pair, regions, output_dir, plot_format, logger)
 
-    write_html_report(result, analysis, regions, top_datasets, provenance, output_dir, logger)
+    write_html_report(
+        result, analysis, regions, top_datasets, provenance, output_dir, logger,
+        coverage_gaps=gaps, coverage_threshold=coverage_threshold,
+    )
