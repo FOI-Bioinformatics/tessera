@@ -2,6 +2,8 @@
 wiki/
 example_data/
 README.md
+validation/data/
+.DS_Store
 
 ### Python template
 # Byte-compiled / optimized / DLL files

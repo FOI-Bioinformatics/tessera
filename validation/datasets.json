@@ -1,0 +1,99 @@
+{
+  "_comment": [
+    "Validation datasets for RecomFi. 'orthopox_example' uses the bundled",
+    "example_data and runs out of the box. The fetch-based datasets are",
+    "downloaded by validation/fetch.py from the listed NCBI accessions.",
+    "Accessions marked TODO must be confirmed before enabling the dataset",
+    "(set enabled=true). See validation/README.md for provenance notes."
+  ],
+  "datasets": [
+    {
+      "name": "orthopox_example",
+      "enabled": true,
+      "description": "Orthopoxvirus: 8-contig synthetic cowpox query carrying a variola insert.",
+      "query": "example_data/cowpox_with_variolaInsert.fasta.gz",
+      "query_label": "cowpox_with_variolaInsert",
+      "collection": "example_data/collection",
+      "aligner": "minimap2",
+      "reference": "cowpox_KC813504",
+      "threads": 4,
+      "recomb": {"window_size": 1000, "window_step": 100},
+      "expected": {
+        "major_parent": "cowpox_KC813504",
+        "region_minor_any": ["variola"],
+        "min_regions": 1
+      },
+      "provenance": "NCBI: camelpox NC_003391, cowpox_KC813504 KC813504.1, cowpox NC_003663, monkeypox NC_063383, taterapox NC_008291, vaccinia NC_006998, variola NC_001611. sibeliaz OOMs on these large collinear blocks on a typical laptop; minimap2 (the assembly-to-reference backend) is the practical choice for this fragmented query."
+    },
+    {
+      "name": "sarscov2_xbb",
+      "enabled": true,
+      "description": "SARS-CoV-2 XBB: recombinant of BA.2.10.1 (5') and BA.2.75 (3'), breakpoint in spike.",
+      "aligner": "minimap2",
+      "reference": "Wuhan-Hu-1",
+      "threads": 4,
+      "recomb": {"window_size": 500, "window_step": 50},
+      "fetch": {
+        "query": {"accession": "OQ075387", "label": "XBB"},
+        "collection": [
+          {"accession": "OR324670", "label": "BA.2.10.1"},
+          {"accession": "OQ326841", "label": "BA.2.75"},
+          {"accession": "NC_045512.2", "label": "Wuhan-Hu-1"}
+        ]
+      },
+      "expected": {
+        "major_parent": "BA.2.10.1",
+        "region_minor_any": ["BA.2.75"],
+        "min_regions": 1,
+        "breakpoint": {"coord": "query", "lo": 21000, "hi": 24000}
+      },
+      "provenance": "XBB query OQ075387 (NCBI: SARS-CoV-2/human/BGD/icddrb-TND-06-1082/2022, XBB; Bangladesh study PMC10019308). BA.2.75 parent OQ326841 (UT-NCD1757, characterised BA.2.75; PMC10035475). Wuhan-Hu-1 NC_045512.2 (coordinate anchor). BA.2.10.1 parent OR324670 was matched by NCBI text search for 'BA.2.10.1 complete genome' -- confirm its Pango lineage (e.g. via Nextclade) before trusting it. XBB's breakpoint sits in the spike region (~genome nt 22.9 kb)."
+    },
+    {
+      "name": "hiv1_crf",
+      "enabled": true,
+      "description": "HIV-1 CRF01_AE (CM240) recombinant vs pure subtype reference genomes.",
+      "aligner": "mafft",
+      "reference": "B_HXB2",
+      "threads": 4,
+      "recomb": {"window_size": 400, "window_step": 40},
+      "fetch": {
+        "query": {"accession": "U54771", "label": "CRF01_AE"},
+        "collection": [
+          {"accession": "K03455", "label": "B_HXB2"},
+          {"accession": "U51190", "label": "A1"},
+          {"accession": "U46016", "label": "C"},
+          {"accession": "K03454", "label": "D"}
+        ]
+      },
+      "expected": {
+        "major_parent": "A1",
+        "min_regions": 1
+      },
+      "provenance": "All accessions confirmed on NCBI nuccore. Query CRF01_AE = CM240 U54771 (9203 bp). Pure subtype references: B = HXB2 K03455 (coordinate standard, 9719 bp), A1 = 92UG037 U51190, C = U46016, D = ELI K03454. CRF01_AE is a subtype-A-dominant mosaic with an E-like env; against pure subtypes the major parent should resolve to A1, with the divergent env region distinguishable. Subtype reference set from the Los Alamos HIV compendium."
+    },
+    {
+      "name": "norovirus_gii",
+      "enabled": true,
+      "description": "Norovirus GII.P16-GII.1 recombinant: ORF1 (P16 polymerase) vs ORF2/3 (GII.1 capsid).",
+      "aligner": "mafft",
+      "reference": "GII.P16-GII.4",
+      "threads": 4,
+      "recomb": {"window_size": 300, "window_step": 30},
+      "fetch": {
+        "query": {"accession": "MG572182", "label": "GII.P16-GII.1"},
+        "collection": [
+          {"accession": "MK773584", "label": "GII.P16-GII.4"},
+          {"accession": "U07611", "label": "GII.1_Hawaii"}
+        ]
+      },
+      "expected": {
+        "major_parent": "GII.P16-GII.4",
+        "region_minor_any": ["GII.1_Hawaii"],
+        "min_regions": 1,
+        "breakpoint": {"coord": "query", "lo": 4800, "hi": 5300}
+      },
+      "provenance": "All accessions confirmed on NCBI nuccore. Query MG572182 (Norovirus GII isolate SDJN170450, the GII.P16-GII.1 recombinant; PMC5805878, 7518 bp). Polymerase (ORF1, ~nt 1-5.1 kb) matches a GII.P16 strain -> MK773584 (GII.P16-GII.4 Sydney, 7559 bp); capsid (ORF2/3) matches GII.1 -> U07611 (Hawaii calicivirus, GII.1, 7513 bp). Breakpoint at the ORF1/ORF2 junction (~nt 5.0 kb)."
+    }
+  ]
+}
