@@ -12,6 +12,7 @@ Entrez Direct, and it contacts NCBI over the network.
 
 from __future__ import annotations
 
+import html
 import logging
 import shutil
 from dataclasses import dataclass, field
@@ -151,6 +152,7 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
         logger.info("Reached the maximum of %d round(s).", params.max_rounds)
 
     _write_trace(params.output, trace, logger)
+    final_size = sum(1 for _ in collection.iterdir())
     if last_msa is not None:
         logger.info("Writing the final report for the expanded collection...")
         run_recomb(
@@ -160,10 +162,37 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
                 coverage_floor=params.coverage_floor, coverage_rel_drop=params.coverage_rel_drop,
             ),
             logger,
+            extra_sections=[("Reference recovery", _progress_section(trace, final_size))],
         )
-    logger.info("Final collection (%d references): %s",
-                sum(1 for _ in collection.iterdir()), collection)
+    logger.info("Final collection (%d references): %s", final_size, collection)
     return trace
+
+
+def _progress_section(trace: list[RoundResult], final_size: int) -> str:
+    """An HTML block summarising each fill round, for the report."""
+    rows = ""
+    for r in trace:
+        added = ", ".join(html.escape(a) for a in r.added) if r.added else "&mdash;"
+        rows += (
+            "<tr>"
+            f'<td class="num">{r.round}</td>'
+            f'<td class="num">{r.n_gaps}</td>'
+            f'<td class="num">{r.undercovered_bp:,} bp</td>'
+            f'<td class="num strong">{r.worst_best_sim:.3f}</td>'
+            f'<td class="lbl">{added}</td>'
+            "</tr>"
+        )
+    head = (
+        "<tr><th>Round</th><th>Gaps</th><th>Under-covered</th>"
+        "<th>Worst best sim</th><th>References added</th></tr>"
+    )
+    cap = (
+        '<p class="cap">Each round rebuilt the alignment from the growing collection, '
+        'searched the worst gaps on NCBI, and added the best new reference per gap &mdash; '
+        f'ending with {final_size} references. The run stops when the gaps close, no new '
+        'reference is found, or a round no longer improves the worst gap.</p>'
+    )
+    return f'{cap}<div class="scroll"><table class="table">{head}{rows}</table></div>'
 
 
 def _write_trace(output: Path, trace: list[RoundResult], logger: logging.Logger) -> None:

@@ -36,7 +36,7 @@ def _common_mocks(monkeypatch, coverage_returns):
     monkeypatch.setattr(iterate, "build_msa", lambda p, logger: p.output.write_text(">q\nACGT\n"))
     monkeypatch.setattr(iterate, "compute_similarity", lambda *a, **k: _StubResult())
     monkeypatch.setattr(iterate, "read_fasta", lambda path: [("q", "ACGT" * 100)])
-    monkeypatch.setattr(iterate, "run_recomb", lambda p, logger: None)
+    monkeypatch.setattr(iterate, "run_recomb", lambda p, logger, **kw: None)
     returns = list(coverage_returns)
     monkeypatch.setattr(iterate, "call_coverage_gaps", lambda *a, **k: returns.pop(0))
 

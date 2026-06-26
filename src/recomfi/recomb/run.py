@@ -35,8 +35,16 @@ class RecombParams:
     coverage_rel_drop: float = 0.05
 
 
-def run_recomb(params: RecombParams, logger: logging.Logger) -> None:
-    """Run the full recombination scan described by ``params``."""
+def run_recomb(
+    params: RecombParams,
+    logger: logging.Logger,
+    extra_sections: list[tuple[str, str]] | None = None,
+) -> None:
+    """Run the full recombination scan described by ``params``.
+
+    ``extra_sections`` are ``(title, html)`` blocks inserted into the HTML report
+    after the coverage section -- used by ``fill-references`` to show its rounds.
+    """
     query_label = strip_sequence_extension(params.query)
 
     logger.info(
@@ -106,5 +114,6 @@ def run_recomb(params: RecombParams, logger: logging.Logger) -> None:
         result, analysis, regions, per_window_winners, provenance, output_dir,
         top_n=params.top_n, plot_format=params.plot_format, logger=logger,
         coverage_gaps=coverage_gaps, coverage_threshold=coverage_threshold,
+        extra_sections=extra_sections,
     )
     logger.info("All done.")

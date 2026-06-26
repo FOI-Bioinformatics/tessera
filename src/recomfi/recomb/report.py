@@ -775,6 +775,7 @@ def write_html_report(
     logger: logging.Logger,
     coverage_gaps: list[CoverageGap] | None = None,
     coverage_threshold: float = 0.0,
+    extra_sections: list[tuple[str, str]] | None = None,
 ) -> Path:
     """Write a single self-contained ``report.html``."""
     gaps = coverage_gaps or []
@@ -783,6 +784,10 @@ def write_html_report(
 
     colors = _color_map(datasets)
     s = _summary(result, regions, datasets)
+    extras = "".join(
+        f'<section class="section"><div class="eyebrow">{html.escape(title)}</div>{body}</section>'
+        for title, body in (extra_sections or [])
+    )
 
     doc = (
         '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">\n'
@@ -801,6 +806,7 @@ def write_html_report(
         f'{_regions_html(regions, colors, s["query_len"])}</section>'
         '<section class="section"><div class="eyebrow">Reference coverage</div>'
         f"{_coverage_html(gaps, coverage_threshold)}</section>"
+        f"{extras}"
         '<section class="section"><div class="eyebrow">Similarity across the alignment</div>'
         '<p class="cap">Each line is one reference\'s similarity to the query along the '
         'alignment; coloured bands are called donor regions, hatched bands are low-coverage '
@@ -838,6 +844,7 @@ def write_reports(
     logger: logging.Logger,
     coverage_gaps: list[CoverageGap] | None = None,
     coverage_threshold: float = 0.0,
+    extra_sections: list[tuple[str, str]] | None = None,
 ) -> None:
     """Write every table, plot and the HTML report for a completed scan."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -859,4 +866,5 @@ def write_reports(
     write_html_report(
         result, analysis, regions, top_datasets, provenance, output_dir, logger,
         coverage_gaps=gaps, coverage_threshold=coverage_threshold,
+        extra_sections=extra_sections,
     )
