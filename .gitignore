@@ -3,6 +3,7 @@ wiki/
 example_data/
 README.md
 validation/data/
+reports/
 .DS_Store
 
 ### Python template
