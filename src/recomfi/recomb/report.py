@@ -197,7 +197,8 @@ def write_regions_tsv(regions: list[Region], output_dir: Path, logger: logging.L
         "minor_parent", "major_parent", "msa_start", "msa_end",
         "query_start", "query_end", "length_bp", "n_windows",
         "mean_sim_minor", "mean_sim_major", "margin",
-        "support", "posterior", "breakpoint_lo", "breakpoint_hi", "donor_undercovered",
+        "support", "posterior", "breakpoint_lo", "breakpoint_hi",
+        "donor_undercovered", "donor_absent",
     ]
     with open(path, "w") as fo:
         fo.write("\t".join(header) + "\n")
@@ -212,6 +213,7 @@ def write_regions_tsv(regions: list[Region], output_dir: Path, logger: logging.L
                     "NA" if r.breakpoint_lo is None else r.breakpoint_lo,
                     "NA" if r.breakpoint_hi is None else r.breakpoint_hi,
                     "yes" if r.donor_undercovered else "no",
+                    "yes" if r.donor_absent else "no",
                 ])) + "\n"
             )
 
@@ -429,6 +431,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
 .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
 .eyebrow{font-size:11px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
 .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;flex:none}
+.sw.hatch{background:repeating-linear-gradient(45deg,#64748b 0 3px,#cbd5e1 3px 6px)}
 header{border-bottom:1px solid var(--line);padding-bottom:26px;margin-bottom:30px}
 header h1{font-size:30px;font-weight:600;margin:.35em 0 .55em;letter-spacing:-.01em;word-break:break-word}
 .verdict{font-size:19px;line-height:1.5;margin:0;max-width:76ch}
@@ -524,24 +527,36 @@ def _summary(
         major = datasets[0]
     else:
         major = "n/a"
-    recomb_bp = sum(max(0, r.query_end - r.query_start) for r in regions)
+    present = [r for r in regions if not r.donor_absent]
+    absent = [r for r in regions if r.donor_absent]
+    recomb_bp = sum(max(0, r.query_end - r.query_start) for r in present)
     minors: list[str] = []
-    for r in regions:
+    for r in present:
         if r.minor_parent not in minors:
             minors.append(r.minor_parent)
     return {
-        "query_len": query_len, "major": major, "n_regions": len(regions),
+        "query_len": query_len, "major": major,
+        "n_regions": len(present), "n_absent": len(absent),
         "recomb_bp": recomb_bp,
         "pct": (100.0 * recomb_bp / query_len) if query_len else 0.0,
         "minors": minors,
     }
 
 
+def _absent_clause(s: dict) -> str:
+    if not s["n_absent"]:
+        return ""
+    word = "region" if s["n_absent"] == 1 else "regions"
+    return (f' {s["n_absent"]} further {word} diverge from every reference &mdash; a '
+            f'<strong>donor may be missing</strong> (see Reference coverage).')
+
+
 def _verdict_html(s: dict, query: str, colors: dict[str, str]) -> str:
     major = html.escape(s["major"])
     if s["n_regions"] == 0:
-        return (f'<p class="verdict">No recombination detected &mdash; the query is most '
-                f'similar to <strong>{major}</strong> across the whole alignment.</p>')
+        lead = (f'No recombination among the present references &mdash; the query is most '
+                f'similar to <strong>{major}</strong> throughout.')
+        return f'<p class="verdict">{lead}{_absent_clause(s)}</p>'
     donors = ", ".join(
         f'{_swatch(colors.get(m, GREY))}<strong>{html.escape(m)}</strong>' for m in s["minors"]
     )
@@ -550,7 +565,7 @@ def _verdict_html(s: dict, query: str, colors: dict[str, str]) -> str:
         f'<p class="verdict">The query is a <strong>recombinant</strong>: a '
         f'<strong>{major}</strong> backbone carrying {s["n_regions"]} donor {word} from '
         f'{donors}, covering <span class="mono">{_fmt_kb(s["recomb_bp"])}</span> '
-        f'(<span class="mono">{s["pct"]:.1f}%</span>) of the query.</p>'
+        f'(<span class="mono">{s["pct"]:.1f}%</span>) of the query.{_absent_clause(s)}</p>'
     )
 
 
@@ -558,8 +573,11 @@ def _cards_html(s: dict, colors: dict[str, str]) -> str:
     donors = "".join(
         f'{_swatch(colors.get(m, GREY))}{html.escape(m)} ' for m in s["minors"]
     ) or "&mdash;"
+    regions_val = f'<span class="big">{s["n_regions"]}</span>'
+    if s["n_absent"]:
+        regions_val += f'<span class="sub">&nbsp;+{s["n_absent"]} donor-absent</span>'
     cards = [
-        ("Recombinant regions", f'<span class="big">{s["n_regions"]}</span>'),
+        ("Recombinant regions", regions_val),
         ("Backbone &middot; major parent",
          f'{_swatch(colors.get(s["major"], GREY))}{html.escape(s["major"])}'),
         ("Donor &middot; minor parent", donors),
@@ -585,7 +603,7 @@ def _mosaic_html(
         f'background:{colors.get(r.minor_parent, GREY)}" '
         f'title="{html.escape(r.minor_parent)}: '
         f'{_fmt_int(r.query_start)}-{_fmt_int(r.query_end)} bp"></div>'
-        for r in regions
+        for r in regions if not r.donor_absent  # absent-donor regions show as gaps
     )
     segs += "".join(
         f'<div class="gap" style="left:{100.0 * g.query_start / query_len:.3f}%;'
@@ -625,9 +643,16 @@ def _regions_html(regions: list[Region], colors: dict[str, str], query_len: int)
     for r in regions:
         qlen = max(0, r.query_end - r.query_start)
         pct = (100.0 * qlen / query_len) if query_len else 0.0
-        swatch = _swatch(colors.get(r.minor_parent, GREY))
-        flag = '<span class="flag" title="donor is itself a poor match">low conf</span>' \
-            if r.donor_undercovered else ""
+        if r.donor_absent:
+            swatch = '<span class="sw hatch"></span>'
+            donor = '<em>missing</em>'
+            flag = ('<span class="flag" title="query is far from every reference here; '
+                    'the true donor is likely absent">donor absent</span>')
+        else:
+            swatch = _swatch(colors.get(r.minor_parent, GREY))
+            donor = html.escape(r.minor_parent)
+            flag = ('<span class="flag" title="donor is itself a poor match">low conf</span>'
+                    if r.donor_undercovered else "")
         support = "&ndash;" if r.support is None else f"{r.support:.2f}"
         if r.breakpoint_lo is None:
             bp = "&ndash;"
@@ -637,7 +662,7 @@ def _regions_html(regions: list[Region], colors: dict[str, str], query_len: int)
             bp = f"{_fmt_int(r.breakpoint_lo)}&ndash;{_fmt_int(r.breakpoint_hi)}"
         rows += (
             "<tr>"
-            f'<td class="lbl">{swatch}{html.escape(r.minor_parent)}{flag}</td>'
+            f'<td class="lbl">{swatch}{donor}{flag}</td>'
             f'<td class="lbl">{html.escape(r.major_parent)}</td>'
             f'<td class="num">{_fmt_int(r.query_start)}&ndash;{_fmt_int(r.query_end)}</td>'
             f'<td class="num">{_fmt_kb(qlen)}</td>'

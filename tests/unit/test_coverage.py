@@ -5,9 +5,11 @@ from __future__ import annotations
 import numpy as np
 
 from recomfi.recomb.coverage import (
+    CoverageGap,
     CoverageParams,
     call_coverage_gaps,
     flag_undercovered_regions,
+    gaps_as_regions,
 )
 from recomfi.recomb.regions import Region
 from recomfi.recomb.similarity import WindowSimilarity
@@ -85,6 +87,29 @@ def test_absolute_floor_overrides_adaptive():
     )
     assert thr_floor == 0.95
     assert len(flagged) == 1  # all six windows now under the 0.95 floor -> one gap
+
+
+def test_gaps_as_regions_bridges_divergent_only():
+    # a divergent gap becomes a donor-absent region; a low-information gap does not
+    n, window = 10, 100
+    width = n * window
+    positions = [i * window + window // 2 for i in range(n)]
+    result = WindowSimilarity(
+        positions=positions, query_positions=positions,
+        similarities={"major": [0.95] * n}, query="q", width=width,
+        query_cumulative=np.arange(width + 1),
+    )
+    divergent = CoverageGap(400, 700, 400, 700, 300, 3, "refX", 0.82, "divergent")
+    low_info = CoverageGap(800, 900, 800, 900, 100, 1, "refY", 0.80, "low_information")
+
+    regions = gaps_as_regions([divergent, low_info], result, "major")
+    assert len(regions) == 1
+    r = regions[0]
+    assert r.donor_absent is True
+    assert r.donor_undercovered is True
+    assert r.minor_parent == "refX"  # the closest (still poor) present reference
+    assert r.major_parent == "major"
+    assert (r.query_start, r.query_end) == (400, 700)
 
 
 def test_flag_undercovered_regions():

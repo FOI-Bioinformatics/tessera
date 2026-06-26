@@ -68,9 +68,9 @@
       },
       "expected": {
         "major_parent": "A1",
-        "min_regions": 0
+        "min_regions": 1
       },
-      "provenance": "All accessions confirmed on NCBI nuccore. Query CRF01_AE = CM240 U54771 (9203 bp). Pure subtype references: B = HXB2 K03455 (coordinate standard, 9719 bp), A1 = 92UG037 U51190, C = U46016, D = ELI K03454. CRF01_AE is a subtype-A-dominant mosaic with an E-like env. With the HMM caller the major parent resolves to A1 and NO recombinant region is called against the pure subtypes -- correctly, because the true env donor (subtype E / CRF01_AE) is absent: the env divergence is reported as a reference-coverage gap (run find-references), not fabricated as a recombination among A1/B/C/D. The old heuristic hallucinated ~6 low-margin regions here."
+      "provenance": "All accessions confirmed on NCBI nuccore. Query CRF01_AE = CM240 U54771 (9203 bp). Pure subtype references: B = HXB2 K03455 (coordinate standard, 9719 bp), A1 = 92UG037 U51190, C = U46016, D = ELI K03454. CRF01_AE is a subtype-A-dominant mosaic with an E-like env. The major parent resolves to A1 and NO confident donor-present region is called against the pure subtypes -- correctly, since the true env donor (subtype E / CRF01_AE) is absent. Instead the env (and gag) are reported as DONOR-ABSENT regions (the query is locally far from every reference: a recombination whose source is missing from the collection -- run find-references). The old heuristic hallucinated ~6 low-margin regions here."
     },
     {
       "name": "norovirus_gii",

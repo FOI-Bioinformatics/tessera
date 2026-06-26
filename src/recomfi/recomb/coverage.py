@@ -146,3 +146,37 @@ def flag_undercovered_regions(regions: list[Region], threshold: float) -> None:
         r.donor_undercovered = (
             not isnan(r.mean_sim_minor) and r.mean_sim_minor < threshold
         )
+
+
+def gaps_as_regions(
+    gaps: list[CoverageGap], result: WindowSimilarity, major: str | None
+) -> list[Region]:
+    """Turn ``divergent`` coverage gaps into 'donor-absent' putative recombinations.
+
+    A gap where the query is locally far from *every* reference -- including its
+    own major parent -- is a recombination signature whose donor is missing from
+    the collection (e.g. the HIV CRF01_AE env, which has no pure subtype-E
+    reference). ``low_information`` gaps carry too little evidence and are skipped.
+    """
+    out: list[Region] = []
+    for g in gaps:
+        if g.kind != "divergent":
+            continue
+        idx = [i for i, pos in enumerate(result.positions)
+               if g.msa_start <= pos <= g.msa_end]
+        major_sims = (
+            [result.similarities[major][i] for i in idx
+             if not isnan(result.similarities[major][i])]
+            if major and major in result.similarities else []
+        )
+        mean_major = round(mean(major_sims), 4) if major_sims else float("nan")
+        margin = round(g.mean_best - mean_major, 4) if not isnan(mean_major) else float("nan")
+        out.append(Region(
+            minor_parent=g.best_label, major_parent=major or "n/a",
+            msa_start=g.msa_start, msa_end=g.msa_end,
+            query_start=g.query_start, query_end=g.query_end,
+            length_bp=g.length_bp, n_windows=g.n_windows,
+            mean_sim_minor=g.mean_best, mean_sim_major=mean_major, margin=margin,
+            donor_undercovered=True, donor_absent=True,
+        ))
+    return out

@@ -84,11 +84,14 @@ class Region:
     posterior_support: float = 1.0
     breakpoint_lo: int | None = None
     breakpoint_hi: int | None = None
-    # Bootstrap support (Bootscan-style): fraction of resamples keeping this donor.
+    # Share of distinguishing (discordant) sites that favour the donor.
     support: float | None = None
     # Set by coverage analysis: the donor's own similarity is poor, so it may be a
     # stand-in for an absent true donor. Default False (not yet evaluated).
     donor_undercovered: bool = False
+    # A putative recombination where the query is locally far from EVERY reference:
+    # the true donor is likely missing from the collection (bridged from a gap).
+    donor_absent: bool = False
 
 
 @dataclass

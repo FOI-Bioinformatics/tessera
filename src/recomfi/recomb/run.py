@@ -10,7 +10,12 @@ from pathlib import Path
 from .. import __version__
 from ..core.io import strip_sequence_extension
 from .analyze import analyze, winners_per_window
-from .coverage import CoverageParams, call_coverage_gaps, flag_undercovered_regions
+from .coverage import (
+    CoverageParams,
+    call_coverage_gaps,
+    flag_undercovered_regions,
+    gaps_as_regions,
+)
 from .hmm import DEFAULT_JUMP_RATE
 from .regions import RegionParams, call_regions
 from .report import print_coverage, print_regions, print_summary, write_reports
@@ -96,6 +101,18 @@ def run_recomb(
             "%.3f -- a better reference may be missing.",
             len(coverage_gaps), coverage_threshold,
         )
+
+    # Bridge: a divergent coverage gap (query far from every reference) is a
+    # putative recombination whose donor is absent from the collection. Report
+    # those that a confident donor-present region does not already cover.
+    absent = [
+        r for r in gaps_as_regions(coverage_gaps, result, major_parent)
+        if not any(r.msa_start < p.msa_end and p.msa_start < r.msa_end for p in regions)
+    ]
+    regions = sorted(regions + absent, key=lambda r: r.msa_start)
+    if absent:
+        logger.info("Added %d donor-absent region(s) (likely a missing reference).",
+                    len(absent))
 
     # Summary + regions go to the logger (so they reach the run log) and stdout.
     print_summary(analysis, echo=logger.info)
