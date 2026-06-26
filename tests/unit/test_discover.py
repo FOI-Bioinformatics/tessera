@@ -123,6 +123,33 @@ def test_no_gap_means_no_blast(monkeypatch, tmp_path, logger):
     assert (tmp_path / "out" / "candidate_references.tsv").exists()
 
 
+def test_download_writes_a_manifest_of_added_references(monkeypatch, tmp_path, logger):
+    def fake_blast(seq, *, max_hits, logger, email=None):
+        return [Hit("NEW123", "novel donor virus", 90.0, 95.0, 1e-40)]
+
+    def fake_efetch(accession, collection_dir, logger):
+        path = collection_dir / f"{accession}.fasta"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f">{accession}\nACGT\n")
+        return path
+
+    monkeypatch.setattr(discover_run, "blast_subsequence", fake_blast)
+    monkeypatch.setattr(discover_run, "efetch_available", lambda: True)
+    monkeypatch.setattr(discover_run, "efetch_fasta", fake_efetch)
+
+    coll = tmp_path / "coll"
+    params = FindRefParams(
+        msa=_msa(tmp_path), query="q", output=tmp_path / "out",
+        window_size=60, window_step=30, top_gaps=1, download=coll,
+    )
+    find_references(params, logger)
+
+    assert (coll / "NEW123.fasta").exists()  # the reference was fetched
+    manifest = (tmp_path / "out" / "downloaded_references.tsv").read_text().splitlines()
+    assert manifest[0].split("\t")[0] == "accession"
+    assert manifest[1].split("\t")[0] == "NEW123"
+
+
 def test_download_without_efetch_is_a_clear_error(monkeypatch, tmp_path, logger):
     monkeypatch.setattr(discover_run, "efetch_available", lambda: False)
     from recomfi.core.errors import UserInputError

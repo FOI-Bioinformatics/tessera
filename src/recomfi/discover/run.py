@@ -134,7 +134,8 @@ def find_references(params: FindRefParams, logger: logging.Logger) -> list[Candi
     _print_candidates(candidates, logger)
 
     if params.download is not None:
-        _download(candidates, params.download, logger)
+        downloaded = _download(candidates, params.download, logger)
+        _write_downloaded(params.output, downloaded, logger)
     elif candidates:
         logger.info(
             "Re-run with --download <collection_dir> to add the new references, "
@@ -196,20 +197,40 @@ def _print_candidates(candidates: list[Candidate], logger: logging.Logger) -> No
         )
 
 
-def _download(candidates: list[Candidate], dest: Path, logger: logging.Logger) -> None:
-    # The best new hit per gap (dedup by accession), so the collection grows by the
-    # most relevant sequences rather than every hit.
-    chosen: list[str] = []
+def _download(
+    candidates: list[Candidate], dest: Path, logger: logging.Logger
+) -> list[Candidate]:
+    """Fetch the best new hit per gap (dedup by accession). Returns what was saved."""
+    chosen: dict[str, Candidate] = {}
     for c in candidates:
         if not c.in_collection and c.hit.accession not in chosen:
-            chosen.append(c.hit.accession)
+            chosen[c.hit.accession] = c
     if not chosen:
         logger.info("No new references to download (all hits already in the collection).")
-        return
+        return []
     logger.info("Downloading %d new reference(s) to %s", len(chosen), dest)
-    for accession in chosen:
+    downloaded: list[Candidate] = []
+    for accession, candidate in chosen.items():
         try:
             out = efetch_fasta(accession, dest, logger)
             logger.info("  + %s -> %s", accession, out.name)
+            downloaded.append(candidate)
         except Exception as exc:  # noqa: BLE001 - report and continue the batch
             logger.warning("  ! failed to download %s: %s", accession, exc)
+    return downloaded
+
+
+def _write_downloaded(
+    output: Path, downloaded: list[Candidate], logger: logging.Logger
+) -> None:
+    """Record exactly which references were added (a precise 'what was downloaded')."""
+    path = output / "downloaded_references.tsv"
+    logger.info("Writing downloaded references: %s", path)
+    header = ["accession", "filename", "pct_identity", "gap_query_start", "gap_query_end", "title"]
+    with open(path, "w") as fo:
+        fo.write("\t".join(header) + "\n")
+        for c in downloaded:
+            fo.write("\t".join(map(str, [
+                c.hit.accession, f"{c.hit.accession}.fasta", c.hit.pct_identity,
+                c.gap.query_start, c.gap.query_end, c.hit.title,
+            ])) + "\n")

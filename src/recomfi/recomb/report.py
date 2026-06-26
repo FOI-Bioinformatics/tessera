@@ -718,12 +718,19 @@ def _caveat_html(gaps: list[CoverageGap], threshold: float) -> str:
         return ""
     n = len(gaps)
     word = "region" if n == 1 else "regions"
+    verb = "is" if n == 1 else "are"
+    total = sum(max(0, g.query_end - g.query_start) for g in gaps)
+    worst = min(gaps, key=lambda g: g.mean_best)
     return (
         f'<div class="caveat"><span class="ic">&#9888;</span><div>'
-        f'<strong>Possible missing reference.</strong> In {n} {word} the closest reference '
-        f'is below <span class="mono">{threshold:.2f}</span> similarity &mdash; the query\'s '
-        f'true source there may not be in the collection. See <em>Reference coverage</em> '
-        f'below, or run <span class="mono">recomfi find-references</span> to search NCBI.</div></div>'
+        f'<strong>Possible missing reference.</strong> {n} {word} '
+        f'(<span class="mono">{_fmt_kb(total)}</span> of the query) {verb} poorly covered: '
+        f'even the closest reference stays below <span class="mono">{threshold:.2f}</span>. '
+        f'The weakest is query <span class="mono">{_fmt_int(worst.query_start)}&ndash;'
+        f'{_fmt_int(worst.query_end)}</span>, where <strong>{html.escape(worst.best_label)}'
+        f'</strong> reaches only <span class="mono">{worst.mean_best:.2f}</span> &mdash; its '
+        f'true source may not be in the collection. See <em>Reference coverage</em> below, or '
+        f'run <span class="mono">recomfi find-references</span> to search NCBI.</div></div>'
     )
 
 
