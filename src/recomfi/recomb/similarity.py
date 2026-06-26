@@ -76,6 +76,15 @@ class WindowSimilarity:
     # Comparable query bases per window (canonical A/C/G/T): how much evidence the
     # window carries, used to tell a genuinely divergent gap from a sparse one.
     informative: list[int] = field(default_factory=list)
+    # The raw binomial counts behind every ratio: per reference, per window, the
+    # matches (numerator) and comparable positions (denominator). These drive the
+    # confidence intervals, the significance test and the HMM emissions.
+    numerators: dict[str, list[int]] = field(default_factory=dict)
+    denominators: dict[str, list[int]] = field(default_factory=dict)
+    # The aligned rows (label -> upper-cased uint8 bytes), kept so a region can be
+    # tested on its discordant sites -- columns where the query matches one
+    # candidate parent but not the other (the only sites that distinguish them).
+    rows: dict[str, np.ndarray] = field(default_factory=dict)
 
     def to_dataframe(self) -> pd.DataFrame:
         """Return a DataFrame indexed by dataset label, columns = MSA positions."""
@@ -116,10 +125,13 @@ def _window_starts(width: int, window: int, step: int) -> range:
 def _windowed_similarity(
     query_canonical: np.ndarray, query: np.ndarray, reference: np.ndarray,
     window: int, step: int,
-) -> list[float]:
-    """Per-window identity fraction over columns where both bases are canonical.
+) -> tuple[list[float], list[int], list[int]]:
+    """Per-window identity fraction plus the raw binomial counts behind it.
 
-    Returns ``nan`` for a window with no comparable position (uninformative).
+    Returns ``(ratios, numerators, denominators)``: ``ratio = numer/denom``
+    (``nan`` when ``denom == 0``), ``numer`` = matching canonical positions,
+    ``denom`` = comparable canonical positions. The counts feed the confidence
+    intervals, the significance test and the HMM emissions.
     """
     comparable = query_canonical & _canonical_mask(reference)
     matches = comparable & (query == reference)
@@ -128,16 +140,17 @@ def _windowed_similarity(
     comp_cumsum = np.concatenate(([0], np.cumsum(comparable)))
     match_cumsum = np.concatenate(([0], np.cumsum(matches)))
 
-    out: list[float] = []
+    ratios: list[float] = []
+    numers: list[int] = []
+    denoms: list[int] = []
     for start in _window_starts(query.size, window, step):
         end = start + window
-        denom = comp_cumsum[end] - comp_cumsum[start]
-        if denom == 0:
-            out.append(float("nan"))
-        else:
-            numer = match_cumsum[end] - match_cumsum[start]
-            out.append(float(numer) / float(denom))
-    return out
+        denom = int(comp_cumsum[end] - comp_cumsum[start])
+        numer = int(match_cumsum[end] - match_cumsum[start])
+        numers.append(numer)
+        denoms.append(denom)
+        ratios.append(float("nan") if denom == 0 else numer / denom)
+    return ratios, numers, denoms
 
 
 def compute_similarity(
@@ -184,12 +197,17 @@ def compute_similarity(
 
     query_canonical = _canonical_mask(query)
     similarities: dict[str, list[float]] = {}
+    numerators: dict[str, list[int]] = {}
+    denominators: dict[str, list[int]] = {}
     for label, seq in rows.items():
         if label == query_label:
             continue
-        similarities[label] = _windowed_similarity(
+        ratios, numers, denoms = _windowed_similarity(
             query_canonical, query, seq, window_size, window_step
         )
+        similarities[label] = ratios
+        numerators[label] = numers
+        denominators[label] = denoms
 
     best_sim, best_label = _best_per_window(similarities, len(positions))
 
@@ -209,7 +227,32 @@ def compute_similarity(
         best_sim=best_sim,
         best_label=best_label,
         informative=informative,
+        numerators=numerators,
+        denominators=denominators,
+        rows=rows,
     )
+
+
+def discordant_counts(
+    rows: dict[str, np.ndarray], query: str, major: str, minor: str,
+    start: int, end: int,
+) -> tuple[int, int]:
+    """Over columns ``[start, end)``, count sites that distinguish the two parents.
+
+    Returns ``(favor_minor, favor_major)``: canonical sites where the query matches
+    the minor but not the major, and vice versa. Sites matching both or neither are
+    uninformative for telling the parents apart. Operates on alignment columns, so
+    it is free of the window-overlap autocorrelation.
+    """
+    q = rows[query][start:end]
+    big = rows[major][start:end]
+    small = rows[minor][start:end]
+    canon = _canonical_mask(q) & _canonical_mask(big) & _canonical_mask(small)
+    q_minor = q == small
+    q_major = q == big
+    favor_minor = int(np.count_nonzero(canon & q_minor & ~q_major))
+    favor_major = int(np.count_nonzero(canon & q_major & ~q_minor))
+    return favor_minor, favor_major
 
 
 def _best_per_window(

@@ -92,17 +92,18 @@ recomfi recomb --msa msa.fasta --query cowpox_with_variolaInsert --output recomf
 Run `recomfi --help`, `recomfi msa --help` or `recomfi recomb --help` for the full set of options.
 
 # Output
-RecomFi computes, in sliding windows across the MSA, the similarity of the query to each reference (1 = identical, 0 = no similarity). For each window the closest reference (or references, on a tie) is the "winner". The reference winning the most windows is the **major parent** (the backbone donor); a stretch where the query is instead closest to another reference (a **minor parent**) is reported as a recombinant region.
+RecomFi computes, in sliding windows across the MSA, the similarity of the query to each reference (1 = identical, 0 = no similarity). The reference winning the most windows is the **major parent** (the backbone donor).
 
-The terminal output (also written to the run log) summarises the window winners, the per-dataset similarity statistics, and the called regions, for example:
+To call recombinant regions, the default caller (`--method hmm`) segments the query against the reference panel with a hidden Markov model (jpHMM-style): each window emits a binomial copying likelihood per reference, and a single jump rate (`--jump-rate`) penalises switching reference, so near-identical references do not flip and thin windows cannot drive a call. A segment is reported as recombinant only when its donor beats the major parent on the **discordant sites** — positions where the query matches one candidate parent but not the other — by a sign test at level `--alpha`. This is far more discriminating than an all-sites margin (it recovers subtle breakpoints between near-identical parents) and does not invent regions from noise. Each region carries a **support** (the share of distinguishing sites favouring the donor) and a **breakpoint uncertainty interval**. The legacy `--method heuristic` (margin / merge-gap / min-region) is kept for comparison.
+
 ```
 Recombination regions (major parent: cowpox_KC813504):
-  Minor parent  Major parent     MSA start  MSA end  Query start  Query end  Length(bp)  Windows  Sim minor  Sim major
-  ---------------------------------------------------------------------------------------------------------------------
-  variola       cowpox_KC813504  60500      141000   58800        138900     80500       790      0.992      0.951
+  Minor parent  Major parent     Query start  Query end  Length(bp)  Sim minor  Sim major  Support  Breakpoint
+  -----------------------------------------------------------------------------------------------------------
+  variola       cowpox_KC813504  66268        147150     80882       0.999      0.977      0.99     66768
 ```
 
-The **region calling is a transparent heuristic screen, not a statistical significance test** (such as 3SEQ or RDP). Treat the regions as candidates to inspect, not confirmed events.
+It remains an **indicative screen, not a full phylogenetic test** (such as 3SEQ or GARD). Treat regions as candidates to confirm.
 
 Output files in the chosen directory:
 
@@ -169,13 +170,15 @@ query's own record is auto-excluded from its FASTA header. This needs an aligner
 and Entrez Direct, and rebuilds the alignment every round.
 
 # Known limitations
-The region calling is a transparent heuristic, not a statistical test. In
-particular: overlapping windows (step < window) make the per-window series
-autocorrelated, so the window counts are not independent observations; the
-default `--margin 0.0` calls a region on any positive similarity difference (raise
-it to require a meaningful margin); and there is no significance test, null model
-or multiple-testing correction. Treat regions as candidates for follow-up with a
-dedicated method (3SEQ, RDP).
+The HMM caller's segmentation and the discordant-site sign test address the main
+weaknesses of the old heuristic (window autocorrelation, the `--margin 0.0`
+over-calling), but RecomFi is still an indicative screen, not a full phylogenetic
+recombination test. It compares the query to a fixed reference panel rather than
+inferring trees (so it cannot resolve which lineage is ancestral), uses a single
+substitution model, and applies no genome-wide multiple-testing correction across
+regions. Confirm strong candidates with a dedicated method (3SEQ, GARD, RDP). When
+a region's donor is itself a poor match the result flags a possible missing
+reference (see above) rather than a confident event.
 
 # Development
 ```

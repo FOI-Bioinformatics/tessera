@@ -11,6 +11,7 @@ from .. import __version__
 from ..core.io import strip_sequence_extension
 from .analyze import analyze, winners_per_window
 from .coverage import CoverageParams, call_coverage_gaps, flag_undercovered_regions
+from .hmm import DEFAULT_JUMP_RATE
 from .regions import RegionParams, call_regions
 from .report import print_coverage, print_regions, print_summary, write_reports
 from .similarity import compute_similarity
@@ -26,7 +27,11 @@ class RecombParams:
     metric: str = "pdist"
     top_n: int = 5
     plot_format: str = "pdf"
-    # Region calling (None -> derive from the window size).
+    # Region calling. method="hmm" (default, statistical) or "heuristic" (legacy).
+    method: str = "hmm"
+    jump_rate: float = DEFAULT_JUMP_RATE  # HMM prior switch probability per window
+    alpha: float = 0.05  # significance level for the donor-vs-major site test
+    # Heuristic-only thresholds (None -> derive from the window size).
     min_region: int | None = None
     margin: float = 0.0
     merge_gap: int | None = None
@@ -66,6 +71,9 @@ def run_recomb(
         min_region=params.min_region,
         margin=params.margin,
         merge_gap=params.merge_gap,
+        method=params.method,
+        jump_rate=params.jump_rate,
+        alpha=params.alpha,
     )
     regions, major_parent = call_regions(result, analysis, params.window_size, region_params)
     logger.info(
@@ -102,8 +110,12 @@ def run_recomb(
         "datasets": str(len(result.similarities)),
         "window / step": f"{params.window_size} / {params.window_step}",
         "metric": params.metric,
-        "region min length / margin / merge gap":
-            f"{region_params.min_region} / {region_params.margin} / {region_params.merge_gap}",
+        "caller": (
+            f"hmm (jump-rate {params.jump_rate:g}, alpha {params.alpha:g})"
+            if params.method == "hmm"
+            else f"heuristic (min {region_params.min_region} / margin "
+                 f"{region_params.margin} / merge {region_params.merge_gap})"
+        ),
         "major parent": major_parent or "n/a",
         "coverage threshold / gaps": f"{coverage_threshold:.3f} / {len(coverage_gaps)}",
     }

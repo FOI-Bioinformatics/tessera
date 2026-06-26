@@ -1,21 +1,21 @@
-"""Heuristic recombination-region calling.
+"""Recombination-region calling.
 
 The query is most similar to one dataset across the genome -- the **major
 parent** (the backbone donor). A recombination is indicated where a stretch of
-the query is instead closest to another dataset (a **minor parent**). This
-module turns the per-window similarities into called regions.
+the query is instead closest to another dataset (a **minor parent**).
 
-The heuristic is deliberately simple and transparent -- it is an indicative
-screen, not a statistical significance test (e.g. 3SEQ/RDP):
+The default caller (``method="hmm"``) segments the query against the reference
+panel with a hidden Markov model (:mod:`recomfi.recomb.hmm`): emissions are the
+per-window binomial copying likelihoods and a single jump rate penalises
+switching reference, so near-identical references do not flip and thin windows
+cannot drive a call. It yields breakpoint uncertainty intervals and a posterior
+support per segment.
 
-1. The major parent is the dataset winning the most windows overall.
-2. A window is *recombinant* when its closest dataset is some minor parent whose
-   similarity exceeds the major parent's by at least ``margin``.
-3. Consecutive recombinant windows form a run; runs of the same minor parent
-   separated by at most ``merge_gap`` bases are merged; runs shorter than
-   ``min_region`` bases are dropped.
-
-Region coordinates are reported in both MSA columns and query bases.
+The legacy heuristic (``method="heuristic"``) is kept for comparison: major =
+most windows won; a window is recombinant when a minor beats the major by
+``margin``; consecutive recombinant windows are merged within ``merge_gap`` and
+runs shorter than ``min_region`` dropped. Both report coordinates in MSA columns
+and query bases.
 """
 
 from __future__ import annotations
@@ -26,16 +26,22 @@ from math import isnan
 from statistics import mean
 
 from .analyze import AnalysisResult, rank_datasets
-from .similarity import WindowSimilarity
+from .hmm import DEFAULT_JUMP_RATE, segment_query
+from .similarity import WindowSimilarity, discordant_counts
+from .stats import sign_test_greater
 
 
 @dataclass
 class RegionParams:
-    """Region-calling thresholds. Defaults derive from the window size."""
+    """Region-calling parameters. Heuristic thresholds default from the window size."""
 
     min_region: int
     margin: float
     merge_gap: int
+    method: str = "hmm"  # "hmm" (default) or "heuristic"
+    jump_rate: float = DEFAULT_JUMP_RATE  # HMM: prior switch probability per window
+    identity: float | None = None  # HMM emission identity; None -> estimate from data
+    alpha: float = 0.05  # HMM: significance level for the donor-vs-major test
 
     @classmethod
     def with_defaults(
@@ -44,11 +50,19 @@ class RegionParams:
         min_region: int | None = None,
         margin: float = 0.0,
         merge_gap: int | None = None,
+        method: str = "hmm",
+        jump_rate: float = DEFAULT_JUMP_RATE,
+        identity: float | None = None,
+        alpha: float = 0.05,
     ) -> RegionParams:
         return cls(
             min_region=window_size if min_region is None else min_region,
             margin=margin,
             merge_gap=window_size if merge_gap is None else merge_gap,
+            method=method,
+            jump_rate=jump_rate,
+            identity=identity,
+            alpha=alpha,
         )
 
 
@@ -65,6 +79,13 @@ class Region:
     mean_sim_minor: float
     mean_sim_major: float
     margin: float
+    # HMM caller: posterior support of the donor over the segment, and the query
+    # coordinate uncertainty of the segment's breakpoint.
+    posterior_support: float = 1.0
+    breakpoint_lo: int | None = None
+    breakpoint_hi: int | None = None
+    # Bootstrap support (Bootscan-style): fraction of resamples keeping this donor.
+    support: float | None = None
     # Set by coverage analysis: the donor's own similarity is poor, so it may be a
     # stand-in for an absent true donor. Default False (not yet evaluated).
     donor_undercovered: bool = False
@@ -105,6 +126,69 @@ def call_regions(
     params: RegionParams,
 ) -> tuple[list[Region], str | None]:
     """Call recombinant regions. Returns ``(regions, major_parent)``."""
+    if params.method == "hmm":
+        return _call_regions_hmm(result, window_size, params)
+    return _call_regions_heuristic(result, analysis, window_size, params)
+
+
+def _call_regions_hmm(
+    result: WindowSimilarity, window_size: int, params: RegionParams
+) -> tuple[list[Region], str | None]:
+    """HMM segmentation; a non-major segment is reported only when its donor is a
+    significantly better match than the major on the sites distinguishing them."""
+    if len(result.similarities) < 2:
+        only = next(iter(result.similarities), None)
+        return [], only
+    segments, major = segment_query(
+        result, identity=params.identity, jump_rate=params.jump_rate
+    )
+    if major is None:
+        return [], None
+
+    regions: list[Region] = []
+    for seg in segments:
+        if seg.state == major:
+            continue
+        if seg.msa_end - seg.msa_start < params.min_region:
+            continue
+        # Test only the discordant sites (query matches one parent but not the
+        # other) -- powerful for near-identical parents, immune to window overlap.
+        favor_minor, favor_major = discordant_counts(
+            result.rows, result.query, major, seg.state, seg.msa_start, seg.msa_end
+        )
+        if not sign_test_greater(favor_minor, favor_major, params.alpha):
+            continue
+        support = favor_minor / (favor_minor + favor_major)  # share of sites for donor
+        idx = range(seg.start_window, seg.end_window + 1)
+        minor_sims = [result.similarities[seg.state][i] for i in idx
+                      if not isnan(result.similarities[seg.state][i])]
+        major_sims = [result.similarities[major][i] for i in idx
+                      if not isnan(result.similarities[major][i])]
+        mean_minor = mean(minor_sims) if minor_sims else float("nan")
+        mean_major = mean(major_sims) if major_sims else float("nan")
+        regions.append(
+            Region(
+                minor_parent=seg.state, major_parent=major,
+                msa_start=seg.msa_start, msa_end=seg.msa_end,
+                query_start=seg.query_start, query_end=seg.query_end,
+                length_bp=seg.msa_end - seg.msa_start, n_windows=seg.n_windows,
+                mean_sim_minor=round(mean_minor, 4), mean_sim_major=round(mean_major, 4),
+                margin=round(mean_minor - mean_major, 4),
+                posterior_support=seg.mean_posterior,
+                breakpoint_lo=seg.breakpoint_lo, breakpoint_hi=seg.breakpoint_hi,
+                support=round(support, 3),
+            )
+        )
+    return regions, major
+
+
+def _call_regions_heuristic(
+    result: WindowSimilarity,
+    analysis: AnalysisResult,
+    window_size: int,
+    params: RegionParams,
+) -> tuple[list[Region], str | None]:
+    """Legacy greedy run-merge caller (kept for comparison)."""
     top = rank_datasets(analysis, 1)
     if not top or len(result.similarities) < 2:
         return [], (top[0] if top else None)

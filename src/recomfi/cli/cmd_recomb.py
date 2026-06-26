@@ -22,6 +22,20 @@ def recomb(
     window_size: int = typer.Option(1000, "--window-size", help="Sliding window width (columns)."),
     window_step: int = typer.Option(100, "--window-step", help="Sliding window step (columns)."),
     metric: str = typer.Option("pdist", "--metric", help="Similarity metric: pdist."),
+    method: str = typer.Option(
+        "hmm", "--method",
+        help="Region caller: hmm (default, HMM segmentation + a discordant-site "
+        "significance test) or heuristic (legacy margin/merge).",
+    ),
+    jump_rate: float = typer.Option(
+        1e-3, "--jump-rate",
+        help="HMM prior probability of switching reference per window (lower = "
+        "fewer, longer segments).",
+    ),
+    alpha: float = typer.Option(
+        0.05, "--alpha",
+        help="Significance level for the donor-vs-major discordant-site test (hmm).",
+    ),
     top_n: int = typer.Option(5, "--top-n", help="Number of nearest datasets to plot."),
     plot_format: str = typer.Option(
         "pdf", "--plot-format", help="Static plot format: pdf, png, or svg."
@@ -57,6 +71,7 @@ def recomb(
     logger = get_logger()
     with stage_errors(logger):
         _require_choice(plot_format, {"pdf", "png", "svg"}, "--plot-format")
+        _require_choice(method, {"hmm", "heuristic"}, "--method")
         params = RecombParams(
             msa=msa,
             output=output,
@@ -66,6 +81,9 @@ def recomb(
             metric=metric,
             top_n=top_n,
             plot_format=plot_format,
+            method=method,
+            jump_rate=jump_rate,
+            alpha=alpha,
             min_region=min_region,
             margin=margin,
             merge_gap=merge_gap,

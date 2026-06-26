@@ -85,18 +85,27 @@ def print_summary(analysis: AnalysisResult, echo=print) -> None:
 
 
 REGION_HEADER = [
-    "Minor parent", "Major parent", "MSA start", "MSA end",
-    "Query start", "Query end", "Length(bp)", "Windows", "Sim minor", "Sim major",
+    "Minor parent", "Major parent", "Query start", "Query end", "Length(bp)",
+    "Sim minor", "Sim major", "Support", "Breakpoint",
 ]
 
 
+def _breakpoint_str(region: Region) -> str:
+    if region.breakpoint_lo is None:
+        return "-"
+    if region.breakpoint_lo == region.breakpoint_hi:
+        return str(region.breakpoint_lo)
+    return f"{region.breakpoint_lo}-{region.breakpoint_hi}"
+
+
 def _region_row(region: Region) -> tuple[str, list]:
+    support = "-" if region.support is None else f"{region.support:.2f}"
     return (
         region.minor_parent,
         [
-            region.major_parent, region.msa_start, region.msa_end,
-            region.query_start, region.query_end, region.length_bp,
-            region.n_windows, region.mean_sim_minor, region.mean_sim_major,
+            region.major_parent, region.query_start, region.query_end,
+            region.length_bp, region.mean_sim_minor, region.mean_sim_major,
+            support, _breakpoint_str(region),
         ],
     )
 
@@ -188,6 +197,7 @@ def write_regions_tsv(regions: list[Region], output_dir: Path, logger: logging.L
         "minor_parent", "major_parent", "msa_start", "msa_end",
         "query_start", "query_end", "length_bp", "n_windows",
         "mean_sim_minor", "mean_sim_major", "margin",
+        "support", "posterior", "breakpoint_lo", "breakpoint_hi", "donor_undercovered",
     ]
     with open(path, "w") as fo:
         fo.write("\t".join(header) + "\n")
@@ -197,6 +207,11 @@ def write_regions_tsv(regions: list[Region], output_dir: Path, logger: logging.L
                     r.minor_parent, r.major_parent, r.msa_start, r.msa_end,
                     r.query_start, r.query_end, r.length_bp, r.n_windows,
                     r.mean_sim_minor, r.mean_sim_major, r.margin,
+                    "NA" if r.support is None else r.support,
+                    r.posterior_support,
+                    "NA" if r.breakpoint_lo is None else r.breakpoint_lo,
+                    "NA" if r.breakpoint_hi is None else r.breakpoint_hi,
+                    "yes" if r.donor_undercovered else "no",
                 ])) + "\n"
             )
 
@@ -603,8 +618,8 @@ def _regions_html(regions: list[Region], colors: dict[str, str], query_len: int)
         return '<p class="empty">No recombinant regions were called.</p>'
     head = (
         "<tr><th>Donor (minor)</th><th>Backbone (major)</th><th>Query span (bp)</th>"
-        "<th>Length</th><th>% query</th><th>Windows</th>"
-        "<th>Sim donor</th><th>Sim backbone</th><th>Margin</th></tr>"
+        "<th>Length</th><th>% query</th><th>Sim donor</th><th>Sim backbone</th>"
+        "<th>Support</th><th>Breakpoint</th></tr>"
     )
     rows = ""
     for r in regions:
@@ -613,6 +628,13 @@ def _regions_html(regions: list[Region], colors: dict[str, str], query_len: int)
         swatch = _swatch(colors.get(r.minor_parent, GREY))
         flag = '<span class="flag" title="donor is itself a poor match">low conf</span>' \
             if r.donor_undercovered else ""
+        support = "&ndash;" if r.support is None else f"{r.support:.2f}"
+        if r.breakpoint_lo is None:
+            bp = "&ndash;"
+        elif r.breakpoint_lo == r.breakpoint_hi:
+            bp = _fmt_int(r.breakpoint_lo)
+        else:
+            bp = f"{_fmt_int(r.breakpoint_lo)}&ndash;{_fmt_int(r.breakpoint_hi)}"
         rows += (
             "<tr>"
             f'<td class="lbl">{swatch}{html.escape(r.minor_parent)}{flag}</td>'
@@ -620,10 +642,10 @@ def _regions_html(regions: list[Region], colors: dict[str, str], query_len: int)
             f'<td class="num">{_fmt_int(r.query_start)}&ndash;{_fmt_int(r.query_end)}</td>'
             f'<td class="num">{_fmt_kb(qlen)}</td>'
             f'<td class="num">{pct:.1f}%</td>'
-            f'<td class="num">{_fmt_int(r.n_windows)}</td>'
             f'<td class="num">{r.mean_sim_minor:.3f}</td>'
             f'<td class="num">{r.mean_sim_major:.3f}</td>'
-            f'<td class="num strong">{r.margin:+.3f}</td>'
+            f'<td class="num strong">{support}</td>'
+            f'<td class="num">{bp}</td>'
             "</tr>"
         )
     return f'<div class="scroll"><table class="table">{head}{rows}</table></div>'
@@ -669,12 +691,17 @@ _GLOSSARY = [
     ("Window / step",
      "The scan slides a fixed-width window along the alignment in fixed steps; each "
      "window is scored independently."),
-    ("Margin",
-     "How much a donor's mean similarity exceeds the backbone's within a region. "
-     "Larger means a stronger signal."),
-    ("Region calling",
-     "Adjacent donor-winning windows that share a donor and lie within the merge gap "
-     "are merged; regions shorter than the minimum length are dropped."),
+    ("Support",
+     "The share of distinguishing (discordant) sites -- where the query matches one "
+     "candidate parent but not the other -- that favour the donor. 0.5 = no "
+     "preference, 1.0 = every distinguishing site favours the donor."),
+    ("Breakpoint",
+     "The query position where the source switches, with a posterior-derived "
+     "uncertainty interval from the HMM."),
+    ("Region calling (HMM)",
+     "An HMM segments the query against the reference panel (a jump rate penalises "
+     "switching reference); a segment is reported as recombinant only when its donor "
+     "beats the major parent on the discordant sites by a sign test at level alpha."),
 ]
 
 
@@ -688,10 +715,11 @@ def _methods_html(provenance: dict[str, str]) -> str:
     )
     return (
         '<details class="methods"><summary>Methods &amp; glossary</summary>'
-        '<p class="cap">RecomFi is a fast heuristic screen for recombination, not a '
-        'statistical significance test (e.g. 3SEQ, RDP). Overlapping windows make the '
-        'window counts non-independent, and the default margin calls a region on any positive '
-        'difference; treat called regions as candidates for follow-up.</p>'
+        '<p class="cap">RecomFi segments the query against the reference panel with an HMM '
+        '(jpHMM-style) and reports a region only when its donor beats the major parent on the '
+        'sites that distinguish them (a sign test on discordant sites, immune to window '
+        'overlap), with a posterior breakpoint interval. It remains an indicative screen, not a '
+        'full phylogenetic test (e.g. 3SEQ, GARD) -- confirm strong candidates.</p>'
         f'<dl class="glossary">{glossary}</dl>'
         f'<h3>Run parameters</h3><table class="kv">{params}</table></details>'
     )
