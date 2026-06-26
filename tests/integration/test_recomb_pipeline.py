@@ -76,5 +76,5 @@ def test_recomb_pipeline_outputs_and_ranking(tmp_path: Path) -> None:
 
     # the report embeds the interactive plot and the region table
     report = (out / "report.html").read_text()
-    assert "Recombination regions" in report
+    assert "Recombinant regions" in report
     assert "variola" in report

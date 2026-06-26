@@ -180,12 +180,27 @@ def write_regions_tsv(regions: list[Region], output_dir: Path, logger: logging.L
 # ---------------------------------------------------------------------------
 # Plots
 # ---------------------------------------------------------------------------
-def _palette(datasets: list[str]):
-    """Deterministic label -> colour mapping using a qualitative colormap."""
-    import matplotlib as mpl
+# One categorical palette, reused across the mosaic track, the interactive plot,
+# the static plots and the table swatches, so a dataset reads as the same colour
+# everywhere in the report.
+PALETTE = (
+    "#2b6cb0", "#dd6b20", "#2f855a", "#c53030", "#6b46c1",
+    "#2c7a7b", "#b7791f", "#3182ce", "#97266d", "#4a5568",
+)
+GREY = "#94a3b8"
 
-    cmap = mpl.colormaps["tab10"]
-    return {label: cmap(i % cmap.N) for i, label in enumerate(datasets)}
+
+def _color_map(datasets: list[str]) -> dict[str, str]:
+    """Deterministic label -> hex colour, stable across the whole report."""
+    return {label: PALETTE[i % len(PALETTE)] for i, label in enumerate(datasets)}
+
+
+def _palette(datasets: list[str]):
+    """Matplotlib RGBA map drawn from the shared categorical palette."""
+    from matplotlib.colors import to_rgba
+
+    hexmap = _color_map(datasets)
+    return {label: to_rgba(hexmap[label]) for label in datasets}
 
 
 def _ylim(values) -> tuple[float, float]:
@@ -292,26 +307,40 @@ def build_interactive_figure(
     import plotly.graph_objects as go
 
     df = result.to_dataframe()
+    colors = _color_map(datasets)
     fig = go.Figure()
+    seen: set[str] = set()
     for region in regions:
+        color = colors.get(region.minor_parent, GREY)
         fig.add_vrect(
             x0=region.msa_start, x1=region.msa_end,
-            fillcolor="LightSalmon", opacity=0.25, line_width=0,
-            annotation_text=region.minor_parent, annotation_position="top left",
+            fillcolor=color, opacity=0.12, line_width=0, layer="below",
+            annotation_text=("" if region.minor_parent in seen else region.minor_parent),
+            annotation_position="top left",
+            annotation_font_size=11, annotation_font_color=color,
         )
+        seen.add(region.minor_parent)
     for dataset in datasets:
         if dataset not in df.index:
             continue
         fig.add_trace(go.Scatter(
             x=df.columns, y=df.loc[dataset], mode="lines", name=dataset,
+            line={"width": 2, "color": colors.get(dataset, GREY)},
             customdata=result.query_positions,
-            hovertemplate="MSA %{x}<br>query %{customdata}<br>similarity %{y:.3f}<extra>"
-            + dataset + "</extra>",
+            hovertemplate="MSA %{x:,} bp<br>query %{customdata:,} bp<br>"
+            "similarity %{y:.3f}<extra>" + dataset + "</extra>",
         ))
     fig.update_layout(
-        title=f"Similarity to query {result.query}",
-        xaxis_title="MSA position (bp)", yaxis_title="Similarity",
-        hovermode="closest", dragmode="zoom", showlegend=True,
+        template="plotly_white",
+        margin={"l": 64, "r": 24, "t": 36, "b": 52},
+        height=460,
+        font={"family": "system-ui, -apple-system, sans-serif", "size": 12, "color": "#11161f"},
+        xaxis={"title": "MSA position (bp)", "gridcolor": "#eef0f3", "zeroline": False,
+               "tickformat": ","},
+        yaxis={"title": "Similarity to query (1.0 = identical)", "gridcolor": "#eef0f3",
+               "zeroline": False},
+        hovermode="x unified", dragmode="zoom",
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "x": 0, "title": ""},
     )
     return fig
 
@@ -319,36 +348,292 @@ def build_interactive_figure(
 # ---------------------------------------------------------------------------
 # HTML report
 # ---------------------------------------------------------------------------
-def _provenance_html(provenance: dict[str, str]) -> str:
+_CSS = """
+:root{
+  --ink:#11161f;--muted:#5b6573;--faint:#8b94a3;--line:#e6e9ee;
+  --panel:#f6f7f9;--paper:#fff;--bg:#fbfcfd;--accent:#2b6cb0;--hl:#eef4fb;
+  --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto;padding:48px 28px 72px}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;flex:none}
+header{border-bottom:1px solid var(--line);padding-bottom:26px;margin-bottom:30px}
+header h1{font-size:30px;font-weight:600;margin:.35em 0 .55em;letter-spacing:-.01em;word-break:break-word}
+.verdict{font-size:19px;line-height:1.5;margin:0;max-width:76ch}
+.verdict strong{font-weight:650}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:40px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px 18px}
+.card .k{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);margin-bottom:9px}
+.card .v{font-size:17px;font-weight:550;display:flex;align-items:center;flex-wrap:wrap;gap:3px}
+.big{font-size:26px;font-weight:650;font-family:var(--mono)}
+.card .sub{font-size:12px;color:var(--muted);font-weight:400;font-family:var(--mono)}
+.section{margin:42px 0}
+.section>.eyebrow{margin-bottom:14px}
+.cap{color:var(--muted);font-size:13px;margin:.2em 0 1em;max-width:82ch}
+.mosaic .track{position:relative;height:50px;border-radius:8px;overflow:hidden;border:1px solid var(--line);
+  background:repeating-linear-gradient(90deg,transparent 0 3px,rgba(0,0,0,.015) 3px 6px),var(--bb);
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.05)}
+.mosaic .seg{position:absolute;top:0;bottom:0;min-width:1px;box-shadow:0 0 0 1px rgba(255,255,255,.25) inset}
+.mosaic .axis{display:flex;justify-content:space-between;margin-top:6px;font-family:var(--mono);font-size:11px;color:var(--faint)}
+.mosaic .legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:13px;font-size:13px}
+.mosaic .leg{display:inline-flex;align-items:center;color:var(--muted)}
+.scroll{overflow-x:auto}
+table.table{border-collapse:collapse;width:100%;font-size:14px}
+table.table th{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);
+  text-align:right;padding:8px 14px;border-bottom:2px solid var(--line);white-space:nowrap}
+table.table td{padding:9px 14px;border-bottom:1px solid var(--line);text-align:right}
+table.table th:first-child,table.table td:first-child{text-align:left}
+table.table .num{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+table.table .lbl{text-align:left;font-weight:500;white-space:nowrap}
+table.table .strong{font-weight:650;color:var(--ink)}
+table.table tr:hover td{background:var(--panel)}
+table.table tr.hl td{background:var(--hl);font-weight:600}
+.empty{color:var(--muted);font-style:italic}
+.bars{display:flex;flex-direction:column;gap:7px;max-width:780px}
+.barrow{display:grid;grid-template-columns:190px 1fr 60px;align-items:center;gap:12px}
+.blabel{display:inline-flex;align-items:center;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btrack{height:14px;background:var(--panel);border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.bfill{display:block;height:100%}
+.bnum{font-family:var(--mono);font-size:13px;color:var(--muted);text-align:right}
+details.methods{border:1px solid var(--line);border-radius:12px;padding:2px 18px;background:var(--paper)}
+details.methods summary{cursor:pointer;font-weight:600;padding:13px 0;list-style:none;font-size:14px}
+details.methods summary::-webkit-details-marker{display:none}
+details.methods summary::before{content:"+";display:inline-block;width:1.3em;color:var(--faint);font-family:var(--mono)}
+details.methods[open] summary::before{content:"-"}
+details.methods[open]{padding-bottom:18px}
+.glossary{display:grid;grid-template-columns:max-content 1fr;gap:7px 20px;margin:4px 0 20px}
+.glossary dt{font-weight:600;font-size:13px}
+.glossary dd{margin:0;color:var(--muted);font-size:13px}
+details.methods h3{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin:10px 0 6px}
+table.kv{border-collapse:collapse}
+table.kv th{text-align:left;font-weight:500;color:var(--muted);padding:3px 18px 3px 0;vertical-align:top;font-size:13px;white-space:nowrap}
+table.kv td{padding:3px 0;font-size:13px}
+code{font-family:var(--mono);font-size:12px;background:var(--panel);padding:1px 5px;border-radius:4px}
+footer{margin-top:50px;padding-top:20px;border-top:1px solid var(--line);color:var(--faint);font-size:12.5px;
+  display:flex;flex-direction:column;gap:6px}
+footer code{font-size:11px}
+summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+@media (max-width:640px){.wrap{padding:32px 16px 56px}header h1{font-size:23px}.verdict{font-size:16px}
+  .barrow{grid-template-columns:120px 1fr 50px}}
+"""
+
+
+def _fmt_int(n) -> str:
+    return f"{int(round(float(n))):,}"
+
+
+def _fmt_kb(n) -> str:
+    n = float(n)
+    return f"{n / 1000:.1f} kb" if abs(n) >= 1000 else f"{int(round(n))} bp"
+
+
+def _swatch(color: str) -> str:
+    return f'<span class="sw" style="background:{color}"></span>'
+
+
+def _summary(
+    result: WindowSimilarity, regions: list[Region], datasets: list[str]
+) -> dict:
+    """Headline numbers: query length, backbone, donor list, recombinant fraction."""
+    qcum = result.query_cumulative
+    query_len = int(qcum[-1]) if len(qcum) else 0
+    if regions:
+        major = regions[0].major_parent
+    elif datasets:
+        major = datasets[0]
+    else:
+        major = "n/a"
+    recomb_bp = sum(max(0, r.query_end - r.query_start) for r in regions)
+    minors: list[str] = []
+    for r in regions:
+        if r.minor_parent not in minors:
+            minors.append(r.minor_parent)
+    return {
+        "query_len": query_len, "major": major, "n_regions": len(regions),
+        "recomb_bp": recomb_bp,
+        "pct": (100.0 * recomb_bp / query_len) if query_len else 0.0,
+        "minors": minors,
+    }
+
+
+def _verdict_html(s: dict, query: str, colors: dict[str, str]) -> str:
+    major = html.escape(s["major"])
+    if s["n_regions"] == 0:
+        return (f'<p class="verdict">No recombination detected &mdash; the query is most '
+                f'similar to <strong>{major}</strong> across the whole alignment.</p>')
+    donors = ", ".join(
+        f'{_swatch(colors.get(m, GREY))}<strong>{html.escape(m)}</strong>' for m in s["minors"]
+    )
+    word = "region" if s["n_regions"] == 1 else "regions"
+    return (
+        f'<p class="verdict">The query is a <strong>recombinant</strong>: a '
+        f'<strong>{major}</strong> backbone carrying {s["n_regions"]} donor {word} from '
+        f'{donors}, covering <span class="mono">{_fmt_kb(s["recomb_bp"])}</span> '
+        f'(<span class="mono">{s["pct"]:.1f}%</span>) of the query.</p>'
+    )
+
+
+def _cards_html(s: dict, colors: dict[str, str]) -> str:
+    donors = "".join(
+        f'{_swatch(colors.get(m, GREY))}{html.escape(m)} ' for m in s["minors"]
+    ) or "&mdash;"
+    cards = [
+        ("Recombinant regions", f'<span class="big">{s["n_regions"]}</span>'),
+        ("Backbone &middot; major parent",
+         f'{_swatch(colors.get(s["major"], GREY))}{html.escape(s["major"])}'),
+        ("Donor &middot; minor parent", donors),
+        ("Query recombinant",
+         f'<span class="big">{s["pct"]:.1f}%</span>'
+         f'<span class="sub">&nbsp;{_fmt_kb(s["recomb_bp"])} of {_fmt_kb(s["query_len"])}</span>'),
+    ]
     items = "".join(
-        f"<tr><th>{html.escape(str(k))}</th><td>{html.escape(str(v))}</td></tr>"
-        for k, v in provenance.items()
+        f'<div class="card"><div class="k">{k}</div><div class="v">{v}</div></div>'
+        for k, v in cards
     )
-    return f"<table class='kv'>{items}</table>"
+    return f'<div class="cards">{items}</div>'
 
 
-def _regions_html(regions: list[Region]) -> str:
-    if not regions:
-        return "<p><em>No recombinant regions detected.</em></p>"
-    head = (
-        "<tr><th>Minor parent</th><th>Major parent</th><th>MSA start</th><th>MSA end</th>"
-        "<th>Query start</th><th>Query end</th><th>Length (bp)</th><th>Windows</th>"
-        "<th>Sim minor</th><th>Sim major</th></tr>"
-    )
-    rows = "".join(
-        "<tr>"
-        + "".join(
-            f"<td>{html.escape(str(v))}</td>"
-            for v in [
-                r.minor_parent, r.major_parent, r.msa_start, r.msa_end,
-                r.query_start, r.query_end, r.length_bp, r.n_windows,
-                r.mean_sim_minor, r.mean_sim_major,
-            ]
-        )
-        + "</tr>"
+def _mosaic_html(regions: list[Region], colors: dict[str, str], s: dict) -> str:
+    query_len = s["query_len"] or 1
+    backbone = colors.get(s["major"], GREY)
+    segs = "".join(
+        f'<div class="seg" style="left:{100.0 * r.query_start / query_len:.3f}%;'
+        f'width:{100.0 * max(0, r.query_end - r.query_start) / query_len:.3f}%;'
+        f'background:{colors.get(r.minor_parent, GREY)}" '
+        f'title="{html.escape(r.minor_parent)}: '
+        f'{_fmt_int(r.query_start)}-{_fmt_int(r.query_end)} bp"></div>'
         for r in regions
     )
-    return f"<table class='data'>{head}{rows}</table>"
+    axis = "".join(
+        f"<span>{_fmt_kb(frac * query_len)}</span>" for frac in (0, 0.25, 0.5, 0.75, 1.0)
+    )
+    legend = f'<span class="leg">{_swatch(backbone)}{html.escape(s["major"])} (backbone)</span>'
+    legend += "".join(
+        f'<span class="leg">{_swatch(colors.get(m, GREY))}{html.escape(m)} (donor)</span>'
+        for m in s["minors"]
+    )
+    return (
+        f'<div class="mosaic"><div class="track" style="--bb:{backbone}">{segs}</div>'
+        f'<div class="axis">{axis}</div><div class="legend">{legend}</div>'
+        f'<p class="cap">The query genome painted by its closest reference per window: solid '
+        f'backbone is the major parent; coloured segments are donor regions in query coordinates.</p></div>'
+    )
+
+
+def _regions_html(regions: list[Region], colors: dict[str, str], query_len: int) -> str:
+    if not regions:
+        return '<p class="empty">No recombinant regions were called.</p>'
+    head = (
+        "<tr><th>Donor (minor)</th><th>Backbone (major)</th><th>Query span (bp)</th>"
+        "<th>Length</th><th>% query</th><th>Windows</th>"
+        "<th>Sim donor</th><th>Sim backbone</th><th>Margin</th></tr>"
+    )
+    rows = ""
+    for r in regions:
+        qlen = max(0, r.query_end - r.query_start)
+        pct = (100.0 * qlen / query_len) if query_len else 0.0
+        swatch = _swatch(colors.get(r.minor_parent, GREY))
+        rows += (
+            "<tr>"
+            f'<td class="lbl">{swatch}{html.escape(r.minor_parent)}</td>'
+            f'<td class="lbl">{html.escape(r.major_parent)}</td>'
+            f'<td class="num">{_fmt_int(r.query_start)}&ndash;{_fmt_int(r.query_end)}</td>'
+            f'<td class="num">{_fmt_kb(qlen)}</td>'
+            f'<td class="num">{pct:.1f}%</td>'
+            f'<td class="num">{_fmt_int(r.n_windows)}</td>'
+            f'<td class="num">{r.mean_sim_minor:.3f}</td>'
+            f'<td class="num">{r.mean_sim_major:.3f}</td>'
+            f'<td class="num strong">{r.margin:+.3f}</td>'
+            "</tr>"
+        )
+    return f'<div class="scroll"><table class="table">{head}{rows}</table></div>'
+
+
+def _winners_html(analysis: AnalysisResult, colors: dict[str, str]) -> str:
+    items = sorted(analysis.winners_with_ties.items(), key=lambda x: x[1], reverse=True)
+    if not items:
+        return '<p class="empty">No window winners recorded.</p>'
+    top = items[0][1] or 1
+    bars = "".join(
+        f'<div class="barrow"><span class="blabel">{_swatch(colors.get(label, GREY))}'
+        f'{html.escape(label)}</span><span class="btrack">'
+        f'<span class="bfill" style="width:{100.0 * count / top:.1f}%;'
+        f'background:{colors.get(label, GREY)}"></span></span>'
+        f'<span class="bnum">{_fmt_int(count)}</span></div>'
+        for label, count in items
+    )
+    return f'<div class="bars">{bars}</div>'
+
+
+def _stats_html(analysis: AnalysisResult, major: str) -> str:
+    head = "".join(f"<th>{html.escape(h)}</th>" for h in analysis.stats_header)
+    rows = ""
+    for dataset, values in sorted(analysis.stats.items(), key=stats_sort_key, reverse=True):
+        cls = ' class="hl"' if dataset == major else ""
+        cells = f'<td class="lbl">{html.escape(dataset)}</td>' + "".join(
+            f'<td class="num">{html.escape(str(v))}</td>' for v in values
+        )
+        rows += f"<tr{cls}>{cells}</tr>"
+    return f'<div class="scroll"><table class="table"><tr>{head}</tr>{rows}</table></div>'
+
+
+_GLOSSARY = [
+    ("Major parent (backbone)",
+     "The reference the query matches in the most windows overall."),
+    ("Minor parent (donor)",
+     "A reference the query matches better than the backbone over a stretch of the "
+     "alignment -- a candidate recombination donor."),
+    ("Similarity",
+     "Per-window fraction of identical canonical bases (1.0 = identical). Windows with "
+     "no comparable position are ignored."),
+    ("Window / step",
+     "The scan slides a fixed-width window along the alignment in fixed steps; each "
+     "window is scored independently."),
+    ("Margin",
+     "How much a donor's mean similarity exceeds the backbone's within a region. "
+     "Larger means a stronger signal."),
+    ("Region calling",
+     "Adjacent donor-winning windows that share a donor and lie within the merge gap "
+     "are merged; regions shorter than the minimum length are dropped."),
+]
+
+
+def _methods_html(provenance: dict[str, str]) -> str:
+    glossary = "".join(
+        f"<dt>{html.escape(t)}</dt><dd>{html.escape(d)}</dd>" for t, d in _GLOSSARY
+    )
+    params = "".join(
+        f'<tr><th>{html.escape(str(k))}</th><td class="mono">{html.escape(str(v))}</td></tr>'
+        for k, v in provenance.items()
+    )
+    return (
+        '<details class="methods"><summary>Methods &amp; glossary</summary>'
+        '<p class="cap">RecomFi is a fast heuristic screen for recombination, not a '
+        'statistical significance test (e.g. 3SEQ, RDP). Treat called regions as candidates '
+        'for follow-up.</p>'
+        f'<dl class="glossary">{glossary}</dl>'
+        f'<h3>Run parameters</h3><table class="kv">{params}</table></details>'
+    )
+
+
+def _footer_html(provenance: dict[str, str]) -> str:
+    files = [
+        "recombination_regions.tsv", "window_winners.tsv", "similarity_stats.tsv",
+        "similarity_windows.tsv", "similarity_top*.pdf", "similarity_pair.pdf",
+    ]
+    flist = ", ".join(f"<code>{f}</code>" for f in files)
+    ver = html.escape(provenance.get("recomfi version", ""))
+    date = html.escape(provenance.get("date (UTC)", ""))
+    return (
+        f'<footer><div>Generated by RecomFi <span class="mono">{ver}</span> &middot; '
+        f'<span class="mono">{date}</span> UTC</div>'
+        f'<div>Companion files in this folder: {flist}.</div></footer>'
+    )
 
 
 def write_html_report(
@@ -364,41 +649,37 @@ def write_html_report(
     fig = build_interactive_figure(result, datasets, regions)
     plot_div = fig.to_html(full_html=False, include_plotlyjs="inline")
 
-    stats_rows = "".join(
-        "<tr><td>" + html.escape(dataset) + "</td>"
-        + "".join(f"<td>{html.escape(str(v))}</td>" for v in values)
-        + "</tr>"
-        for dataset, values in sorted(analysis.stats.items(), key=stats_sort_key, reverse=True)
-    )
-    stats_head = "".join(f"<th>{html.escape(h)}</th>" for h in analysis.stats_header)
+    colors = _color_map(datasets)
+    s = _summary(result, regions, datasets)
 
-    doc = f"""<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8">
-<link rel="icon" href="data:,">
-<title>RecomFi report: {html.escape(result.query)}</title>
-<style>
- body {{ font-family: system-ui, sans-serif; margin: 2rem; color: #222; }}
- h1 {{ font-size: 1.5rem; }} h2 {{ margin-top: 2rem; font-size: 1.2rem; }}
- table {{ border-collapse: collapse; margin: 0.5rem 0; }}
- table.data th, table.data td {{ border: 1px solid #ccc; padding: 4px 8px; text-align: right; }}
- table.data th:first-child, table.data td:first-child {{ text-align: left; }}
- table.kv th {{ text-align: left; padding: 2px 12px 2px 0; color: #555; }}
- table.kv td {{ padding: 2px 0; }}
- .note {{ color: #666; font-size: 0.9rem; }}
-</style></head><body>
-<h1>RecomFi recombination report</h1>
-<h2>Run</h2>
-{_provenance_html(provenance)}
-<h2>Recombination regions</h2>
-<p class="note">Heuristic screen: regions where the query is closer to a minor
-parent than to the major parent. Coordinates are given in both MSA columns and
-query bases. This is indicative, not a statistical significance test.</p>
-{_regions_html(regions)}
-<h2>Similarity across the alignment</h2>
-{plot_div}
-<h2>Per-dataset similarity statistics</h2>
-<table class="data"><tr>{stats_head}</tr>{stats_rows}</table>
-</body></html>"""
+    doc = (
+        '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        '<link rel="icon" href="data:,">\n'
+        f"<title>RecomFi report: {html.escape(result.query)}</title>\n"
+        f"<style>{_CSS}</style></head><body><div class=\"wrap\">"
+        '<header><div class="eyebrow">RecomFi &middot; recombination report</div>'
+        f'<h1 class="mono">{html.escape(result.query)}</h1>'
+        f"{_verdict_html(s, result.query, colors)}</header>"
+        f"{_cards_html(s, colors)}"
+        '<section class="section"><div class="eyebrow">Query mosaic</div>'
+        f"{_mosaic_html(regions, colors, s)}</section>"
+        '<section class="section"><div class="eyebrow">Recombinant regions</div>'
+        f'{_regions_html(regions, colors, s["query_len"])}</section>'
+        '<section class="section"><div class="eyebrow">Similarity across the alignment</div>'
+        '<p class="cap">Each line is one reference\'s similarity to the query along the '
+        'alignment; shaded bands are called donor regions. Drag to zoom, hover for values.</p>'
+        f"{plot_div}</section>"
+        '<section class="section"><div class="eyebrow">Window winners</div>'
+        '<p class="cap">Windows in which each reference is the query\'s closest match '
+        '(ties included).</p>'
+        f"{_winners_html(analysis, colors)}</section>"
+        '<section class="section"><div class="eyebrow">Per-dataset similarity statistics</div>'
+        f'{_stats_html(analysis, s["major"])}</section>'
+        f'<section class="section">{_methods_html(provenance)}</section>'
+        f"{_footer_html(provenance)}"
+        "</div></body></html>"
+    )
 
     out = output_dir / "report.html"
     out.write_text(doc)

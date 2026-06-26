@@ -66,3 +66,6 @@ ignore = ["B008"]
 # Subcommands are registered by importing the cmd_* modules for their side
 # effects, after the Typer app is defined -- hence the late import.
 "src/recomfi/cli/main.py" = ["E402", "I001"]
+# The HTML report embeds a compact inline stylesheet; keeping CSS rules one per
+# line (rather than wrapped) is more readable than honouring the line limit.
+"src/recomfi/recomb/report.py" = ["E501"]
