@@ -87,9 +87,44 @@ def find_references(params: FindRefParams, logger: logging.Logger) -> list[Candi
             f"{', '.join(sorted(records))}"
         )
     existing = _existing_labels(result, params.collection, query_label)
-    exclude = {_base_accession(e) for e in params.exclude}
-
     targets = sorted(gaps, key=lambda g: g.length_bp, reverse=True)[: params.top_gaps]
+    candidates = collect_candidates(
+        targets, query_row, existing,
+        max_hits=params.max_hits, email=params.email,
+        exclude={_base_accession(e) for e in params.exclude},
+        keep_self_hits=params.keep_self_hits, logger=logger,
+    )
+
+    _write_candidates(params.output, candidates, logger)
+    _print_candidates(candidates, logger)
+
+    if params.download is not None:
+        downloaded = _download(candidates, params.download, logger)
+        _write_downloaded(params.output, downloaded, logger)
+    elif candidates:
+        logger.info(
+            "Re-run with --download <collection_dir> to add the new references, "
+            "then rebuild the MSA with 'recomfi msa'."
+        )
+    return candidates
+
+
+def collect_candidates(
+    targets: list[CoverageGap],
+    query_row: str,
+    existing: set[str],
+    *,
+    max_hits: int,
+    email: str | None,
+    exclude: set[str],
+    keep_self_hits: bool,
+    logger: logging.Logger,
+) -> list[Candidate]:
+    """BLAST each gap's query subsequence and return the kept candidate hits.
+
+    Hits in ``exclude`` (version-insensitive) or recognised as the query's own
+    record (near-identical, near-full-length) are dropped and logged.
+    """
     candidates: list[Candidate] = []
     skipped_self: list[str] = []
     skipped_excluded: list[str] = []
@@ -106,16 +141,14 @@ def find_references(params: FindRefParams, logger: logging.Logger) -> list[Candi
             gap.query_start, gap.query_end, len(subseq), gap.best_label, gap.mean_best,
         )
         try:
-            hits = blast_subsequence(
-                subseq, max_hits=params.max_hits, logger=logger, email=params.email,
-            )
+            hits = blast_subsequence(subseq, max_hits=max_hits, logger=logger, email=email)
         except BlastError as exc:
             logger.warning("  BLAST failed for this gap, skipping: %s", exc)
             continue
         for hit in hits:
             if _base_accession(hit.accession) in exclude:
                 skipped_excluded.append(hit.accession)
-            elif _is_self_hit(hit, params.keep_self_hits):
+            elif _is_self_hit(hit, keep_self_hits):
                 skipped_self.append(hit.accession)
             else:
                 candidates.append(Candidate(gap, hit, hit.accession in existing))
@@ -129,18 +162,6 @@ def find_references(params: FindRefParams, logger: logging.Logger) -> list[Candi
     if skipped_excluded:
         logger.info("Excluded %d hit(s) by --exclude: %s",
                     len(skipped_excluded), ", ".join(skipped_excluded))
-
-    _write_candidates(params.output, candidates, logger)
-    _print_candidates(candidates, logger)
-
-    if params.download is not None:
-        downloaded = _download(candidates, params.download, logger)
-        _write_downloaded(params.output, downloaded, logger)
-    elif candidates:
-        logger.info(
-            "Re-run with --download <collection_dir> to add the new references, "
-            "then rebuild the MSA with 'recomfi msa'."
-        )
     return candidates
 
 

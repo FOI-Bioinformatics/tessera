@@ -155,6 +155,19 @@ GenBank record (the MSA labels the query by name, not accession), so a
 near-identical, near-full-length hit is auto-skipped; use `--keep-self-hits` to
 keep it, or `--exclude <accession>` to drop specific records.
 
+To do this repeatedly until coverage stops improving, `recomfi fill-references`
+runs the whole cycle — build MSA, scan, BLAST, download — for several rounds,
+growing a copy of the collection each time:
+```
+recomfi fill-references --query cowpox_with_variolaInsert.fasta.gz \
+    --collection collection/ --output filled/ --aligner mafft --email you@example.org
+```
+It stops when the gaps close, when no new reference can be found, or when a round
+no longer improves the worst gap (so a genuinely hypervariable region is reported,
+not chased forever). Each round is recorded in `filled/fill_summary.tsv`, and the
+query's own record is auto-excluded from its FASTA header. This needs an aligner
+and Entrez Direct, and rebuilds the alignment every round.
+
 # Known limitations
 The region calling is a transparent heuristic, not a statistical test. In
 particular: overlapping windows (step < window) make the per-window series
