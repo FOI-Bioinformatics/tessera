@@ -374,6 +374,7 @@ def write_html_report(
 
     doc = f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
+<link rel="icon" href="data:,">
 <title>RecomFi report: {html.escape(result.query)}</title>
 <style>
  body {{ font-family: system-ui, sans-serif; margin: 2rem; color: #222; }}
