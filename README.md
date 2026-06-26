@@ -94,14 +94,15 @@ Run `recomfi --help`, `recomfi msa --help` or `recomfi recomb --help` for the fu
 # Output
 RecomFi computes, in sliding windows across the MSA, the similarity of the query to each reference (1 = identical, 0 = no similarity). The reference winning the most windows is the **major parent** (the backbone donor).
 
-To call recombinant regions, the default caller (`--method hmm`) segments the query against the reference panel with a hidden Markov model (jpHMM-style): each window emits a binomial copying likelihood per reference, and a single jump rate (`--jump-rate`) penalises switching reference, so near-identical references do not flip and thin windows cannot drive a call. A segment is reported as recombinant only when its donor beats the major parent on the **discordant sites** — positions where the query matches one candidate parent but not the other — by a sign test at level `--alpha`. This is far more discriminating than an all-sites margin (it recovers subtle breakpoints between near-identical parents) and does not invent regions from noise. Each region carries a **support** (the share of distinguishing sites favouring the donor) and a **breakpoint uncertainty interval**. The legacy `--method heuristic` (margin / merge-gap / min-region) is kept for comparison.
+To call recombinant regions, the default caller (`--method hmm`) segments the query against the reference panel with a hidden Markov model (jpHMM-style): each window emits a binomial copying likelihood per reference, and a single jump rate (`--jump-rate`) penalises switching reference, so near-identical references do not flip and thin windows cannot drive a call. A segment is reported as recombinant only when its donor beats the major parent on the **discordant sites** — positions where the query matches one candidate parent but not the other — by a sign test at level `--alpha`. This is far more discriminating than an all-sites margin (it recovers subtle breakpoints between near-identical parents) and does not invent regions from noise. Each region carries a **support** (the share of distinguishing sites favouring the donor), a sign-test **p-value** with a Benjamini-Hochberg **q-value** (false-discovery-rate across the segments tested), and a **breakpoint uncertainty interval**. The legacy `--method heuristic` (margin / merge-gap / min-region) is kept for comparison.
 
 ```
 Recombination regions (major parent: cowpox_KC813504):
-  Minor parent  Major parent     Query start  Query end  Length(bp)  Sim minor  Sim major  Support  Breakpoint
-  -----------------------------------------------------------------------------------------------------------
-  variola       cowpox_KC813504  66268        147150     80882       0.999      0.977      0.99     66768
+  Minor parent  Major parent     Query start  Query end  Length(bp)  Sim minor  Sim major  Support  q-value  Breakpoint
+  --------------------------------------------------------------------------------------------------------------------
+  variola       cowpox_KC813504  66268        147150     80882       0.999      0.977      0.97     2e-300   66768
 ```
+A high support with a small q-value is a confident call; a region with strong directional support but a large q-value (few distinguishing sites, e.g. a recombination between near-identical lineages) is flagged as marginal rather than dropped.
 
 It remains an **indicative screen, not a full phylogenetic test** (such as 3SEQ or GARD). Treat regions as candidates to confirm.
 

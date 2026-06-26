@@ -28,7 +28,12 @@ from statistics import mean
 from .analyze import AnalysisResult, rank_datasets
 from .hmm import DEFAULT_JUMP_RATE, segment_query
 from .similarity import WindowSimilarity, discordant_counts
-from .stats import sign_test_greater
+from .stats import benjamini_hochberg, sign_test_pvalue
+
+
+def _signif(x: float) -> float:
+    """Round a (possibly tiny) p/q-value to two significant figures for display."""
+    return 0.0 if x == 0 else float(f"{x:.2g}")
 
 
 @dataclass
@@ -84,8 +89,11 @@ class Region:
     posterior_support: float = 1.0
     breakpoint_lo: int | None = None
     breakpoint_hi: int | None = None
-    # Share of distinguishing (discordant) sites that favour the donor.
+    # Share of distinguishing (discordant) sites that favour the donor, and the
+    # sign-test p-value with its Benjamini-Hochberg q-value (FDR across segments).
     support: float | None = None
+    pvalue: float | None = None
+    qvalue: float | None = None
     # Set by coverage analysis: the donor's own similarity is poor, so it may be a
     # stand-in for an absent true donor. Default False (not yet evaluated).
     donor_undercovered: bool = False
@@ -148,20 +156,32 @@ def _call_regions_hmm(
     if major is None:
         return [], None
 
-    regions: list[Region] = []
+    # Pass 1: every non-major segment that clears the length filter and has a donor
+    # genuinely closer than the major (favor_minor > favor_major on discordant
+    # sites) is a candidate; collect its one-sided sign-test p-value.
+    candidates = []
     for seg in segments:
-        if seg.state == major:
+        if seg.state == major or seg.msa_end - seg.msa_start < params.min_region:
             continue
-        if seg.msa_end - seg.msa_start < params.min_region:
-            continue
-        # Test only the discordant sites (query matches one parent but not the
-        # other) -- powerful for near-identical parents, immune to window overlap.
         favor_minor, favor_major = discordant_counts(
             result.rows, result.query, major, seg.state, seg.msa_start, seg.msa_end
         )
-        if not sign_test_greater(favor_minor, favor_major, params.alpha):
+        if favor_minor <= favor_major:
             continue
-        support = favor_minor / (favor_minor + favor_major)  # share of sites for donor
+        candidates.append((seg, favor_minor, favor_major,
+                           sign_test_pvalue(favor_minor, favor_major)))
+
+    # Pass 2: a segment is reported when it is individually significant
+    # (p <= alpha); the Benjamini-Hochberg q-value is computed across all candidates
+    # and reported alongside, so the multiplicity-adjusted significance is visible
+    # without discarding marginal-but-real events (e.g. a recombination between
+    # near-identical parents, which has few distinguishing sites).
+    qvalues = benjamini_hochberg([c[3] for c in candidates])
+    regions: list[Region] = []
+    for (seg, favor_minor, favor_major, pvalue), q in zip(candidates, qvalues, strict=True):
+        if pvalue > params.alpha:
+            continue
+        support = favor_minor / (favor_minor + favor_major)
         idx = range(seg.start_window, seg.end_window + 1)
         minor_sims = [result.similarities[seg.state][i] for i in idx
                       if not isnan(result.similarities[seg.state][i])]
@@ -180,6 +200,7 @@ def _call_regions_hmm(
                 posterior_support=seg.mean_posterior,
                 breakpoint_lo=seg.breakpoint_lo, breakpoint_hi=seg.breakpoint_hi,
                 support=round(support, 3),
+                pvalue=_signif(pvalue), qvalue=_signif(q),
             )
         )
     return regions, major

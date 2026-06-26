@@ -5,9 +5,11 @@ from __future__ import annotations
 import math
 
 from recomfi.recomb.stats import (
+    benjamini_hochberg,
     emission_loglik,
     proportion_diff_significant,
     sign_test_greater,
+    sign_test_pvalue,
     wilson_ci,
 )
 
@@ -47,6 +49,22 @@ def test_sign_test_greater():
     assert sign_test_greater(0, 0) is False
     # large-n normal-approximation branch (no overflow)
     assert sign_test_greater(900, 700) is True
+
+
+def test_sign_test_pvalue():
+    assert math.isclose(sign_test_pvalue(10, 0), 0.5**10)  # exact upper tail
+    assert sign_test_pvalue(20, 3) < 0.01
+    assert sign_test_pvalue(0, 0) == 1.0
+    assert 0.0 < sign_test_pvalue(900, 700) < 0.001  # normal-approx branch
+
+
+def test_benjamini_hochberg():
+    assert benjamini_hochberg([]) == []
+    # monotone, bounded by 1, and the smallest p gets the largest correction factor
+    q = benjamini_hochberg([0.01, 0.02, 0.5])
+    assert all(0.0 <= x <= 1.0 for x in q)
+    assert math.isclose(q[0], 0.03)  # 0.01 * 3 / 1
+    assert q[2] >= q[0]
 
 
 def test_emission_loglik_prefers_fewer_mismatches_and_weights_n():

@@ -64,22 +64,40 @@ def proportion_diff_significant(
     return (p1 - p2) / se >= _z_one_sided(alpha)
 
 
-def sign_test_greater(a: int, b: int, alpha: float = 0.05) -> bool:
-    """One-sided exact sign test: is ``a`` significantly more than ``b``?
+def sign_test_pvalue(a: int, b: int) -> float:
+    """One-sided sign-test p-value: ``P(X >= a)`` for ``X ~ Binomial(a+b, 0.5)``.
 
-    Under the null (no preference) ``a ~ Binomial(a+b, 0.5)``; returns ``True``
-    when ``a > b`` and ``P(X >= a) <= alpha``. Used on the discordant sites that
-    distinguish two candidate parents, so it is unaffected by window overlap.
+    The probability of seeing at least ``a`` discordant sites favouring the donor
+    if the two parents were equally good (the null). Small means a real preference.
     """
     n = a + b
-    if n == 0 or a <= b:
-        return False
-    if n <= 1000:  # exact upper tail of Binomial(n, 0.5)
-        tail = sum(math.comb(n, i) for i in range(a, n + 1)) / (2.0**n)
-        return tail <= alpha
-    # normal approximation with a continuity correction for large n
-    z = (a - n / 2.0 - 0.5) / math.sqrt(n / 4.0)
-    return z >= _z_one_sided(alpha)
+    if n == 0:
+        return 1.0
+    if n <= 1000:  # exact upper tail
+        return sum(math.comb(n, i) for i in range(a, n + 1)) / (2.0**n)
+    z = (a - n / 2.0 - 0.5) / math.sqrt(n / 4.0)  # normal approx, continuity-corrected
+    return 1.0 - _NORMAL.cdf(z)
+
+
+def sign_test_greater(a: int, b: int, alpha: float = 0.05) -> bool:
+    """``True`` when ``a > b`` and the one-sided sign test rejects at ``alpha``."""
+    return a > b and sign_test_pvalue(a, b) <= alpha
+
+
+def benjamini_hochberg(pvalues: list[float]) -> list[float]:
+    """Benjamini-Hochberg FDR q-values, in the input order (controls false calls
+    across the many candidate segments tested per genome)."""
+    m = len(pvalues)
+    if m == 0:
+        return []
+    order = sorted(range(m), key=lambda i: pvalues[i])
+    q = [0.0] * m
+    prev = 1.0
+    for rank in range(m - 1, -1, -1):
+        i = order[rank]
+        prev = min(prev, pvalues[i] * m / (rank + 1))
+        q[i] = prev
+    return q
 
 
 def emission_loglik(k: int, n: int, p: float) -> float:

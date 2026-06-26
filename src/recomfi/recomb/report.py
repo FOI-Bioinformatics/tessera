@@ -86,7 +86,7 @@ def print_summary(analysis: AnalysisResult, echo=print) -> None:
 
 REGION_HEADER = [
     "Minor parent", "Major parent", "Query start", "Query end", "Length(bp)",
-    "Sim minor", "Sim major", "Support", "Breakpoint",
+    "Sim minor", "Sim major", "Support", "q-value", "Breakpoint",
 ]
 
 
@@ -100,12 +100,13 @@ def _breakpoint_str(region: Region) -> str:
 
 def _region_row(region: Region) -> tuple[str, list]:
     support = "-" if region.support is None else f"{region.support:.2f}"
+    qval = "-" if region.qvalue is None else f"{region.qvalue:.2g}"
     return (
         region.minor_parent,
         [
             region.major_parent, region.query_start, region.query_end,
             region.length_bp, region.mean_sim_minor, region.mean_sim_major,
-            support, _breakpoint_str(region),
+            support, qval, _breakpoint_str(region),
         ],
     )
 
@@ -197,7 +198,7 @@ def write_regions_tsv(regions: list[Region], output_dir: Path, logger: logging.L
         "minor_parent", "major_parent", "msa_start", "msa_end",
         "query_start", "query_end", "length_bp", "n_windows",
         "mean_sim_minor", "mean_sim_major", "margin",
-        "support", "posterior", "breakpoint_lo", "breakpoint_hi",
+        "support", "pvalue", "qvalue", "posterior", "breakpoint_lo", "breakpoint_hi",
         "donor_undercovered", "donor_absent",
     ]
     with open(path, "w") as fo:
@@ -209,6 +210,8 @@ def write_regions_tsv(regions: list[Region], output_dir: Path, logger: logging.L
                     r.query_start, r.query_end, r.length_bp, r.n_windows,
                     r.mean_sim_minor, r.mean_sim_major, r.margin,
                     "NA" if r.support is None else r.support,
+                    "NA" if r.pvalue is None else r.pvalue,
+                    "NA" if r.qvalue is None else r.qvalue,
                     r.posterior_support,
                     "NA" if r.breakpoint_lo is None else r.breakpoint_lo,
                     "NA" if r.breakpoint_hi is None else r.breakpoint_hi,
@@ -637,7 +640,7 @@ def _regions_html(regions: list[Region], colors: dict[str, str], query_len: int)
     head = (
         "<tr><th>Donor (minor)</th><th>Backbone (major)</th><th>Query span (bp)</th>"
         "<th>Length</th><th>% query</th><th>Sim donor</th><th>Sim backbone</th>"
-        "<th>Support</th><th>Breakpoint</th></tr>"
+        "<th>Support</th><th>q-value</th><th>Breakpoint</th></tr>"
     )
     rows = ""
     for r in regions:
@@ -654,6 +657,7 @@ def _regions_html(regions: list[Region], colors: dict[str, str], query_len: int)
             flag = ('<span class="flag" title="donor is itself a poor match">low conf</span>'
                     if r.donor_undercovered else "")
         support = "&ndash;" if r.support is None else f"{r.support:.2f}"
+        qval = "&ndash;" if r.qvalue is None else f"{r.qvalue:.2g}"
         if r.breakpoint_lo is None:
             bp = "&ndash;"
         elif r.breakpoint_lo == r.breakpoint_hi:
@@ -670,6 +674,7 @@ def _regions_html(regions: list[Region], colors: dict[str, str], query_len: int)
             f'<td class="num">{r.mean_sim_minor:.3f}</td>'
             f'<td class="num">{r.mean_sim_major:.3f}</td>'
             f'<td class="num strong">{support}</td>'
+            f'<td class="num">{qval}</td>'
             f'<td class="num">{bp}</td>'
             "</tr>"
         )
@@ -720,6 +725,9 @@ _GLOSSARY = [
      "The share of distinguishing (discordant) sites -- where the query matches one "
      "candidate parent but not the other -- that favour the donor. 0.5 = no "
      "preference, 1.0 = every distinguishing site favours the donor."),
+    ("q-value",
+     "The sign-test p-value after Benjamini-Hochberg correction across all candidate "
+     "segments (false-discovery-rate control). A region is reported when q <= alpha."),
     ("Breakpoint",
      "The query position where the source switches, with a posterior-derived "
      "uncertainty interval from the HMM."),
@@ -743,8 +751,9 @@ def _methods_html(provenance: dict[str, str]) -> str:
         '<p class="cap">RecomFi segments the query against the reference panel with an HMM '
         '(jpHMM-style) and reports a region only when its donor beats the major parent on the '
         'sites that distinguish them (a sign test on discordant sites, immune to window '
-        'overlap), with a posterior breakpoint interval. It remains an indicative screen, not a '
-        'full phylogenetic test (e.g. 3SEQ, GARD) -- confirm strong candidates.</p>'
+        'overlap; Benjamini-Hochberg FDR across segments), with a posterior breakpoint '
+        'interval. It remains an indicative screen, not a full phylogenetic test (e.g. 3SEQ, '
+        'GARD) -- confirm strong candidates.</p>'
         f'<dl class="glossary">{glossary}</dl>'
         f'<h3>Run parameters</h3><table class="kv">{params}</table></details>'
     )
