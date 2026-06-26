@@ -22,7 +22,6 @@ from dataclasses import dataclass
 import numpy as np
 
 from .similarity import WindowSimilarity
-from .stats import emission_loglik
 
 # Defaults, both from first principles rather than fit to any dataset.
 DEFAULT_JUMP_RATE = 1e-3  # prior probability of switching reference per window
@@ -72,11 +71,7 @@ def segment_query(
         return [], None
 
     p = identity if identity is not None else _estimate_identity(result)
-    emission = np.array([
-        [emission_loglik(result.numerators[s][i], result.denominators[s][i], p)
-         for i in range(n_win)]
-        for s in labels
-    ])  # shape (S, W)
+    emission = _emission_matrix(result, labels, p)  # shape (S, W)
 
     s_count = len(labels)
     if s_count == 1:
@@ -90,6 +85,27 @@ def segment_query(
     segments = _path_to_segments(path, post, labels, result)
     major = _major_state(path, labels)
     return segments, major
+
+
+def _emission_matrix(result: WindowSimilarity, labels: list[str], p: float) -> np.ndarray:
+    """Per-state per-window copying log-likelihood, comparable across states.
+
+    Each state contributes ``k*log(p) + (n-k)*log(1-p)`` over its comparable sites,
+    then is padded to the window's maximum comparable count with a neutral
+    ``log(0.5)`` per missing site. Without the padding a gapped reference (n=0)
+    would emit 0 -- the maximum -- and the HMM would prefer absent references; the
+    padding makes a gapped state emit low, so a real reference always wins where it
+    has data, while genuine identity still drives the choice between present ones.
+    """
+    num = np.array([result.numerators[s] for s in labels], dtype=float)  # (S, W)
+    den = np.array([result.denominators[s] for s in labels], dtype=float)
+    n_max = den.max(axis=0)  # most comparable sites any reference offers per window
+    pp = min(max(p, 1e-6), 1.0 - 1e-6)
+    return (
+        num * math.log(pp)
+        + (den - num) * math.log(1.0 - pp)
+        + (n_max[None, :] - den) * math.log(0.5)
+    )
 
 
 def _transition_matrix(s_count: int, jump_rate: float) -> np.ndarray:

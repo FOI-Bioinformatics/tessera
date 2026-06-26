@@ -52,7 +52,7 @@
     {
       "name": "hiv1_crf",
       "enabled": true,
-      "description": "HIV-1 CRF01_AE (CM240) recombinant vs pure subtype reference genomes.",
+      "description": "HIV-1 CRF01_AE (CM240): subtype-A backbone with a subtype-E env, vs pure subtype references plus an E-env reference.",
       "aligner": "mafft",
       "reference": "B_HXB2",
       "threads": 4,
@@ -63,14 +63,17 @@
           {"accession": "K03455", "label": "B_HXB2"},
           {"accession": "U51190", "label": "A1"},
           {"accession": "U46016", "label": "C"},
-          {"accession": "K03454", "label": "D"}
+          {"accession": "K03454", "label": "D"},
+          {"accession": "JN388230", "label": "AE_env"}
         ]
       },
       "expected": {
         "major_parent": "A1",
-        "min_regions": 1
+        "region_minor_any": ["AE_env"],
+        "min_regions": 1,
+        "breakpoint": {"coord": "query", "lo": 5000, "hi": 8500}
       },
-      "provenance": "All accessions confirmed on NCBI nuccore. Query CRF01_AE = CM240 U54771 (9203 bp). Pure subtype references: B = HXB2 K03455 (coordinate standard, 9719 bp), A1 = 92UG037 U51190, C = U46016, D = ELI K03454. CRF01_AE is a subtype-A-dominant mosaic with an E-like env. The major parent resolves to A1 and NO confident donor-present region is called against the pure subtypes -- correctly, since the true env donor (subtype E / CRF01_AE) is absent. Instead the env (and gag) are reported as DONOR-ABSENT regions (the query is locally far from every reference: a recombination whose source is missing from the collection -- run find-references). The old heuristic hallucinated ~6 low-margin regions here."
+      "provenance": "All accessions confirmed on NCBI nuccore. Query CRF01_AE = CM240 U54771 (9203 bp). Pure subtype references: B = HXB2 K03455 (coordinate standard, 9719 bp), A1 = 92UG037 U51190, C = U46016, D = ELI K03454. Because pure subtype E exists only as the CRF01_AE env, an env-only E reference is added: AE_env = JN388230 (Thailand CRF01_AE env, 2556 bp), which aligns to the env columns and is gapped elsewhere. The query then resolves to an A1 backbone with a donor-present AE_env recombination over gp120/env (query ~5.7-8.2 kb, breakpoint near the env boundary) -- the A/E mosaic that defines CRF01_AE, as detected by jpHMM/COMET. Without AE_env the env is instead reported as a DONOR-ABSENT region (true source missing -- run find-references). The old heuristic hallucinated ~6 low-margin regions here."
     },
     {
       "name": "norovirus_gii",
