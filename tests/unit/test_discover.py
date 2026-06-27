@@ -165,3 +165,43 @@ def test_download_without_efetch_is_a_clear_error(monkeypatch, tmp_path, logger)
 def test_organism_extraction():
     assert _organism("Some virus strain X, complete genome [Variola virus]") == "Variola virus"
     assert _organism("Cowpox virus, complete genome") == "Cowpox virus"
+
+
+def test_tiles_geometry():
+    from recomfi.discover.run import _tiles
+
+    assert _tiles(300, 400) == [(0, 300)]  # shorter than a tile -> one search
+    tiles = _tiles(800, 400)  # overlapping, half-step, last aligned to the end
+    assert tiles == [(0, 400), (200, 600), (400, 800)]
+
+
+def test_collect_candidates_subtiling_surfaces_per_region_donors(monkeypatch, logger):
+    from recomfi.discover.run import collect_candidates
+    from recomfi.recomb.coverage import CoverageGap
+
+    # An 800 bp gap: an 'A' flank, a 'C' flank, and (in the middle tile) a mix.
+    query_row = "A" * 400 + "C" * 400
+    gap = CoverageGap(
+        msa_start=0, msa_end=800, query_start=0, query_end=800,
+        length_bp=800, n_windows=8, best_label="ref", mean_best=0.9, kind="divergent",
+    )
+
+    def fake_blast(seq, *, max_hits, logger, email=None):
+        if "C" not in seq:
+            donor = Hit("FLANK_A", "a", 90.0, 95.0, 1e-9)
+        elif "A" not in seq:
+            donor = Hit("FLANK_C", "c", 90.0, 95.0, 1e-9)
+        else:
+            donor = Hit("CORE", "core donor", 88.0, 95.0, 1e-9)
+        return [donor, Hit("SHARED", "in every tile", 92.0, 95.0, 1e-9)]
+
+    monkeypatch.setattr(discover_run, "blast_subsequence", fake_blast)
+    common = dict(max_hits=5, email=None, exclude=set(), keep_self_hits=True, logger=logger)
+
+    whole = collect_candidates([gap], query_row, set(), subtile=0, **common)
+    assert {c.hit.accession for c in whole} == {"CORE", "SHARED"}  # one diluted search
+
+    tiled = collect_candidates([gap], query_row, set(), subtile=400, **common)
+    # each region's donor surfaces; SHARED appears in all tiles but is kept once
+    assert {c.hit.accession for c in tiled} == {"FLANK_A", "CORE", "FLANK_C", "SHARED"}
+    assert sum(c.hit.accession == "SHARED" for c in tiled) == 1

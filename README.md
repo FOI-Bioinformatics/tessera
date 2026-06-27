@@ -157,6 +157,17 @@ GenBank record (the MSA labels the query by name, not accession), so a
 near-identical, near-full-length hit is auto-skipped; use `--keep-self-hits` to
 keep it, or `--exclude <accession>` to drop specific records.
 
+A gap longer than `--subtile` (default 400 bp) is searched in overlapping
+sub-intervals, not as one subsequence. A short divergent tract inside a longer gap
+is otherwise diluted by the gap's high-matching flanks: one whole-gap BLAST returns
+the flanks' donor and hides the tract's. (On a norovirus capsid gap this is the
+difference between recruiting only the flank reference and also recruiting the
+divergent core's distinct donor.) Resolution has two levers: `--window-size`
+controls whether a short region is *detected* as a gap at all (a wide window
+averages it away), and `--subtile` controls whether its donor is *found* once
+detected. Set `--subtile 0` to disable; very short intervals (< ~150 bp) lose BLAST
+specificity.
+
 To do this repeatedly until coverage stops improving, `recomfi fill-references`
 runs the whole cycle — build MSA, scan, BLAST, download — for several rounds,
 growing a copy of the collection each time:

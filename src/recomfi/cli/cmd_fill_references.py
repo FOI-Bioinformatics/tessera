@@ -73,6 +73,11 @@ def fill_references(
     ),
     max_hits: int = typer.Option(5, "--max-hits", help="BLAST hits to keep per gap."),
     top_gaps: int = typer.Option(3, "--top-gaps", help="Search the N longest gaps each round."),
+    subtile: int = typer.Option(
+        400, "--subtile",
+        help="Search gaps longer than this (bp) in overlapping sub-intervals, so a short "
+        "divergent tract surfaces its own donor instead of being diluted (0 disables).",
+    ),
     email: str | None = typer.Option(
         None, "--email", help="Contact email for NCBI (or set NCBI_EMAIL)."
     ),
@@ -121,7 +126,7 @@ def fill_references(
             seed_mode=seed_mode, seed_hits=seed_hits, seed_window=seed_window,
             window_size=window_size, window_step=window_step,
             coverage_floor=coverage_floor, coverage_rel_drop=coverage_rel_drop,
-            min_improvement=min_improvement, max_hits=max_hits, top_gaps=top_gaps,
+            min_improvement=min_improvement, max_hits=max_hits, top_gaps=top_gaps, subtile=subtile,
             email=email or os.environ.get("NCBI_EMAIL"),
             exclude=tuple(exclude), keep_self_hits=keep_self_hits, threads=threads,
             curate=curate, sibling_margin=sibling_margin, af_min=af_min, derep_ani=derep_ani,

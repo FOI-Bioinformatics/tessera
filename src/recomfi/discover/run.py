@@ -46,6 +46,7 @@ class FindRefParams:
     sibling_margin: float = 3.0  # query-ANI must beat the backbone's by this many %
     af_min: float = 80.0  # ... over at least this % of the query (whole-genome match)
     derep_ani: float = 99.0  # skDER: collapse references >= this ANI to one representative
+    subtile: int = 400  # search gaps longer than this in overlapping sub-intervals (0 = off)
 
 
 @dataclass
@@ -96,7 +97,7 @@ def find_references(params: FindRefParams, logger: logging.Logger) -> list[Candi
         targets, query_row, existing,
         max_hits=params.max_hits, email=params.email,
         exclude={_base_accession(e) for e in params.exclude},
-        keep_self_hits=params.keep_self_hits, logger=logger,
+        keep_self_hits=params.keep_self_hits, logger=logger, subtile=params.subtile,
     )
 
     _write_candidates(params.output, candidates, logger)
@@ -115,6 +116,23 @@ def find_references(params: FindRefParams, logger: logging.Logger) -> list[Candi
     return candidates
 
 
+def _tiles(length: int, tile: int) -> list[tuple[int, int]]:
+    """Overlapping sub-intervals (~``tile`` long, half-overlap) covering ``length``.
+
+    A long gap is searched in pieces so a short divergent tract is not diluted by
+    high-matching flanks (which would otherwise dominate one whole-gap BLAST and hide
+    the tract's donor). Overlap keeps a tract that straddles a boundary intact in at
+    least one tile.
+    """
+    if tile <= 0 or length <= tile:
+        return [(0, length)]
+    step = max(MIN_SUBSEQ, tile // 2)
+    starts = list(range(0, length - tile + 1, step))
+    if starts[-1] != length - tile:
+        starts.append(length - tile)
+    return [(s, s + tile) for s in starts]
+
+
 def collect_candidates(
     targets: list[CoverageGap],
     query_row: str,
@@ -125,11 +143,14 @@ def collect_candidates(
     exclude: set[str],
     keep_self_hits: bool,
     logger: logging.Logger,
+    subtile: int = 0,
 ) -> list[Candidate]:
     """BLAST each gap's query subsequence and return the kept candidate hits.
 
-    Hits in ``exclude`` (version-insensitive) or recognised as the query's own
-    record (near-identical, near-full-length) are dropped and logged.
+    When ``subtile`` > 0, a gap longer than that is searched in overlapping
+    sub-intervals so a short divergent tract surfaces its own donor instead of being
+    diluted by the gap's high-matching flanks. Hits in ``exclude`` (version-insensitive)
+    or recognised as the query's own record are dropped and logged.
     """
     candidates: list[Candidate] = []
     skipped_self: list[str] = []
@@ -142,22 +163,30 @@ def collect_candidates(
                 gap.query_start, gap.query_end, len(subseq),
             )
             continue
+        tiles = _tiles(len(subseq), subtile)
         logger.info(
-            "Searching gap query %d-%d (%d bp, closest current ref %s ~%.2f)...",
+            "Searching gap query %d-%d (%d bp, closest current ref %s ~%.2f)%s...",
             gap.query_start, gap.query_end, len(subseq), gap.best_label, gap.mean_best,
+            f" in {len(tiles)} sub-intervals" if len(tiles) > 1 else "",
         )
-        try:
-            hits = blast_subsequence(subseq, max_hits=max_hits, logger=logger, email=email)
-        except BlastError as exc:
-            logger.warning("  BLAST failed for this gap, skipping: %s", exc)
-            continue
-        for hit in hits:
-            if _base_accession(hit.accession) in exclude:
-                skipped_excluded.append(hit.accession)
-            elif _is_self_hit(hit, keep_self_hits):
-                skipped_self.append(hit.accession)
-            else:
-                candidates.append(Candidate(gap, hit, hit.accession in existing))
+        seen_here: set[str] = set()  # dedup an accession found in several overlapping tiles
+        for tstart, tend in tiles:
+            tile_seq = subseq[tstart:tend]
+            if len(tile_seq) < MIN_SUBSEQ:
+                continue
+            try:
+                hits = blast_subsequence(tile_seq, max_hits=max_hits, logger=logger, email=email)
+            except BlastError as exc:
+                logger.warning("  BLAST failed for a sub-interval, skipping: %s", exc)
+                continue
+            for hit in hits:
+                if _base_accession(hit.accession) in exclude:
+                    skipped_excluded.append(hit.accession)
+                elif _is_self_hit(hit, keep_self_hits):
+                    skipped_self.append(hit.accession)
+                elif hit.accession not in seen_here:
+                    seen_here.add(hit.accession)
+                    candidates.append(Candidate(gap, hit, hit.accession in existing))
 
     if skipped_self:
         logger.info(

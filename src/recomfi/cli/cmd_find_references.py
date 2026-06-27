@@ -37,6 +37,11 @@ def find_references(
     ),
     max_hits: int = typer.Option(5, "--max-hits", help="BLAST hits to keep per gap."),
     top_gaps: int = typer.Option(3, "--top-gaps", help="Search the N longest gaps."),
+    subtile: int = typer.Option(
+        400, "--subtile",
+        help="Search gaps longer than this (bp) in overlapping sub-intervals, so a short "
+        "divergent tract surfaces its own donor instead of being diluted (0 disables).",
+    ),
     email: str | None = typer.Option(
         None, "--email", help="Contact email for NCBI (etiquette; or set NCBI_EMAIL)."
     ),
@@ -85,7 +90,7 @@ def find_references(
             msa=msa, query=str(query), output=output, collection=collection,
             window_size=window_size, window_step=window_step,
             coverage_floor=coverage_floor, coverage_rel_drop=coverage_rel_drop,
-            max_hits=max_hits, top_gaps=top_gaps,
+            max_hits=max_hits, top_gaps=top_gaps, subtile=subtile,
             email=email or os.environ.get("NCBI_EMAIL"),
             exclude=tuple(exclude), keep_self_hits=keep_self_hits,
             download=download, curate=curate, sibling_margin=sibling_margin,

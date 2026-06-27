@@ -66,6 +66,7 @@ class FillParams:
     coverage_rel_drop: float = 0.05
     max_hits: int = 5
     top_gaps: int = 3
+    subtile: int = 400  # search gaps longer than this in overlapping sub-intervals (0 = off)
     email: str | None = None
     exclude: tuple[str, ...] = ()
     keep_self_hits: bool = False
@@ -185,6 +186,7 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
             targets, query_row, existing,
             max_hits=params.max_hits, email=params.email,
             exclude=exclude, keep_self_hits=params.keep_self_hits, logger=logger,
+            subtile=params.subtile,
         )
         # Pick the backbone from the pre-download (curated, sibling-free) collection
         # so a freshly-downloaded sibling cannot be mistaken for it.
