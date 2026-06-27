@@ -232,6 +232,19 @@ recombinants (HIV subtypes ~12 % apart). For closely related parents that have n
 masking sibling (e.g. SARS-CoV-2 sublineages), add `--seed-keep-siblings`. NCBI
 Virus / `datasets` needs `conda install -c conda-forge ncbi-datasets-cli`.
 
+By default (`--auto-diversify`), BLAST seeding will **switch to the `ncbi-virus`
+diversity path automatically** when it finds only siblings — i.e. when the query's
+lineage saturates `nt` and no parental lineage can be recruited by similarity. A
+broad fetch is capped (`--fetch-limit`, default 2000) and dereplicated; for a
+heavily sequenced taxon the capped sample may miss lineages, so a curated
+`--candidate-pool` is recommended (and the run says so). Whether the diversity
+panel actually contains the parents depends on the taxon: it works when they are
+genotype/lineage representatives, less so for fine genotype-specific recombinants.
+Disable with `--no-auto-diversify`. This complements the caller-side defence:
+`recomfi recomb` excludes whole-genome siblings from the competition
+(`--exclude-siblings`, on by default), so a sibling that still slips into the panel
+cannot win every window and mask the event.
+
 ## Curating the panel for detection
 Auto-filling maximises *coverage* by recruiting the query's closest genomes — but
 for a recombinant query those closest genomes are its own-lineage relatives, which

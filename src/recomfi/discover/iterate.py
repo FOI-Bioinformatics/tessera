@@ -60,6 +60,11 @@ class FillParams:
     taxon: str | None = None  # taxon for NCBI Virus ("ncbi-virus"); auto-detected when None
     source_refseq: bool = True  # NCBI Virus: fetch the RefSeq set (else all complete genomes)
     seed_keep_siblings: bool = False  # keep the query's siblings when selecting from a pool
+    # When BLAST seeding finds only siblings (a saturated lineage), switch to recruiting
+    # by NCBI Virus taxonomy diversity instead, so the parental lineages are present.
+    auto_diversify: bool = True
+    fetch_limit: int = 2000  # cap a broad NCBI Virus fetch (complete genomes)
+    derep_diverse_ani: float = 95.0  # aggressive one-per-lineage dereplication of a pool
     window_size: int = 1000
     window_step: int = 100
     coverage_floor: float | None = None
@@ -246,6 +251,7 @@ SEED_SIBLING_IDENTITY = 95.0  # a hit this identical over near-full coverage is 
 SEED_SIBLING_COVERAGE = 90.0
 SEED_PER_WINDOW = 2  # regional candidates to keep per window
 SEED_TOTAL_CAP = 25  # bound the number of genomes seeded
+SEED_MIN_DIVERSE = 3  # below this many RefSeq genomes, broaden to complete genomes
 
 
 def _seed_collection(
@@ -276,12 +282,21 @@ def _seed_collection(
         return
     query_seq = query_records[0][1].replace("-", "")
     if params.seed_mode == "whole":
-        accessions = _seed_whole(query_seq, params, exclude, logger)
+        accessions, saturated = _seed_whole(query_seq, params, exclude, logger)
     else:
-        accessions = _seed_windowed(
+        accessions, saturated = _seed_windowed(
             query_seq, params, exclude, logger,
             drop_siblings=params.seed_mode == "parents",
         )
+    from .pool import datasets_available
+
+    if saturated and params.auto_diversify and datasets_available():
+        logger.info(
+            "BLAST seeding recruited only siblings of the query (its lineage saturates "
+            "NCBI); switching to NCBI Virus taxonomy diversity to recruit the parents..."
+        )
+        _seed_from_pool(params, collection, logger, force_ncbi=True)
+        return
     if not accessions:
         return  # caller reports that nothing could be seeded
     logger.info("Seeding %d reference(s): %s", len(accessions), ", ".join(accessions))
@@ -296,33 +311,65 @@ def _seed_collection(
     logger.info("Seeded %d reference(s) to start from.", seeded)
 
 
-def _seed_from_pool(params: FillParams, collection: Path, logger: logging.Logger) -> None:
+def _seed_from_pool(
+    params: FillParams, collection: Path, logger: logging.Logger, *, force_ncbi: bool = False
+) -> None:
     """Seed by regional selection from a genome pool (local directory or NCBI Virus)."""
-    from .pool import detect_taxon, fetch_ncbi_virus, iter_pool_genomes
+    from .pool import iter_pool_genomes
 
-    if params.seed_source == "local":
+    if params.seed_source == "local" and not force_ncbi:
         if params.candidate_pool is None:
             raise UserInputError("--seed-source local needs --candidate-pool <dir>.")
         genomes = iter_pool_genomes(params.candidate_pool)
-        selection = _select_from(params, genomes, logger)
-    else:  # ncbi-virus
-        taxon = params.taxon or detect_taxon(params.query, email=params.email, logger=logger)
+    else:  # ncbi-virus (or auto-switched into it)
         with tempfile.TemporaryDirectory() as tmp:
-            fetched = fetch_ncbi_virus(
-                taxon, Path(tmp), refseq=params.source_refseq, logger=logger
-            )
-            selection = _select_from(params, fetched, logger)
-            _copy_into(selection.selected, collection, logger)
+            genomes = _fetch_diverse(params, Path(tmp), logger)
+            _copy_into(_select_from(params, genomes, logger).selected, collection, logger)
             return
-    _copy_into(selection.selected, collection, logger)
+    _copy_into(_select_from(params, genomes, logger).selected, collection, logger)
+
+
+def _fetch_diverse(params: FillParams, dest: Path, logger: logging.Logger) -> list[Path]:
+    """Fetch a diverse taxon-scoped set from NCBI Virus: the RefSeq representative set,
+    broadening to a ``--limit``-capped set of complete genomes when RefSeq is too thin.
+
+    The cap bounds the work for a heavily-sequenced taxon (the download is never
+    unbounded). When the cap is hit the sample may miss lineages, so a curated
+    ``--candidate-pool`` is recommended instead -- this is logged, not fatal.
+    """
+    from .pool import detect_taxon, fetch_ncbi_virus
+
+    taxon = params.taxon or detect_taxon(params.query, email=params.email, logger=logger)
+    if params.source_refseq:
+        fetched = fetch_ncbi_virus(taxon, dest, refseq=True, logger=logger)
+        if len(fetched) >= SEED_MIN_DIVERSE:
+            return fetched
+        logger.info(
+            "RefSeq set for '%s' has only %d genome(s); broadening to complete genomes.",
+            taxon, len(fetched),
+        )
+        for g in fetched:
+            g.unlink()
+    fetched = fetch_ncbi_virus(
+        taxon, dest, refseq=False, complete_only=True, limit=params.fetch_limit, logger=logger
+    )
+    if len(fetched) >= params.fetch_limit:
+        logger.warning(
+            "Fetched a capped sample of %d '%s' genomes (the taxon is heavily sequenced); the "
+            "panel may miss lineages. For best diversity supply --seed-source local "
+            "--candidate-pool <dir> (e.g. a lineage/Pango reference set).",
+            len(fetched), taxon,
+        )
+    return fetched
 
 
 def _select_from(params: FillParams, genomes: list[Path], logger: logging.Logger):
     from .pool import select_regional
 
     return select_regional(
-        params.query, genomes, window=params.seed_window,
-        per_window=SEED_PER_WINDOW, drop_siblings=not params.seed_keep_siblings, logger=logger,
+        params.query, genomes, window=params.seed_window, per_window=SEED_PER_WINDOW,
+        derep_ani=params.derep_diverse_ani, drop_siblings=not params.seed_keep_siblings,
+        logger=logger,
     )
 
 
@@ -351,8 +398,12 @@ def _keep(hit, exclude: set[str], params: FillParams) -> bool:
 
 def _seed_whole(
     query_seq: str, params: FillParams, exclude: set[str], logger: logging.Logger
-) -> list[str]:
-    """Seed from a single whole-query BLAST (the query's closest whole-genome relatives)."""
+) -> tuple[list[str], bool]:
+    """Seed from a single whole-query BLAST; returns ``(accessions, saturated)``.
+
+    ``saturated`` is True when every kept hit is a near-identical sibling of the query
+    (the query's lineage is over-represented, so no parental lineage was recruited).
+    """
     logger.info(
         "No starting references: seeding from a whole-query NCBI search (top %d hit(s))...",
         params.seed_hits,
@@ -362,12 +413,13 @@ def _seed_whole(
         raise UserInputError(
             "Could not seed the collection (whole-query BLAST returned nothing)."
         )
+    kept = [h for h in hits if _keep(h, exclude, params)]
     out: list[str] = []
-    for hit in hits:
-        acc = hit.accession
-        if _keep(hit, exclude, params) and acc not in out:
-            out.append(acc)
-    return out[:SEED_TOTAL_CAP]
+    for hit in kept:
+        if hit.accession not in out:
+            out.append(hit.accession)
+    saturated = bool(kept) and all(_is_sibling_hit(h) for h in kept)
+    return out[:SEED_TOTAL_CAP], saturated
 
 
 def _is_sibling_hit(hit) -> bool:
@@ -385,8 +437,12 @@ def _seed_windowed(
     logger: logging.Logger,
     *,
     drop_siblings: bool,
-) -> list[str]:
-    """Seed from per-window BLAST, optionally suppressing siblings (parents mode)."""
+) -> tuple[list[str], bool]:
+    """Seed from per-window BLAST, optionally suppressing siblings (parents mode).
+
+    Returns ``(accessions, saturated)``; ``saturated`` is True when no window yielded
+    a non-sibling hit (the query's lineage saturates NCBI, so no parent was found).
+    """
     window = max(params.seed_window, MIN_SUBSEQ)
     chunks = [query_seq[i : i + window] for i in range(0, len(query_seq), window)]
     if len(chunks) >= 2 and len(chunks[-1]) < MIN_SUBSEQ:
@@ -434,7 +490,10 @@ def _seed_windowed(
             "Suppressed %d sibling hit(s) (>= %.0f%% identity over near-full coverage) to "
             "recruit parental lineages.", len(dropped_siblings), SEED_SIBLING_IDENTITY,
         )
-    return selected[:SEED_TOTAL_CAP]
+    saturated = bool(per_window_hits) and not any(
+        not _is_sibling_hit(h) for kept in per_window_hits for h in kept
+    )
+    return selected[:SEED_TOTAL_CAP], saturated
 
 
 def _progress_section(trace: list[RoundResult], final_size: int) -> str:

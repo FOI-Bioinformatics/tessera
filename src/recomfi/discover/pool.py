@@ -96,6 +96,17 @@ def detect_taxon(query_fasta: Path, *, email: str | None, logger: logging.Logger
     return taxon
 
 
+def _scope_flags(refseq: bool, complete_only: bool, released_after: str | None) -> list[str]:
+    flags: list[str] = []
+    if refseq:
+        flags.append("--refseq")
+    if complete_only:
+        flags.append("--complete-only")
+    if released_after:
+        flags += ["--released-after", released_after]
+    return flags
+
+
 def fetch_ncbi_virus(
     taxon: str,
     dest: Path,
@@ -103,13 +114,14 @@ def fetch_ncbi_virus(
     refseq: bool = True,
     complete_only: bool = False,
     released_after: str | None = None,
+    limit: int | None = None,
     logger: logging.Logger,
 ) -> list[Path]:
     """Download a taxon-scoped genome set from NCBI Virus and split it into ``dest``.
 
     By default fetches the RefSeq/representative set (small and diverse). Use
-    ``complete_only`` (optionally with ``released_after``) for a broader set, then
-    dereplicate; a broad fetch can be large.
+    ``complete_only`` (optionally with ``released_after`` / ``limit``) for a broader
+    set, then dereplicate; a broad fetch can be large, so ``limit`` caps it.
     """
     if not datasets_available():
         raise UserInputError(
@@ -121,12 +133,9 @@ def fetch_ncbi_virus(
         zip_path = Path(tmp) / "package.zip"
         command = ["datasets", "download", "virus", "genome", "taxon", taxon,
                    "--no-progressbar", "--filename", str(zip_path)]
-        if refseq:
-            command.append("--refseq")
-        if complete_only:
-            command.append("--complete-only")
-        if released_after:
-            command += ["--released-after", released_after]
+        command += _scope_flags(refseq, complete_only, released_after)
+        if limit is not None:
+            command += ["--limit", str(limit)]
         scope = "RefSeq" if refseq else ("complete" if complete_only else "all")
         logger.info("Fetching %s '%s' genomes from NCBI Virus...", scope, taxon)
         run_tool(DATASETS, command, logger=logger, log_prefix="datasets")

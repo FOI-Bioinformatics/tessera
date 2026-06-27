@@ -77,6 +77,13 @@ def test_split_fasta_writes_one_file_per_accession_with_lineage(tmp_path):
     assert "GII.4" in (dest / "ACC1.1.fasta").read_text()
 
 
+def test_scope_flags_builds_datasets_filters():
+    assert pool._scope_flags(refseq=True, complete_only=False, released_after=None) == ["--refseq"]
+    assert pool._scope_flags(False, True, "2024-01-01") == [
+        "--complete-only", "--released-after", "2024-01-01"
+    ]
+
+
 def test_lineage_labels_parses_isolate_and_pangolin(tmp_path):
     report = tmp_path / "data_report.jsonl"
     report.write_text(

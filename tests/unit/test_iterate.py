@@ -153,11 +153,41 @@ def _seed_run(monkeypatch, tmp_path, logger, *, seed_mode, fake_blast):
     fill_references(
         FillParams(
             query=query, collection=None, output=out,
-            seed_mode=seed_mode, seed_window=100, seed_hits=5,
+            seed_mode=seed_mode, seed_window=100, seed_hits=5, auto_diversify=False,
         ),
         logger,
     )
     return {p.stem for p in (out / "collection").glob("*.fasta")}
+
+
+def test_saturation_auto_switches_to_ncbi_virus_diversity(monkeypatch, tmp_path, logger):
+    # All BLAST hits are siblings -> with auto_diversify, seeding switches to the
+    # NCBI Virus taxonomy-diversity path instead of seeding the siblings.
+    query = tmp_path / "q.fasta"
+    query.write_text(">q\n" + "A" * 300 + "\n")
+    out = tmp_path / "out"
+    _common_mocks(monkeypatch, [([], 0.95)])
+    monkeypatch.setattr(iterate, "read_fasta", lambda p: [("q", "A" * 300)])
+    monkeypatch.setattr(
+        iterate, "blast_subsequence",
+        lambda seq, *, max_hits, logger, email=None: [Hit("SIB", "sibling", 98.0, 99.0, 0.0)],
+    )
+    from recomfi.discover import pool as pool_mod
+    monkeypatch.setattr(pool_mod, "datasets_available", lambda: True)
+
+    called = {}
+
+    def fake_from_pool(params, collection, logger, *, force_ncbi=False):
+        called["force_ncbi"] = force_ncbi
+        (collection / "DIVERSE.fasta").write_text(">DIVERSE\nA\n")
+
+    monkeypatch.setattr(iterate, "_seed_from_pool", fake_from_pool)
+    fill_references(
+        FillParams(query=query, collection=None, output=out, seed_window=300, auto_diversify=True),
+        logger,
+    )
+    assert called.get("force_ncbi") is True
+    assert (out / "collection" / "DIVERSE.fasta").exists()
 
 
 def _regional_blast(seq, *, max_hits, logger, email=None):
@@ -191,6 +221,38 @@ def test_parents_mode_falls_back_when_only_siblings(monkeypatch, tmp_path, logge
 
     seeded = _seed_run(monkeypatch, tmp_path, logger, seed_mode="parents", fake_blast=only_siblings)
     assert seeded == {"SIB"}  # fallback keeps the collection non-empty
+
+
+def test_fetch_diverse_broadens_thin_refseq_and_caps(monkeypatch, tmp_path, logger):
+    # RefSeq too thin -> broaden to a --limit-capped complete fetch; the cap is honoured.
+    from recomfi.discover import pool as pool_mod
+
+    dest = tmp_path / "d"
+    dest.mkdir()
+    seen = {}
+
+    def fake_fetch(taxon, d, *, refseq=True, complete_only=False, released_after=None,
+                   limit=None, logger):
+        if refseq:
+            p = d / "NC_1.fasta"  # 1 < SEED_MIN_DIVERSE -> broaden
+            p.write_text(">x\nA\n")
+            return [p]
+        seen["limit"] = limit
+        out = []
+        for i in range(limit):  # cap hit -> warning path
+            p = d / f"G{i}.fasta"
+            p.write_text(">x\nA\n")
+            out.append(p)
+        return out
+
+    monkeypatch.setattr(pool_mod, "fetch_ncbi_virus", fake_fetch)
+    params = FillParams(
+        query=tmp_path / "q.fasta", collection=None, output=tmp_path / "o",
+        taxon="SARS-CoV-2", fetch_limit=5,
+    )
+    result = iterate._fetch_diverse(params, dest, logger)
+    assert seen["limit"] == 5
+    assert len(result) == 5  # broadened to the capped complete set
 
 
 def test_loop_stops_when_coverage_stalls(monkeypatch, tmp_path, logger):
