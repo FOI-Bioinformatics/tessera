@@ -31,7 +31,7 @@ def test_calls_region_for_minor_parent_run() -> None:
     result = _result({"cowpox": cowpox, "variola": variola}, step=100)
     analysis = analyze(result)
     params = RegionParams.with_defaults(window_size=100, min_region=100, method="heuristic")
-    regions, major = call_regions(result, analysis, window_size=100, params=params)
+    regions, major, _ = call_regions(result, analysis, window_size=100, params=params)
 
     assert major == "cowpox"
     assert len(regions) == 1
@@ -49,7 +49,7 @@ def test_min_region_filters_short_runs() -> None:
     analysis = analyze(result)
     # window=100 -> the lone window spans 100 bp; require 1000 bp to keep it
     params = RegionParams.with_defaults(window_size=100, min_region=1000, method="heuristic")
-    regions, _ = call_regions(result, analysis, window_size=100, params=params)
+    regions, _, _ = call_regions(result, analysis, window_size=100, params=params)
     assert regions == []
 
 
@@ -61,7 +61,7 @@ def test_margin_suppresses_marginal_windows() -> None:
     params = RegionParams.with_defaults(
         window_size=100, min_region=1, margin=0.05, method="heuristic"
     )
-    regions, _ = call_regions(result, analysis, window_size=100, params=params)
+    regions, _, _ = call_regions(result, analysis, window_size=100, params=params)
     assert regions == []
 
 
@@ -76,7 +76,7 @@ def test_nan_windows_break_runs_and_are_skipped() -> None:
     params = RegionParams.with_defaults(
         window_size=100, min_region=1, merge_gap=0, method="heuristic"
     )
-    regions, major = call_regions(result, analysis, window_size=100, params=params)
+    regions, major, _ = call_regions(result, analysis, window_size=100, params=params)
     assert major == "cowpox"
     assert len(regions) == 2
     assert all(r.minor_parent == "variola" for r in regions)
@@ -94,6 +94,6 @@ def test_merge_gap_joins_same_parent_runs() -> None:
     params = RegionParams.with_defaults(
         window_size=100, min_region=1, merge_gap=1000, method="heuristic"
     )
-    regions, _ = call_regions(result, analysis, window_size=100, params=params)
+    regions, _, _ = call_regions(result, analysis, window_size=100, params=params)
     assert len(regions) == 1
     assert regions[0].minor_parent == "variola"

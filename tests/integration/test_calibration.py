@@ -21,7 +21,7 @@ def test_no_false_recombination_for_a_pure_reference(tmp_path: Path) -> None:
 
     result = compute_similarity(str(msa), "query", window_size=200, window_step=50)
     analysis = analyze(result)
-    regions, major = call_regions(result, analysis, 200, RegionParams.with_defaults(200))
+    regions, major, _ = call_regions(result, analysis, 200, RegionParams.with_defaults(200))
 
     assert major == "refA"
     assert regions == []
@@ -40,5 +40,5 @@ def test_heuristic_would_overcall_the_same_input(tmp_path: Path) -> None:
 
     result = compute_similarity(str(msa), "query", window_size=100, window_step=50)
     analysis = analyze(result)
-    hmm, _ = call_regions(result, analysis, 100, RegionParams.with_defaults(100))
+    hmm, _, _ = call_regions(result, analysis, 100, RegionParams.with_defaults(100))
     assert hmm == []  # the HMM does not switch away from the perfect match

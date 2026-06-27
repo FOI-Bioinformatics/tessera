@@ -27,6 +27,7 @@ from statistics import mean
 
 from .analyze import AnalysisResult, rank_datasets
 from .hmm import DEFAULT_JUMP_RATE, segment_query
+from .siblings import SiblingEvidence, sibling_aware_states
 from .similarity import WindowSimilarity, discordant_counts
 from .stats import benjamini_hochberg, sign_test_pvalue
 
@@ -47,6 +48,15 @@ class RegionParams:
     jump_rate: float = DEFAULT_JUMP_RATE  # HMM: prior switch probability per window
     identity: float | None = None  # HMM emission identity; None -> estimate from data
     alpha: float = 0.05  # HMM: significance level for the donor-vs-major test
+    # Exclude the query's whole-genome siblings (its own lineage) from the parental
+    # competition before segmenting, so a sibling cannot win every window and mask
+    # the event. See :mod:`recomfi.recomb.siblings`. Defaults from first principles.
+    exclude_siblings: bool = True
+    sibling_coverage: float = 0.90  # a sibling is comparable over >= this of the query
+    sibling_beaten: float = 0.15  # ... significantly beaten in <= this fraction of windows
+    sibling_alpha: float = 0.05  # significance level for the per-window beaten test
+    # ... and never beaten over a region-sized contiguous run (the primary signal; a
+    # parent is beaten over the co-parent's tract). Derived from min_region / step.
 
     @classmethod
     def with_defaults(
@@ -59,6 +69,7 @@ class RegionParams:
         jump_rate: float = DEFAULT_JUMP_RATE,
         identity: float | None = None,
         alpha: float = 0.05,
+        exclude_siblings: bool = True,
     ) -> RegionParams:
         return cls(
             min_region=window_size if min_region is None else min_region,
@@ -68,6 +79,7 @@ class RegionParams:
             jump_rate=jump_rate,
             identity=identity,
             alpha=alpha,
+            exclude_siblings=exclude_siblings,
         )
 
 
@@ -135,26 +147,39 @@ def call_regions(
     analysis: AnalysisResult,
     window_size: int,
     params: RegionParams,
-) -> tuple[list[Region], str | None]:
-    """Call recombinant regions. Returns ``(regions, major_parent)``."""
+) -> tuple[list[Region], str | None, list[SiblingEvidence]]:
+    """Call recombinant regions.
+
+    Returns ``(regions, major_parent, excluded_siblings)`` -- the third element lists
+    the query's whole-genome siblings set aside before segmenting (HMM caller only).
+    """
     if params.method == "hmm":
         return _call_regions_hmm(result, window_size, params)
-    return _call_regions_heuristic(result, analysis, window_size, params)
+    regions, major = _call_regions_heuristic(result, analysis, window_size, params)
+    return regions, major, []
 
 
 def _call_regions_hmm(
     result: WindowSimilarity, window_size: int, params: RegionParams
-) -> tuple[list[Region], str | None]:
+) -> tuple[list[Region], str | None, list[SiblingEvidence]]:
     """HMM segmentation; a non-major segment is reported only when its donor is a
-    significantly better match than the major on the sites distinguishing them."""
+    significantly better match than the major on the sites distinguishing them.
+
+    Whole-genome siblings of the query (its own lineage) are excluded from the
+    competition first, so a sibling cannot win every window and mask the event.
+    """
     if len(result.similarities) < 2:
         only = next(iter(result.similarities), None)
-        return [], only
+        return [], only, []
+    states: list[str] | None = None
+    dropped: list[SiblingEvidence] = []
+    if params.exclude_siblings:
+        states, dropped, _ = sibling_aware_states(result, params)
     segments, major = segment_query(
-        result, identity=params.identity, jump_rate=params.jump_rate
+        result, identity=params.identity, jump_rate=params.jump_rate, states=states
     )
     if major is None:
-        return [], None
+        return [], None, dropped
 
     # Pass 1: every non-major segment that clears the length filter and has a donor
     # genuinely closer than the major (favor_minor > favor_major on discordant
@@ -203,7 +228,7 @@ def _call_regions_hmm(
                 pvalue=_signif(pvalue), qvalue=_signif(q),
             )
         )
-    return regions, major
+    return regions, major, dropped
 
 
 def _call_regions_heuristic(

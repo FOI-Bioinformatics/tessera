@@ -36,6 +36,7 @@ class RecombParams:
     method: str = "hmm"
     jump_rate: float = DEFAULT_JUMP_RATE  # HMM prior switch probability per window
     alpha: float = 0.05  # significance level for the donor-vs-major site test
+    exclude_siblings: bool = True  # set aside the query's own-lineage siblings first
     # Heuristic-only thresholds (None -> derive from the window size).
     min_region: int | None = None
     margin: float = 0.0
@@ -79,8 +80,18 @@ def run_recomb(
         method=params.method,
         jump_rate=params.jump_rate,
         alpha=params.alpha,
+        exclude_siblings=params.exclude_siblings,
     )
-    regions, major_parent = call_regions(result, analysis, params.window_size, region_params)
+    regions, major_parent, excluded_siblings = call_regions(
+        result, analysis, params.window_size, region_params
+    )
+    if excluded_siblings:
+        logger.info(
+            "Excluded %d whole-genome sibling(s) of the query (its own lineage) from the "
+            "competition: %s.",
+            len(excluded_siblings),
+            ", ".join(f"{ev.label} (leads {ev.lead_frac:.0%})" for ev in excluded_siblings),
+        )
     logger.info(
         "Major parent: %s; %d recombinant region(s) called.",
         major_parent or "n/a", len(regions),
@@ -136,6 +147,10 @@ def run_recomb(
         "major parent": major_parent or "n/a",
         "coverage threshold / gaps": f"{coverage_threshold:.3f} / {len(coverage_gaps)}",
     }
+    if excluded_siblings:
+        provenance["excluded siblings (query's own lineage)"] = ", ".join(
+            ev.label for ev in excluded_siblings
+        )
 
     output_dir = Path(params.output)
     logger.info("Writing outputs to %s", output_dir)

@@ -64,6 +64,11 @@ def recomb(
         help="Adaptive coverage: flag windows more than this far below the query's "
         "typical best similarity (ignored when --coverage-floor is set).",
     ),
+    exclude_siblings: bool = typer.Option(
+        True, "--exclude-siblings/--no-exclude-siblings",
+        help="Set aside the query's whole-genome siblings (its own lineage) before "
+        "calling, so a sibling cannot win every window and mask recombination (hmm).",
+    ),
 ) -> None:
     """Identify recombination events in a multiple sequence alignment."""
     from ..recomb.run import RecombParams, run_recomb
@@ -89,5 +94,6 @@ def recomb(
             merge_gap=merge_gap,
             coverage_floor=coverage_floor,
             coverage_rel_drop=coverage_rel_drop,
+            exclude_siblings=exclude_siblings,
         )
         run_recomb(params, logger)

@@ -31,7 +31,7 @@ def _call(records: dict[str, str], tmp_path: Path):
     path = _msa_path(records, tmp_path)
     result = compute_similarity(str(path), "query", window_size=WINDOW, window_step=STEP)
     analysis = analyze(result)
-    regions, major = call_regions(result, analysis, WINDOW, RegionParams.with_defaults(WINDOW))
+    regions, major, _ = call_regions(result, analysis, WINDOW, RegionParams.with_defaults(WINDOW))
     return result, analysis, regions, major
 
 
