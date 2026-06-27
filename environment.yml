@@ -24,5 +24,8 @@ dependencies:
   # dereplicates near-duplicate references.
   - bioconda::skani
   - bioconda::skder
+  # Optional: `fill-references --seed-source ncbi-virus` fetches a taxon-scoped
+  # genome set from NCBI Virus.
+  - conda-forge::ncbi-datasets-cli
   - pip:
       - -e .

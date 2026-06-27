@@ -15,6 +15,7 @@ from __future__ import annotations
 import html
 import logging
 import shutil
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -51,9 +52,14 @@ class FillParams:
     aligner: str = "mafft"
     reference: str | None = None
     max_rounds: int = 3
-    seed_mode: str = "windowed"  # fresh-start seeding: "whole" | "windowed" | "parents"
+    seed_source: str = "blast"  # fresh-start source: "blast" | "local" | "ncbi-virus"
+    seed_mode: str = "windowed"  # blast seeding: "whole" | "windowed" | "parents"
     seed_hits: int = 10  # BLAST hits to keep per seed search (per window, or whole-query)
-    seed_window: int = 1500  # window width (bp) for windowed/parents seeding
+    seed_window: int = 1500  # window width (bp) for windowed/parents/pool seeding
+    candidate_pool: Path | None = None  # local genome pool (seed_source="local")
+    taxon: str | None = None  # taxon for NCBI Virus ("ncbi-virus"); auto-detected when None
+    source_refseq: bool = True  # NCBI Virus: fetch the RefSeq set (else all complete genomes)
+    seed_keep_siblings: bool = False  # keep the query's siblings when selecting from a pool
     window_size: int = 1000
     window_step: int = 100
     coverage_floor: float | None = None
@@ -263,6 +269,9 @@ def _seed_collection(
     """
     if not query_records:
         raise UserInputError(f"Query FASTA {params.query} has no sequence to search with.")
+    if params.seed_source in ("local", "ncbi-virus"):
+        _seed_from_pool(params, collection, logger)
+        return
     query_seq = query_records[0][1].replace("-", "")
     if params.seed_mode == "whole":
         accessions = _seed_whole(query_seq, params, exclude, logger)
@@ -283,6 +292,45 @@ def _seed_collection(
         except Exception as exc:  # noqa: BLE001 - report and continue the batch
             logger.warning("  ! failed to download seed %s: %s", acc, exc)
     logger.info("Seeded %d reference(s) to start from.", seeded)
+
+
+def _seed_from_pool(params: FillParams, collection: Path, logger: logging.Logger) -> None:
+    """Seed by regional selection from a genome pool (local directory or NCBI Virus)."""
+    from .pool import detect_taxon, fetch_ncbi_virus, iter_pool_genomes
+
+    if params.seed_source == "local":
+        if params.candidate_pool is None:
+            raise UserInputError("--seed-source local needs --candidate-pool <dir>.")
+        genomes = iter_pool_genomes(params.candidate_pool)
+        selection = _select_from(params, genomes, logger)
+    else:  # ncbi-virus
+        taxon = params.taxon or detect_taxon(params.query, email=params.email, logger=logger)
+        with tempfile.TemporaryDirectory() as tmp:
+            fetched = fetch_ncbi_virus(
+                taxon, Path(tmp), refseq=params.source_refseq, logger=logger
+            )
+            selection = _select_from(params, fetched, logger)
+            _copy_into(selection.selected, collection, logger)
+            return
+    _copy_into(selection.selected, collection, logger)
+
+
+def _select_from(params: FillParams, genomes: list[Path], logger: logging.Logger):
+    from .pool import select_regional
+
+    return select_regional(
+        params.query, genomes, window=params.seed_window,
+        per_window=SEED_PER_WINDOW, drop_siblings=not params.seed_keep_siblings, logger=logger,
+    )
+
+
+def _copy_into(genomes: list[Path], collection: Path, logger: logging.Logger) -> None:
+    if not genomes:
+        return
+    logger.info("Seeding %d reference(s): %s",
+                len(genomes), ", ".join(strip_sequence_extension(g.name) for g in genomes))
+    for g in genomes:
+        shutil.copy(g, collection / g.name)
 
 
 def _blast_or_none(seq: str, params: FillParams, logger: logging.Logger) -> list:

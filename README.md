@@ -195,11 +195,31 @@ so by default seeding searches per region:
 
 `parents` mode helps when the parents are discoverable by BLAST — the common case
 of a newly observed recombinant whose own form is still rare. When the query's own
-lineage saturates the database (for example HIV-1 CRF01_AE, with thousands of
-genomes), every region's top hits are siblings and the parents never surface; the
-run reports this ("no distinct parental lineage found in NCBI") rather than masking
-it. There, supply the distinct parental lineages as a starting `--collection` and
-curate from there.
+lineage saturates `nt` (for example HIV-1 CRF01_AE, with thousands of genomes),
+every region's top hits are siblings and the parents never surface; the run reports
+this ("no distinct parental lineage found in NCBI") rather than masking it. BLAST
+ranks by similarity, so it cannot escape an over-represented lineage. For that case
+seed from a **finite pool** instead (`--seed-source`):
+
+- `local` — a directory of genomes you control (`--candidate-pool dir/`: a RefSeq
+  dump, a subtype reference set, or a lab collection). Because the pool is finite it
+  is dereplicated and the query's siblings (near-identical genome-wide) are dropped,
+  so the divergent parents are no longer out-ranked. The query is then matched region
+  by region and the best-covering genomes are kept — a focused parental panel, offline
+  and reproducible.
+- `ncbi-virus` — a taxon-scoped set fetched with the `datasets` CLI
+  (`--taxon "HIV-1"`, auto-detected if omitted). By default it pulls the RefSeq
+  representative set (one genome per lineage, diverse by construction); add
+  `--source-complete` for all complete genomes, which are then dereplicated.
+
+```
+recomfi fill-references --query CRF01_AE.fasta --output filled/ --aligner mafft \
+    --seed-source local --candidate-pool subtype_refs/ --curate
+```
+The sibling drop uses an absolute identity cutoff, which suits divergent-lineage
+recombinants (HIV subtypes ~12 % apart). For closely related parents that have no
+masking sibling (e.g. SARS-CoV-2 sublineages), add `--seed-keep-siblings`. NCBI
+Virus / `datasets` needs `conda install -c conda-forge ncbi-datasets-cli`.
 
 ## Curating the panel for detection
 Auto-filling maximises *coverage* by recruiting the query's closest genomes — but

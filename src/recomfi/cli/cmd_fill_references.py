@@ -25,9 +25,31 @@ def fill_references(
         None, "--reference", help="Backbone genome (label or filename)."
     ),
     max_rounds: int = typer.Option(3, "--max-rounds", help="Maximum search/download rounds."),
+    seed_source: str = typer.Option(
+        "blast", "--seed-source",
+        help="Fresh-start source (no --collection): 'blast' (NCBI nt), 'local' (a genome pool "
+        "directory, --candidate-pool), or 'ncbi-virus' (a taxon-scoped set, --taxon).",
+    ),
+    candidate_pool: Path | None = typer.Option(
+        None, "--candidate-pool",
+        help="Genome pool directory for --seed-source local (regional selection picks parents).",
+    ),
+    taxon: str | None = typer.Option(
+        None, "--taxon",
+        help="Taxon for --seed-source ncbi-virus (e.g. 'HIV-1'). Auto-detected if omitted.",
+    ),
+    source_complete: bool = typer.Option(
+        False, "--source-complete",
+        help="NCBI Virus: fetch all complete genomes (then dereplicate) instead of RefSeq only.",
+    ),
+    seed_keep_siblings: bool = typer.Option(
+        False, "--seed-keep-siblings",
+        help="Keep the query's siblings when selecting from a pool (do not drop near-identical "
+        "genomes). Use for closely related parents with no masking sibling.",
+    ),
     seed_mode: str = typer.Option(
         "windowed", "--seed-mode",
-        help="Fresh-start seeding (no --collection): 'whole' (closest whole-genome relatives), "
+        help="BLAST seeding (--seed-source blast): 'whole' (closest whole-genome relatives), "
         "'windowed' (per-window best hits), or 'parents' (suppress siblings to recruit the "
         "parental lineages of a recombinant query).",
     ),
@@ -90,9 +112,12 @@ def fill_references(
     with stage_errors(logger):
         _require_choice(aligner, set(aligner_registry.names()), "--aligner")
         _require_choice(seed_mode, {"whole", "windowed", "parents"}, "--seed-mode")
+        _require_choice(seed_source, {"blast", "local", "ncbi-virus"}, "--seed-source")
         params = FillParams(
             query=query, collection=collection, output=output,
             aligner=aligner, reference=reference, max_rounds=max_rounds,
+            seed_source=seed_source, candidate_pool=candidate_pool, taxon=taxon,
+            source_refseq=not source_complete, seed_keep_siblings=seed_keep_siblings,
             seed_mode=seed_mode, seed_hits=seed_hits, seed_window=seed_window,
             window_size=window_size, window_step=window_step,
             coverage_floor=coverage_floor, coverage_rel_drop=coverage_rel_drop,
