@@ -136,6 +136,63 @@ def test_fresh_start_seeds_collection_from_whole_query_blast(monkeypatch, tmp_pa
     assert not (coll / "SELF.fasta").exists()  # near-identical self-hit not seeded
 
 
+def _seed_run(monkeypatch, tmp_path, logger, *, seed_mode, fake_blast):
+    """Run a fresh-start fill that converges immediately, capturing the seeded files."""
+    query = tmp_path / "q.fasta"
+    # three distinct 100 bp segments -> three seed windows at seed_window=100
+    query.write_text(">q\n" + "A" * 100 + "C" * 100 + "G" * 100 + "\n")
+    out = tmp_path / "out"
+    _common_mocks(monkeypatch, [([], 0.95)])  # round 1 finds no gaps -> converge
+    monkeypatch.setattr(iterate, "read_fasta", lambda p: [("q", "A" * 100 + "C" * 100 + "G" * 100)])
+    monkeypatch.setattr(iterate, "blast_subsequence", fake_blast)
+    monkeypatch.setattr(
+        iterate, "efetch_fasta",
+        lambda acc, dest, logger: (dest / f"{acc}.fasta").write_text(f">{acc}\nA\n")
+        or (dest / f"{acc}.fasta"),
+    )
+    fill_references(
+        FillParams(
+            query=query, collection=None, output=out,
+            seed_mode=seed_mode, seed_window=100, seed_hits=5,
+        ),
+        logger,
+    )
+    return {p.stem for p in (out / "collection").glob("*.fasta")}
+
+
+def _regional_blast(seq, *, max_hits, logger, email=None):
+    # one sibling present in every window (near-identical, full coverage) + a distinct
+    # regional parent per window (lower identity).
+    sib = Hit("SIB", "sibling", 98.0, 99.0, 0.0)
+    region = {"A": Hit("PAR_A", "parent A", 91.0, 80.0, 1e-9),
+              "C": Hit("PAR_C", "parent C", 90.0, 82.0, 1e-9),
+              "G": Hit("PAR_G", "parent G", 89.0, 81.0, 1e-9)}[seq[0]]
+    return [sib, region]
+
+
+def test_parents_mode_suppresses_siblings_and_seeds_parents(monkeypatch, tmp_path, logger):
+    seeded = _seed_run(
+        monkeypatch, tmp_path, logger, seed_mode="parents", fake_blast=_regional_blast
+    )
+    assert seeded == {"PAR_A", "PAR_C", "PAR_G"}  # the sibling is dropped
+
+
+def test_windowed_mode_keeps_per_window_best_including_siblings(monkeypatch, tmp_path, logger):
+    seeded = _seed_run(
+        monkeypatch, tmp_path, logger, seed_mode="windowed", fake_blast=_regional_blast
+    )
+    assert "SIB" in seeded and {"PAR_A", "PAR_C", "PAR_G"} <= seeded
+
+
+def test_parents_mode_falls_back_when_only_siblings(monkeypatch, tmp_path, logger):
+    # every window returns only a sibling -> nothing to suppress down to -> seed the best.
+    def only_siblings(seq, *, max_hits, logger, email=None):
+        return [Hit("SIB", "sibling", 98.0, 99.0, 0.0)]
+
+    seeded = _seed_run(monkeypatch, tmp_path, logger, seed_mode="parents", fake_blast=only_siblings)
+    assert seeded == {"SIB"}  # fallback keeps the collection non-empty
+
+
 def test_loop_stops_when_coverage_stalls(monkeypatch, tmp_path, logger):
     query, coll, out = _setup(tmp_path)
     # the best reference stays at 0.84 both rounds -> no improvement -> stop

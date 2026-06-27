@@ -171,15 +171,35 @@ query's own record is auto-excluded from its FASTA header. This needs an aligner
 and Entrez Direct, and rebuilds the alignment every round.
 
 Omit `--collection` to **start fresh** with no suggested references: the first
-round seeds the collection from a whole-query NCBI search (`--seed-hits N`, default
-10), then the loop fills the remaining gaps as usual.
+round seeds the collection from an NCBI search, then the loop fills the remaining
+gaps as usual.
 ```
 recomfi fill-references --query CRF01_AE.fasta --output filled/ --aligner mafft \
-    --email you@example.org
+    --seed-mode parents --curate --email you@example.org
 ```
-Bootstrapping recruits the query's closest genomes, which for a recombinant query
-include its own-lineage relatives; combine with `--curate` to drop those siblings
-and keep a diverse panel.
+How the seed is chosen (`--seed-mode`) matters for a recombinant query. A whole-query
+search returns the query's closest *whole-genome* relatives — which, for a
+recombinant, are its own-lineage **siblings**; they cover the whole query and mask
+the recombination. The parents that donated each region are *regional* best matches,
+so by default seeding searches per region:
+
+- `whole` — one whole-query search; the closest whole-genome relatives. Best for a
+  non-recombinant query.
+- `windowed` (default) — search each window (`--seed-window`, default 1500 bp) and
+  seed the per-window best hits. Safe for any query; surfaces regional matches.
+- `parents` — like windowed, but drop near-identical full-coverage hits (the
+  siblings) so each region contributes its best *divergent* source. This recruits
+  the parental lineages of a recombinant query; pair it with `--curate`. If a region
+  has only siblings in NCBI, it falls back to the best hit so the panel is never
+  empty.
+
+`parents` mode helps when the parents are discoverable by BLAST — the common case
+of a newly observed recombinant whose own form is still rare. When the query's own
+lineage saturates the database (for example HIV-1 CRF01_AE, with thousands of
+genomes), every region's top hits are siblings and the parents never surface; the
+run reports this ("no distinct parental lineage found in NCBI") rather than masking
+it. There, supply the distinct parental lineages as a starting `--collection` and
+curate from there.
 
 ## Curating the panel for detection
 Auto-filling maximises *coverage* by recruiting the query's closest genomes — but

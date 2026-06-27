@@ -25,9 +25,17 @@ def fill_references(
         None, "--reference", help="Backbone genome (label or filename)."
     ),
     max_rounds: int = typer.Option(3, "--max-rounds", help="Maximum search/download rounds."),
+    seed_mode: str = typer.Option(
+        "windowed", "--seed-mode",
+        help="Fresh-start seeding (no --collection): 'whole' (closest whole-genome relatives), "
+        "'windowed' (per-window best hits), or 'parents' (suppress siblings to recruit the "
+        "parental lineages of a recombinant query).",
+    ),
     seed_hits: int = typer.Option(
-        10, "--seed-hits",
-        help="When starting fresh (no --collection), how many whole-query BLAST hits to seed with.",
+        10, "--seed-hits", help="BLAST hits to keep per seed search (per window, or whole-query)."
+    ),
+    seed_window: int = typer.Option(
+        1500, "--seed-window", help="Window width (bp) for windowed/parents seeding."
     ),
     window_size: int = typer.Option(1000, "--window-size", help="Sliding window width (columns)."),
     window_step: int = typer.Option(100, "--window-step", help="Sliding window step (columns)."),
@@ -81,9 +89,11 @@ def fill_references(
     logger = get_logger()
     with stage_errors(logger):
         _require_choice(aligner, set(aligner_registry.names()), "--aligner")
+        _require_choice(seed_mode, {"whole", "windowed", "parents"}, "--seed-mode")
         params = FillParams(
             query=query, collection=collection, output=output,
-            aligner=aligner, reference=reference, max_rounds=max_rounds, seed_hits=seed_hits,
+            aligner=aligner, reference=reference, max_rounds=max_rounds,
+            seed_mode=seed_mode, seed_hits=seed_hits, seed_window=seed_window,
             window_size=window_size, window_step=window_step,
             coverage_floor=coverage_floor, coverage_rel_drop=coverage_rel_drop,
             min_improvement=min_improvement, max_hits=max_hits, top_gaps=top_gaps,

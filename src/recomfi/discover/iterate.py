@@ -34,6 +34,7 @@ from .panel import (
     write_panel_tsv,
 )
 from .run import (
+    MIN_SUBSEQ,
     _base_accession,
     _download,
     _existing_labels,
@@ -50,7 +51,9 @@ class FillParams:
     aligner: str = "mafft"
     reference: str | None = None
     max_rounds: int = 3
-    seed_hits: int = 10  # when starting fresh, how many whole-query BLAST hits to seed with
+    seed_mode: str = "windowed"  # fresh-start seeding: "whole" | "windowed" | "parents"
+    seed_hits: int = 10  # BLAST hits to keep per seed search (per window, or whole-query)
+    seed_window: int = 1500  # window width (bp) for windowed/parents seeding
     window_size: int = 1000
     window_step: int = 100
     coverage_floor: float | None = None
@@ -227,6 +230,16 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
     return trace
 
 
+# Fresh-start seeding. A whole-query search returns the query's closest *whole-genome*
+# relatives; for a recombinant query those are its own-lineage siblings, which cover
+# the whole query and mask the recombination. The parents that donated each region
+# are *regional* best matches, so windowed/parents seeding searches per region instead.
+SEED_SIBLING_IDENTITY = 95.0  # a hit this identical over near-full coverage is a sibling
+SEED_SIBLING_COVERAGE = 90.0
+SEED_PER_WINDOW = 2  # regional candidates to keep per window
+SEED_TOTAL_CAP = 25  # bound the number of genomes seeded
+
+
 def _seed_collection(
     params: FillParams,
     collection: Path,
@@ -234,35 +247,144 @@ def _seed_collection(
     exclude: set[str],
     logger: logging.Logger,
 ) -> None:
-    """Seed an empty collection by BLASTing the whole query and downloading the hits.
+    """Seed an empty collection by searching NCBI with the query and downloading hits.
 
-    The query's own record (near-identical, full-length) and any ``--exclude``
-    accessions are skipped, as in the per-gap search.
+    Three strategies (``--seed-mode``):
+
+    - ``whole`` -- one BLAST of the whole query; seeds its closest whole-genome
+      relatives. Best for a non-recombinant query.
+    - ``windowed`` (default) -- BLAST each window and seed the per-window best hits;
+      surfaces regional matches without suppressing anything (safe for any query).
+    - ``parents`` -- like windowed, but drop near-identical full-coverage hits (the
+      query's siblings) so each region contributes its best *divergent* source. This
+      recruits the parental lineages of a recombinant query instead of its siblings.
+
+    The query's own record and any ``--exclude`` accessions are always skipped.
     """
     if not query_records:
         raise UserInputError(f"Query FASTA {params.query} has no sequence to search with.")
     query_seq = query_records[0][1].replace("-", "")
+    if params.seed_mode == "whole":
+        accessions = _seed_whole(query_seq, params, exclude, logger)
+    else:
+        accessions = _seed_windowed(
+            query_seq, params, exclude, logger,
+            drop_siblings=params.seed_mode == "parents",
+        )
+    if not accessions:
+        return  # caller reports that nothing could be seeded
+    logger.info("Seeding %d reference(s): %s", len(accessions), ", ".join(accessions))
+    seeded = 0
+    for acc in accessions:
+        try:
+            out = efetch_fasta(acc, collection, logger)
+            logger.info("  + seed %s -> %s", acc, out.name)
+            seeded += 1
+        except Exception as exc:  # noqa: BLE001 - report and continue the batch
+            logger.warning("  ! failed to download seed %s: %s", acc, exc)
+    logger.info("Seeded %d reference(s) to start from.", seeded)
+
+
+def _blast_or_none(seq: str, params: FillParams, logger: logging.Logger) -> list:
+    try:
+        return blast_subsequence(seq, max_hits=params.seed_hits, logger=logger, email=params.email)
+    except BlastError as exc:
+        logger.warning("  BLAST failed for a seed search, skipping: %s", exc)
+        return []
+
+
+def _keep(hit, exclude: set[str], params: FillParams) -> bool:
+    return _base_accession(hit.accession) not in exclude and not _is_self_hit(
+        hit, params.keep_self_hits
+    )
+
+
+def _seed_whole(
+    query_seq: str, params: FillParams, exclude: set[str], logger: logging.Logger
+) -> list[str]:
+    """Seed from a single whole-query BLAST (the query's closest whole-genome relatives)."""
     logger.info(
         "No starting references: seeding from a whole-query NCBI search (top %d hit(s))...",
         params.seed_hits,
     )
-    try:
-        hits = blast_subsequence(
-            query_seq, max_hits=params.seed_hits, logger=logger, email=params.email
+    hits = _blast_or_none(query_seq, params, logger)
+    if not hits:
+        raise UserInputError(
+            "Could not seed the collection (whole-query BLAST returned nothing)."
         )
-    except BlastError as exc:
-        raise UserInputError(f"Could not seed the collection (BLAST failed): {exc}") from exc
-    seeded = 0
+    out: list[str] = []
     for hit in hits:
-        if _base_accession(hit.accession) in exclude or _is_self_hit(hit, params.keep_self_hits):
+        acc = hit.accession
+        if _keep(hit, exclude, params) and acc not in out:
+            out.append(acc)
+    return out[:SEED_TOTAL_CAP]
+
+
+def _is_sibling_hit(hit) -> bool:
+    """A near-identical, near-full-length hit -- the query's own lineage (sibling)."""
+    return (
+        hit.pct_identity >= SEED_SIBLING_IDENTITY
+        and hit.query_coverage >= SEED_SIBLING_COVERAGE
+    )
+
+
+def _seed_windowed(
+    query_seq: str,
+    params: FillParams,
+    exclude: set[str],
+    logger: logging.Logger,
+    *,
+    drop_siblings: bool,
+) -> list[str]:
+    """Seed from per-window BLAST, optionally suppressing siblings (parents mode)."""
+    window = max(params.seed_window, MIN_SUBSEQ)
+    chunks = [query_seq[i : i + window] for i in range(0, len(query_seq), window)]
+    if len(chunks) >= 2 and len(chunks[-1]) < MIN_SUBSEQ:
+        chunks[-2] += chunks.pop()  # fold a tiny tail into the previous window
+    label = "regional parents" if drop_siblings else "per-window best hits"
+    logger.info(
+        "No starting references: seeding from a %d-window NCBI search (%s)...",
+        len(chunks), label,
+    )
+    per_window_hits: list[list] = []
+    for chunk in chunks:
+        if len(chunk) < MIN_SUBSEQ:
             continue
-        try:
-            out = efetch_fasta(hit.accession, collection, logger)
-            logger.info("  + seed %s -> %s", hit.accession, out.name)
-            seeded += 1
-        except Exception as exc:  # noqa: BLE001 - report and continue the batch
-            logger.warning("  ! failed to download seed %s: %s", hit.accession, exc)
-    logger.info("Seeded %d reference(s) to start from.", seeded)
+        kept = [h for h in _blast_or_none(chunk, params, logger) if _keep(h, exclude, params)]
+        per_window_hits.append(kept)
+
+    selected: list[str] = []
+    dropped_siblings: set[str] = set()
+
+    def add(acc: str) -> None:
+        if acc not in selected:
+            selected.append(acc)
+
+    for kept in per_window_hits:
+        pool = kept
+        if drop_siblings:
+            pool = [h for h in kept if not _is_sibling_hit(h)]
+            dropped_siblings.update(h.accession for h in kept if _is_sibling_hit(h))
+        for hit in pool[:SEED_PER_WINDOW]:
+            add(hit.accession)
+
+    # Parents mode left nothing (only siblings anywhere, or a clonal query): fall back
+    # to the per-window best hits so the collection is never empty.
+    if not selected:
+        if drop_siblings and dropped_siblings:
+            logger.info(
+                "Every window's hits were siblings of the query; seeding the best hits "
+                "instead (no distinct parental lineage found in NCBI)."
+            )
+        for kept in per_window_hits:
+            if kept:
+                add(kept[0].accession)
+    elif drop_siblings and dropped_siblings:
+        logger.info(
+            "Suppressed %d sibling hit(s) (>= %.0f%% identity over near-full coverage) to "
+            "recruit parental lineages.", len(dropped_siblings), SEED_SIBLING_IDENTITY,
+        )
+    return selected[:SEED_TOTAL_CAP]
 
 
 def _progress_section(trace: list[RoundResult], final_size: int) -> str:
