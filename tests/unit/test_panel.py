@@ -55,6 +55,25 @@ def test_filter_siblings_drops_relatives_keeps_env_and_parent(monkeypatch, tmp_p
     assert set(parents) == {env, parent}
 
 
+def test_filter_siblings_catches_whole_genome_twin_of_partial_backbone(
+    monkeypatch, tmp_path, logger
+):
+    # Backbone is a partial-coverage parent (high ANI, but covers only one ORF). The
+    # sibling has ~equal ANI yet covers the whole query -> caught by coverage, not ANI.
+    backbone, twin, minor = _genomes(tmp_path, ["ORF1_parent", "recombinant_twin", "ORF2_parent"])
+    ani = {
+        backbone: (98.5, 69.0),   # high ANI over its donated ORF only
+        twin: (98.0, 96.0),       # ~equal ANI, whole-query coverage -> sibling
+        minor: (84.0, 27.0),      # the other parent (partial coverage) -> keep
+    }
+    monkeypatch.setattr(panel, "skani_query_ani", lambda *a, **k: ani)
+    parents, siblings, _ = panel.filter_siblings(
+        tmp_path / "q.fasta", backbone, [twin, minor], logger=logger,
+    )
+    assert siblings == [twin]
+    assert parents == [minor]
+
+
 def test_pick_backbone_prefers_highest_ani_among_full_coverage(monkeypatch, tmp_path, logger):
     a1, c, env = _genomes(tmp_path, ["A1", "C", "AE_env"])
     ani = {

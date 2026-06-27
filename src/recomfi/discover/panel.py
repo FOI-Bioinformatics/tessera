@@ -48,6 +48,12 @@ SKDER = ToolCapabilities(
 DEFAULT_SIBLING_MARGIN = 3.0  # query-ANI must beat the backbone's by this many %
 DEFAULT_AF_MIN = 80.0  # ... over at least this % of the query (whole-genome match)
 DEFAULT_DEREP_ANI = 99.0  # skDER: genomes >= this ANI collapse to one representative
+# A whole-genome near-twin: when the backbone is a partial-coverage parent (it donated
+# only one region, so its ANI is high but its query coverage is not), a genome that
+# covers nearly the whole query at comparable ANI is the query's own lineage, even
+# though its ANI does not beat the backbone's. Coverage, not ANI, separates them here.
+DEFAULT_AF_FULL = 90.0  # ... covers at least this % of the query (the whole genome)
+DEFAULT_SIBLING_ANI_TOL = 1.5  # ... at an ANI within this much of the backbone's
 
 
 def skani_available() -> bool:
@@ -133,20 +139,30 @@ def filter_siblings(
     *,
     ani_margin: float = DEFAULT_SIBLING_MARGIN,
     af_min: float = DEFAULT_AF_MIN,
+    af_full: float = DEFAULT_AF_FULL,
+    ani_tol: float = DEFAULT_SIBLING_ANI_TOL,
     logger: logging.Logger,
 ) -> tuple[list[Path], list[Path], dict[Path, tuple[float, float]]]:
     """Split candidates into ``(parents, siblings, ani_map)``.
 
     A candidate is a *sibling* of the query (its own lineage, which would mask
-    recombination) when its query-ANI exceeds the backbone's by ``ani_margin`` and
-    it covers at least ``af_min`` % of the query.
+    recombination) when either:
+
+    - its query-ANI exceeds the backbone's by ``ani_margin`` over at least ``af_min``
+      % of the query -- it is closer than the backbone genome-wide; or
+    - it covers nearly the whole query (``af_full``) at an ANI within ``ani_tol`` of
+      the backbone's -- a whole-genome near-twin. This catches the masking sibling
+      when the backbone is a *partial-coverage* parent (e.g. one that donated a single
+      ORF), where ANI alone cannot tell the sibling from the parent; coverage does.
     """
     ani = skani_query_ani(query_fasta, [backbone, *candidates], logger)
     backbone_ani = ani.get(backbone, (0.0, 0.0))[0]
     parents, siblings = [], []
     for cand in candidates:
         cand_ani, cand_af = ani[cand]
-        if cand_ani - backbone_ani >= ani_margin and cand_af >= af_min:
+        closer = cand_ani - backbone_ani >= ani_margin and cand_af >= af_min
+        whole_genome_twin = cand_af >= af_full and cand_ani >= backbone_ani - ani_tol
+        if closer or whole_genome_twin:
             siblings.append(cand)
         else:
             parents.append(cand)
