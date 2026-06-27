@@ -24,11 +24,20 @@ from ..msa.build import MsaParams, build_msa
 from ..recomb.coverage import CoverageParams, call_coverage_gaps
 from ..recomb.run import RecombParams, run_recomb
 from ..recomb.similarity import compute_similarity
-from .fetch import efetch_available
+from .blast import BlastError, blast_subsequence
+from .fetch import efetch_available, efetch_fasta
+from .panel import (
+    curate_collection_dir,
+    panel_table_html,
+    pick_backbone,
+    skani_available,
+    write_panel_tsv,
+)
 from .run import (
     _base_accession,
     _download,
     _existing_labels,
+    _is_self_hit,
     collect_candidates,
 )
 
@@ -36,11 +45,12 @@ from .run import (
 @dataclass
 class FillParams:
     query: Path  # query FASTA (not an MSA -- the MSA is rebuilt each round)
-    collection: Path  # starting collection directory (left untouched; a copy grows)
+    collection: Path | None  # starting collection (a copy grows); None = start fresh from NCBI
     output: Path
     aligner: str = "mafft"
     reference: str | None = None
     max_rounds: int = 3
+    seed_hits: int = 10  # when starting fresh, how many whole-query BLAST hits to seed with
     window_size: int = 1000
     window_step: int = 100
     coverage_floor: float | None = None
@@ -52,6 +62,10 @@ class FillParams:
     keep_self_hits: bool = False
     threads: int = 4
     min_improvement: float = 0.01  # stop if the worst gap's best-sim gains less than this
+    curate: bool = False  # drop the query's siblings and dereplicate each round (skani/skDER)
+    sibling_margin: float = 3.0  # query-ANI must beat the backbone's by this many % to be a sibling
+    af_min: float = 80.0  # ... over at least this % of the query (whole-genome match)
+    derep_ani: float = 99.0  # skDER: collapse references >= this ANI to one representative
 
 
 @dataclass
@@ -71,14 +85,22 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
             "fill-references downloads genomes and needs Entrez Direct. Install with: "
             "conda install -c bioconda entrez-direct"
         )
+    if params.curate and not skani_available():
+        raise UserInputError(
+            "--curate needs skani. Install with: conda install -c bioconda skani skder"
+        )
     query_label = strip_sequence_extension(params.query.name)
     params.output.mkdir(parents=True, exist_ok=True)
 
-    # Grow a copy of the collection so the user's input is left untouched.
+    # Grow a copy of the collection so the user's input is left untouched. With no
+    # starting collection, begin with an empty directory and seed it below.
     collection = params.output / "collection"
     if collection.exists():
         shutil.rmtree(collection)
-    shutil.copytree(params.collection, collection)
+    if params.collection is not None:
+        shutil.copytree(params.collection, collection)
+    else:
+        collection.mkdir(parents=True)
 
     exclude = {_base_accession(e) for e in params.exclude}
     # The query's own GenBank record matches itself almost perfectly and would be
@@ -90,11 +112,23 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
         exclude.add(own)
         logger.info("Auto-excluding the query's own record '%s' (from its FASTA header).", own)
 
+    # Start fresh: seed an empty collection from a whole-query NCBI search so the
+    # first MSA has something to align against.
+    if not any(collection.iterdir()):
+        _seed_collection(params, collection, query_records, exclude, logger)
+        if not any(collection.iterdir()):
+            raise UserInputError(
+                "Could not seed any reference from NCBI; provide a starting --collection."
+            )
+
     cov = CoverageParams.with_defaults(
         params.window_size, floor=params.coverage_floor, rel_drop=params.coverage_rel_drop,
     )
 
     trace: list[RoundResult] = []
+    # Curated-panel state: a per-genome role table accumulated across rounds (a
+    # dropped genome keeps the role it had when removed, even after later rounds).
+    panel_rows: dict[str, dict] = {}
     last_msa: Path | None = None
     prev_worst: float | None = None
     for rnd in range(1, params.max_rounds + 1):
@@ -143,16 +177,41 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
             max_hits=params.max_hits, email=params.email,
             exclude=exclude, keep_self_hits=params.keep_self_hits, logger=logger,
         )
+        # Pick the backbone from the pre-download (curated, sibling-free) collection
+        # so a freshly-downloaded sibling cannot be mistaken for it.
+        backbone = None
+        if params.curate:
+            backbone = pick_backbone(
+                params.query, [p for p in collection.iterdir() if p.is_file()],
+                af_min=params.af_min, logger=logger,
+            )
         downloaded = _download(candidates, collection, logger)
         rr.added = [c.hit.accession for c in downloaded]
         if not downloaded:
             logger.info("Stopping: no new references available to add.")
             break
+        if params.curate and backbone is not None:
+            curation = curate_collection_dir(
+                params.query, collection, backbone,
+                ani_margin=params.sibling_margin, af_min=params.af_min,
+                derep_ani=params.derep_ani, logger=logger,
+            )
+            for row in curation.table:
+                panel_rows[row["genome"]] = row
+            dropped = {c.hit.accession for c in downloaded} - {
+                strip_sequence_extension(p.name) for p in collection.iterdir() if p.is_file()
+            }
+            rr.added = [a for a in rr.added if a not in dropped]
     else:
         logger.info("Reached the maximum of %d round(s).", params.max_rounds)
 
     _write_trace(params.output, trace, logger)
     final_size = sum(1 for _ in collection.iterdir())
+    extra_sections = [("Reference recovery", _progress_section(trace, final_size))]
+    if params.curate and panel_rows:
+        table = list(panel_rows.values())
+        write_panel_tsv(params.output / "panel_lineages.tsv", table, logger)
+        extra_sections.append(("Reference panel", panel_table_html(table)))
     if last_msa is not None:
         logger.info("Writing the final report for the expanded collection...")
         run_recomb(
@@ -162,10 +221,48 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
                 coverage_floor=params.coverage_floor, coverage_rel_drop=params.coverage_rel_drop,
             ),
             logger,
-            extra_sections=[("Reference recovery", _progress_section(trace, final_size))],
+            extra_sections=extra_sections,
         )
     logger.info("Final collection (%d references): %s", final_size, collection)
     return trace
+
+
+def _seed_collection(
+    params: FillParams,
+    collection: Path,
+    query_records: list[tuple[str, str]],
+    exclude: set[str],
+    logger: logging.Logger,
+) -> None:
+    """Seed an empty collection by BLASTing the whole query and downloading the hits.
+
+    The query's own record (near-identical, full-length) and any ``--exclude``
+    accessions are skipped, as in the per-gap search.
+    """
+    if not query_records:
+        raise UserInputError(f"Query FASTA {params.query} has no sequence to search with.")
+    query_seq = query_records[0][1].replace("-", "")
+    logger.info(
+        "No starting references: seeding from a whole-query NCBI search (top %d hit(s))...",
+        params.seed_hits,
+    )
+    try:
+        hits = blast_subsequence(
+            query_seq, max_hits=params.seed_hits, logger=logger, email=params.email
+        )
+    except BlastError as exc:
+        raise UserInputError(f"Could not seed the collection (BLAST failed): {exc}") from exc
+    seeded = 0
+    for hit in hits:
+        if _base_accession(hit.accession) in exclude or _is_self_hit(hit, params.keep_self_hits):
+            continue
+        try:
+            out = efetch_fasta(hit.accession, collection, logger)
+            logger.info("  + seed %s -> %s", hit.accession, out.name)
+            seeded += 1
+        except Exception as exc:  # noqa: BLE001 - report and continue the batch
+            logger.warning("  ! failed to download seed %s: %s", hit.accession, exc)
+    logger.info("Seeded %d reference(s) to start from.", seeded)
 
 
 def _progress_section(trace: list[RoundResult], final_size: int) -> str:

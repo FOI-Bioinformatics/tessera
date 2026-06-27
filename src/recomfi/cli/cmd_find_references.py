@@ -54,6 +54,21 @@ def find_references(
         None, "--download",
         help="Download the best new reference per gap into this collection directory.",
     ),
+    curate: bool = typer.Option(
+        False, "--curate",
+        help="After download, drop the query's siblings and dereplicate (needs skani/skDER, "
+        "--collection as the backbone source).",
+    ),
+    sibling_margin: float = typer.Option(
+        3.0, "--sibling-margin",
+        help="A reference is a sibling if its query-ANI beats the backbone's by this many %.",
+    ),
+    af_min: float = typer.Option(
+        80.0, "--af-min", help="... over at least this %% of the query (whole-genome match)."
+    ),
+    derep_ani: float = typer.Option(
+        99.0, "--derep-ani", help="skDER: collapse references at or above this ANI %%."
+    ),
 ) -> None:
     """Find (and optionally download) reference genomes missing from the collection.
 
@@ -73,6 +88,7 @@ def find_references(
             max_hits=max_hits, top_gaps=top_gaps,
             email=email or os.environ.get("NCBI_EMAIL"),
             exclude=tuple(exclude), keep_self_hits=keep_self_hits,
-            download=download,
+            download=download, curate=curate, sibling_margin=sibling_margin,
+            af_min=af_min, derep_ani=derep_ani,
         )
         find_references(params, logger)

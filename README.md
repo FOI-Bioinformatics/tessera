@@ -170,6 +170,47 @@ not chased forever). Each round is recorded in `filled/fill_summary.tsv`, and th
 query's own record is auto-excluded from its FASTA header. This needs an aligner
 and Entrez Direct, and rebuilds the alignment every round.
 
+Omit `--collection` to **start fresh** with no suggested references: the first
+round seeds the collection from a whole-query NCBI search (`--seed-hits N`, default
+10), then the loop fills the remaining gaps as usual.
+```
+recomfi fill-references --query CRF01_AE.fasta --output filled/ --aligner mafft \
+    --email you@example.org
+```
+Bootstrapping recruits the query's closest genomes, which for a recombinant query
+include its own-lineage relatives; combine with `--curate` to drop those siblings
+and keep a diverse panel.
+
+## Curating the panel for detection
+Auto-filling maximises *coverage* by recruiting the query's closest genomes — but
+for a recombinant query those closest genomes are its own-lineage relatives, which
+match it everywhere and **mask** the recombination. (Filling an HIV-1 CRF01_AE
+query recruited CRF01_AE relatives that hid the underlying subtype-A/E mosaic.)
+Detection needs *diversity*: distinct parental lineages, and none of the query's
+siblings.
+
+`recomfi curate-panel` curates a collection for detection. It uses
+[skani](https://github.com/bluenote-1577/skani) to measure each reference's
+genome-wide identity (ANI) and how much of the query it covers, then drops the
+query's siblings and dereplicates near-duplicates with
+[skDER](https://github.com/raufs/skDER):
+```
+recomfi curate-panel --query CRF01_AE.fasta --collection collection/ --output curated/
+```
+A *sibling* is a reference whose ANI to the query exceeds the backbone's by a
+margin **and** that covers most of the query — a whole-genome relative. A regional
+parent (for example an env-only reference) has high ANI but low coverage and is
+kept. The rule is relative to the backbone (the query's closest whole-genome
+match), so it needs no per-organism identity cutoff: it flags HIV subtype
+relatives (~12 % apart) and SARS-CoV-2 sublineages (<1 % apart) alike. The curated
+`curated/collection/` and a `panel_lineages.tsv` (each reference's role and
+ANI/coverage) are written; rebuild with `recomfi msa` then `recomfi recomb`.
+
+The same curation runs inside the fill loop with `fill-references --curate`, which
+keeps the growing panel diverse and sibling-free each round and adds a "Reference
+panel" section to the report. Both need skani (and skDER for dereplication):
+`conda install -c bioconda skani skder`.
+
 # Known limitations
 The HMM caller's segmentation and the discordant-site sign test address the main
 weaknesses of the old heuristic (window autocorrelation, the `--margin 0.0`

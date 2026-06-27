@@ -42,6 +42,10 @@ class FindRefParams:
     download: Path | None = None
     exclude: tuple[str, ...] = ()  # accessions to drop from candidates
     keep_self_hits: bool = False  # keep near-identical hits (the query's own record)
+    curate: bool = False  # after download, drop the query's siblings and dereplicate
+    sibling_margin: float = 3.0  # query-ANI must beat the backbone's by this many %
+    af_min: float = 80.0  # ... over at least this % of the query (whole-genome match)
+    derep_ani: float = 99.0  # skDER: collapse references >= this ANI to one representative
 
 
 @dataclass
@@ -101,6 +105,8 @@ def find_references(params: FindRefParams, logger: logging.Logger) -> list[Candi
     if params.download is not None:
         downloaded = _download(candidates, params.download, logger)
         _write_downloaded(params.output, downloaded, logger)
+        if params.curate and downloaded:
+            _curate_download(params, query_label, query_row, logger)
     elif candidates:
         logger.info(
             "Re-run with --download <collection_dir> to add the new references, "
@@ -239,6 +245,46 @@ def _download(
         except Exception as exc:  # noqa: BLE001 - report and continue the batch
             logger.warning("  ! failed to download %s: %s", accession, exc)
     return downloaded
+
+
+def _curate_download(
+    params: FindRefParams, query_label: str, query_row: str, logger: logging.Logger
+) -> None:
+    """Drop the query's siblings and dereplicate the download directory in place.
+
+    The backbone (the query's whole-genome anchor) is chosen from the existing
+    ``--collection``, so a freshly-downloaded sibling cannot be mistaken for it. The
+    query is reconstructed from its (de-gapped) MSA row, as skani needs a FASTA.
+    """
+    from .panel import (
+        curate_collection_dir,
+        pick_backbone,
+        skani_available,
+        write_panel_tsv,
+    )
+
+    if not skani_available():
+        raise UserInputError(
+            "--curate needs skani. Install with: conda install -c bioconda skani skder"
+        )
+    if params.collection is None or not params.collection.is_dir():
+        logger.warning("--curate needs --collection (the backbone source); skipping curation.")
+        return
+    qfasta = params.output / "query.degapped.fasta"
+    qfasta.write_text(f">{query_label}\n{query_row.replace('-', '')}\n")
+    backbone = pick_backbone(
+        qfasta, [p for p in params.collection.iterdir() if p.is_file()],
+        af_min=params.af_min, logger=logger,
+    )
+    if backbone is None:
+        logger.warning("Could not determine a backbone from --collection; skipping curation.")
+        return
+    curation = curate_collection_dir(
+        qfasta, params.download, backbone,
+        ani_margin=params.sibling_margin, af_min=params.af_min,
+        derep_ani=params.derep_ani, logger=logger,
+    )
+    write_panel_tsv(params.output / "panel_lineages.tsv", curation.table, logger)
 
 
 def _write_downloaded(

@@ -95,6 +95,47 @@ def test_query_own_accession_is_auto_excluded(monkeypatch, tmp_path, logger):
     assert "MG572182" in seen["exclude"]  # auto-excluded from its header
 
 
+def test_fresh_start_seeds_collection_from_whole_query_blast(monkeypatch, tmp_path, logger):
+    query = tmp_path / "q.fasta"
+    query.write_text(">q\n" + "ACGT" * 100 + "\n")
+    out = tmp_path / "out"
+    # No starting collection -> seed from a whole-query BLAST, then converge.
+    _common_mocks(monkeypatch, [([_gap(0.84)], 0.94), ([], 0.95)])
+    monkeypatch.setattr(
+        iterate, "collect_candidates",
+        lambda *a, **k: [Candidate(_gap(0.84), Hit("NEW1", "new", 90.0, 95.0, 1e-9), False)],
+    )
+    monkeypatch.setattr(iterate, "_download", lambda c, d, logger: [])
+
+    blasted: dict[str, str] = {}
+
+    def fake_blast(seq, *, max_hits, logger, email=None):
+        blasted["seq"] = seq
+        blasted["max_hits"] = max_hits
+        return [
+            Hit("SELF", "the query itself", 99.9, 99.0, 0.0),  # auto-skipped as self-hit
+            Hit("SEED1", "a relative", 92.0, 95.0, 1e-30),
+            Hit("SEED2", "another relative", 90.0, 90.0, 1e-20),
+        ]
+
+    def fake_efetch(accession, dest, logger):
+        path = dest / f"{accession}.fasta"
+        path.write_text(f">{accession}\nACGT\n")
+        return path
+
+    monkeypatch.setattr(iterate, "blast_subsequence", fake_blast)
+    monkeypatch.setattr(iterate, "efetch_fasta", fake_efetch)
+
+    fill_references(FillParams(query=query, collection=None, output=out, seed_hits=7), logger)
+
+    assert blasted["max_hits"] == 7
+    assert "ACGTACGT" in blasted["seq"]  # the whole (de-gapped) query
+    coll = out / "collection"
+    assert (coll / "SEED1.fasta").exists()
+    assert (coll / "SEED2.fasta").exists()
+    assert not (coll / "SELF.fasta").exists()  # near-identical self-hit not seeded
+
+
 def test_loop_stops_when_coverage_stalls(monkeypatch, tmp_path, logger):
     query, coll, out = _setup(tmp_path)
     # the best reference stays at 0.84 both rounds -> no improvement -> stop
