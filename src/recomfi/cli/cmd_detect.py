@@ -14,6 +14,15 @@ import typer
 from .main import _require_choice, app, get_logger, stage_errors
 
 
+def _seed_source(candidate_pool, nextclade: bool, nextclade_dataset: str | None) -> str:
+    """Local pool wins, then Nextclade, then the default BLAST recruitment."""
+    if candidate_pool:
+        return "local"
+    if nextclade or nextclade_dataset:
+        return "nextclade"
+    return "blast"
+
+
 @app.command(name="detect")
 def detect(
     query: Path = typer.Option(
@@ -35,6 +44,14 @@ def detect(
     candidate_pool: Path | None = typer.Option(
         None, "--candidate-pool",
         help="Use a local genome pool instead of fetching from NCBI (for mega-taxa).",
+    ),
+    nextclade: bool = typer.Option(
+        False, "--nextclade/--no-nextclade",
+        help="Recruit the panel from a Nextclade dataset auto-detected from the query.",
+    ),
+    nextclade_dataset: str | None = typer.Option(
+        None, "--nextclade-dataset",
+        help="Nextclade dataset path (implies --nextclade; e.g. nextstrain/sars-cov-2/XBB).",
     ),
     cache_dir: Path | None = typer.Option(
         None, "--cache-dir", help="Where to cache fetched panels (so repeat runs are fast)."
@@ -69,7 +86,8 @@ def detect(
             email=email or os.environ.get("NCBI_EMAIL"),
             threads=threads, cache_dir=cache_dir,
             # Detection-tuned preset: recruit parents, drop siblings, curate the panel.
-            seed_source="local" if candidate_pool else "blast",
+            seed_source=_seed_source(candidate_pool, nextclade, nextclade_dataset),
+            nextclade_dataset=nextclade_dataset,
             candidate_pool=candidate_pool, taxon=taxon,
             seed_mode="parents", curate=True,
             auto_diversify=True, negative_lineage=True,

@@ -38,6 +38,11 @@ def fill_references(
         None, "--taxon",
         help="Taxon for --seed-source ncbi-virus (e.g. 'HIV-1'). Auto-detected if omitted.",
     ),
+    nextclade_dataset: str | None = typer.Option(
+        None, "--nextclade-dataset",
+        help="Nextclade dataset path for --seed-source nextclade "
+        "(e.g. nextstrain/sars-cov-2/XBB). Auto-detected from the query if omitted.",
+    ),
     source_complete: bool = typer.Option(
         False, "--source-complete",
         help="NCBI Virus: fetch all complete genomes (then dereplicate) instead of RefSeq only.",
@@ -147,11 +152,12 @@ def fill_references(
     with stage_errors(logger):
         _require_choice(aligner, set(aligner_registry.names()), "--aligner")
         _require_choice(seed_mode, {"whole", "windowed", "parents"}, "--seed-mode")
-        _require_choice(seed_source, {"blast", "local", "ncbi-virus"}, "--seed-source")
+        _require_choice(seed_source, {"blast", "local", "ncbi-virus", "nextclade"}, "--seed-source")
         params = FillParams(
             query=query, collection=collection, output=output,
             aligner=aligner, reference=reference, max_rounds=max_rounds,
-            seed_source=seed_source, candidate_pool=candidate_pool, taxon=taxon,
+            seed_source=seed_source, candidate_pool=candidate_pool,
+            taxon=taxon, nextclade_dataset=nextclade_dataset,
             source_refseq=not source_complete, seed_keep_siblings=seed_keep_siblings,
             auto_diversify=auto_diversify, negative_lineage=negative_lineage,
             fetch_limit=fetch_limit, cache_dir=cache_dir,
