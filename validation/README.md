@@ -90,7 +90,11 @@ enterovirus D68 and PRRSV. For each dataset it:
    genome, recording the true donor span in query coordinates;
 4. runs RecomFi pool-only with the two exact source genomes removed (their clades
    stay represented), so the query is not a trivial self-match; window sizes adapt
-   to the genome length and the aligner is per-case (minimap2 for ~200 kb mpox/VZV);
+   to the genome length and the aligner is per-case (minimap2 for ~200 kb mpox/VZV).
+   Sibling-dropping is **off**: the synthetic pool has no recombinant twin of the
+   query, and for a close-parent hybrid the backbone parent is >95 % genome-wide ANI
+   to the query (its 70 % backbone dominates the average) and would otherwise be
+   discarded as a masking twin -- the documented `--seed-keep-siblings` case;
 5. checks the call: recombination detected, backbone (major parent) clade == A,
    and a donor region recovered for clade B overlapping the true span. Clade labels
    match hierarchically (`A` == `A.1`); a donor region is also credited to a sibling
@@ -123,43 +127,47 @@ at least three genomes -- including datasets with no clade attribute at all
 | `dengue` | DENV1 x DENV4 | 33.1 % | PASS |
 | `marburg` | MARV.B.2 x RAVV.2 | 21.5 % | PASS |
 | `yellow_fever` | Clade VII x Clade III | 21.0 % | PASS |
-| `wnv` | 2 x 1B | 20.2 % | PASS |
 | `iav_h5_ha` | Am-nonGsGD x 2.2.1.1a | 20.3 % | FAIL -- HA segment; no recombination called |
+| `wnv` | 2 x 1B | 20.2 % | PASS |
 | `hmpv` | B1 x A2.2.1 | 19.0 % | PASS |
 | `prrsv2` | L8D x L1C.2 | 18.6 % | FAIL -- ORF5 (~600 bp); donor tract too short |
-| `hepatitis_a` | IIIA x IIA | 16.6 % | FAIL -- backbone/donor inverted |
+| `hepatitis_a` | IIIA x IIA | 16.6 % | PASS |
 | `chikv` | III-Asian x I-WestAfrica | 15.5 % | PASS |
 | `hiv1` | A1 x B | 15.1 % | PASS |
 | `enterovirus_d68` | B3 x A2/D | 11.3 % | PASS |
 | `zika` | Asian x African | 10.9 % | PASS |
 | `rubella` | 2B x 1G | 9.0 % | PASS |
 | `flu_h3n2_ha` | K x unassigned | 7.7 % | FAIL -- HA segment; fine subclades |
-| `measles` | H1 x B3 | 7.5 % | FAIL -- a neighbouring genotype wins the backbone |
-| `mumps` | A x K | 6.9 % | FAIL -- neighbouring genotype |
-| `rsv_a` | A.1 x A.D.1.8 | 6.6 % | FAIL -- backbone recovered, donor sub-clade not |
-| `sars_cov_2` | 22B x ... | 0.4 % | SKIP -- Omicron clades too similar |
+| `measles` | H1 x B3 | 7.5 % | PASS |
+| `mumps` | A x K | 6.9 % | PASS |
+| `rsv_a` | A.1 x A.D.1.8 | 6.6 % | FAIL -- backbone recovered, deep donor sub-clade not |
 | `ebola` | Ebov x Ebov | 3.7 % | SKIP -- intra-species, too similar |
 | `mpox` | Ib x IIa | 0.5 % | SKIP -- too similar (DNA virus, ~200 kb) |
+| `sars_cov_2` | 22B x ... | 0.4 % | SKIP -- Omicron clades too similar |
 | `vzv` | clade 2 x ... | 0.2 % | SKIP -- highly conserved DNA virus |
 | `hantavirus` | -- | -- | SKIP -- no clade attribute in the tree |
 | `oropouche` | -- | -- | SKIP -- no clade attribute in the tree |
 | `cchfv` | -- | -- | SKIP -- < 2 clades with >= 3 genomes |
 
-**10 PASS, 7 FAIL, 7 SKIP** (0 errors). RecomFi recovers the recombinant cleanly
-when the parental clades are clearly divergent and well represented -- dengue
-serotypes, Marburg/Ravn, yellow-fever and WNV lineages, HIV subtypes,
-chikungunya/hMPV/EV-D68/Zika/rubella genotypes (all >= 9 % divergent). It degrades
-in two regimes: (1) **moderate divergence** -- closely-related genotypes or
-fine-grained sub-clades (~6-8 %: measles, mumps, RSV-A), where the backbone or the
-short donor tract is not cleanly separable from a neighbouring clade (for RSV-A the
-backbone is recovered but the donor sub-clade is not); and (2) **single-gene /
-segment datasets** (flu HA, H5 HA, PRRSV ORF5), which are short and finely
-subdivided, plus one high-divergence margin case where the caller inverted backbone
-and donor (hepatitis A). Conserved DNA viruses and intra-species sets (mpox, VZV,
-ebola) and within-Omicron SARS-CoV-2 are SKIPped as too similar, and three
-segmented viruses carry no usable clade attribute. The pass set is a performance
-characterisation, not a fixed contract -- the clades chosen follow from each
-dataset's current Nextclade tree.
+**13 PASS, 4 FAIL, 7 SKIP** (0 errors). RecomFi recovers the recombinant cleanly
+across the full divergence range that has both parents represented -- from dengue
+serotypes (33 %) down to measles and mumps genotypes (~7 %). The four remaining
+failures are genuinely hard: RSV-A (the donor is a deep RSV-A sub-clade only 6.6 %
+from the backbone and sharing the same top-level clade), and three single-gene /
+segment datasets (flu HA, H5 HA, PRRSV ORF5) that are short and finely subdivided.
+Conserved DNA viruses and intra-species sets (mpox, VZV, ebola) and within-Omicron
+SARS-CoV-2 are SKIPped as too similar (< 4 % divergence); three segmented viruses
+carry no usable clade attribute.
+
+The moderate-divergence cases (measles, mumps, and the earlier hepatitis-A
+inversion) were not a caller limitation but a **panel-recruitment artifact**: for a
+hybrid of close parents the backbone parent is >95 % genome-wide ANI to the query,
+so the default sibling-drop discarded it and the caller crowned a neighbouring or
+the donor clade. Keeping siblings (the documented `--seed-keep-siblings` setting for
+close parents with no masking twin) restores the backbone parent and the calls come
+out correct -- a useful reminder that for close-parent recombinants the real tool
+should keep siblings. The pass set is a performance characterisation, not a fixed
+contract -- the clades chosen follow from each dataset's current Nextclade tree.
 
 ## Expectation schema (`expected` block)
 

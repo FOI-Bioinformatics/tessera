@@ -384,8 +384,14 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
 
     t0 = time.monotonic()
     try:
+        # Keep "siblings": for a hybrid of close parents the backbone parent is
+        # >95% genome-wide ANI to the query (its 70% backbone dominates the
+        # average) and would be dropped as a masking twin -- but the synthetic
+        # pool contains no actual recombinant twin, so this is the documented
+        # close-parent / --seed-keep-siblings setting, and dropping it would
+        # remove the backbone parent itself.
         selected = select_regional(query, pool, window=sel_window, per_window=2,
-                                   drop_siblings=True, logger=logger).selected
+                                   drop_siblings=False, logger=logger).selected
     except ToolExecutionError:  # skani rejects very short gene/segment datasets
         selected = representative_panel(pool, tips, logger)
     if not selected:
