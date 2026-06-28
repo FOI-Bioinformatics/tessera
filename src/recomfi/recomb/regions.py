@@ -26,6 +26,7 @@ from math import isnan
 from statistics import mean
 
 from .analyze import AnalysisResult, rank_datasets
+from .clusters import all_singletons, cluster_references, clustered_view
 from .hmm import DEFAULT_JUMP_RATE, segment_query
 from .siblings import SiblingEvidence, sibling_aware_states
 from .similarity import WindowSimilarity, discordant_counts
@@ -57,6 +58,15 @@ class RegionParams:
     sibling_alpha: float = 0.05  # significance level for the per-window beaten test
     # ... and never beaten over a region-sized contiguous run (the primary signal; a
     # parent is beaten over the co-parent's tract). Derived from min_region / step.
+    # Cluster near-duplicate references into lineages and compete pooled lineages, so
+    # duplicates do not tie every window and fragment the call. See recomb/clusters.py.
+    cluster_lineages: bool = True
+    # Two references are one lineage when they agree at least this much in every window
+    # with no region-sized run below it. Absolute and conservative: it merges only
+    # clearly near-identical duplicates (the genomes that tie and fragment the call),
+    # leaving distinct parents -- even diffusely-divergent ones a few % apart -- separate.
+    cluster_merge_identity: float = 0.985
+    cluster_min_refs: int = 4  # skip clustering below this many references (curated panels)
 
     @classmethod
     def with_defaults(
@@ -70,6 +80,7 @@ class RegionParams:
         identity: float | None = None,
         alpha: float = 0.05,
         exclude_siblings: bool = True,
+        cluster_lineages: bool = True,
     ) -> RegionParams:
         return cls(
             min_region=window_size if min_region is None else min_region,
@@ -80,6 +91,7 @@ class RegionParams:
             identity=identity,
             alpha=alpha,
             exclude_siblings=exclude_siblings,
+            cluster_lineages=cluster_lineages,
         )
 
 
@@ -112,6 +124,10 @@ class Region:
     # A putative recombination where the query is locally far from EVERY reference:
     # the true donor is likely missing from the collection (bridged from a gap).
     donor_absent: bool = False
+    # Number of genomes in the donor's / backbone's lineage cluster (1 = a single
+    # genome competed; >1 = a pooled lineage), for the report.
+    minor_cluster_size: int = 1
+    major_cluster_size: int = 1
 
 
 @dataclass
@@ -167,16 +183,29 @@ def _call_regions_hmm(
 
     Whole-genome siblings of the query (its own lineage) are excluded from the
     competition first, so a sibling cannot win every window and mask the event.
+
+    Near-duplicate references are first pooled into lineage clusters, so duplicates
+    do not tie every window and fragment the call; the rest runs on the pooled view.
     """
     if len(result.similarities) < 2:
         only = next(iter(result.similarities), None)
         return [], only, []
+
+    # Front-end: pool near-duplicate references into lineage clusters and compete the
+    # pooled lineages. A no-op for a curated panel (few refs, or all singletons).
+    work = result
+    cluster_size: dict[str, int] = {}
+    if params.cluster_lineages and len(result.similarities) >= params.cluster_min_refs:
+        clusters = cluster_references(result, window_size, params)
+        if not all_singletons(clusters):
+            work, cluster_size = clustered_view(result, clusters)
+
     states: list[str] | None = None
     dropped: list[SiblingEvidence] = []
     if params.exclude_siblings:
-        states, dropped, _ = sibling_aware_states(result, params)
+        states, dropped, _ = sibling_aware_states(work, params)
     segments, major = segment_query(
-        result, identity=params.identity, jump_rate=params.jump_rate, states=states
+        work, identity=params.identity, jump_rate=params.jump_rate, states=states
     )
     if major is None:
         return [], None, dropped
@@ -189,7 +218,7 @@ def _call_regions_hmm(
         if seg.state == major or seg.msa_end - seg.msa_start < params.min_region:
             continue
         favor_minor, favor_major = discordant_counts(
-            result.rows, result.query, major, seg.state, seg.msa_start, seg.msa_end
+            work.rows, work.query, major, seg.state, seg.msa_start, seg.msa_end
         )
         if favor_minor <= favor_major:
             continue
@@ -208,10 +237,10 @@ def _call_regions_hmm(
             continue
         support = favor_minor / (favor_minor + favor_major)
         idx = range(seg.start_window, seg.end_window + 1)
-        minor_sims = [result.similarities[seg.state][i] for i in idx
-                      if not isnan(result.similarities[seg.state][i])]
-        major_sims = [result.similarities[major][i] for i in idx
-                      if not isnan(result.similarities[major][i])]
+        minor_sims = [work.similarities[seg.state][i] for i in idx
+                      if not isnan(work.similarities[seg.state][i])]
+        major_sims = [work.similarities[major][i] for i in idx
+                      if not isnan(work.similarities[major][i])]
         mean_minor = mean(minor_sims) if minor_sims else float("nan")
         mean_major = mean(major_sims) if major_sims else float("nan")
         regions.append(
@@ -226,6 +255,8 @@ def _call_regions_hmm(
                 breakpoint_lo=seg.breakpoint_lo, breakpoint_hi=seg.breakpoint_hi,
                 support=round(support, 3),
                 pvalue=_signif(pvalue), qvalue=_signif(q),
+                minor_cluster_size=cluster_size.get(seg.state, 1),
+                major_cluster_size=cluster_size.get(major, 1),
             )
         )
     return regions, major, dropped

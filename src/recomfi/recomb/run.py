@@ -37,6 +37,7 @@ class RecombParams:
     jump_rate: float = DEFAULT_JUMP_RATE  # HMM prior switch probability per window
     alpha: float = 0.05  # significance level for the donor-vs-major site test
     exclude_siblings: bool = True  # set aside the query's own-lineage siblings first
+    cluster_lineages: bool = True  # pool near-duplicate references into lineages first
     # Heuristic-only thresholds (None -> derive from the window size).
     min_region: int | None = None
     margin: float = 0.0
@@ -81,6 +82,7 @@ def run_recomb(
         jump_rate=params.jump_rate,
         alpha=params.alpha,
         exclude_siblings=params.exclude_siblings,
+        cluster_lineages=params.cluster_lineages,
     )
     regions, major_parent, excluded_siblings = call_regions(
         result, analysis, params.window_size, region_params

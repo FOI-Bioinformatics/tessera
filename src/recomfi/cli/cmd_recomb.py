@@ -69,6 +69,11 @@ def recomb(
         help="Set aside the query's whole-genome siblings (its own lineage) before "
         "calling, so a sibling cannot win every window and mask recombination (hmm).",
     ),
+    cluster_lineages: bool = typer.Option(
+        True, "--cluster-lineages/--no-cluster-lineages",
+        help="Pool near-duplicate references into lineages and compete the lineages, so "
+        "duplicates do not tie every window and fragment the call (hmm).",
+    ),
 ) -> None:
     """Identify recombination events in a multiple sequence alignment."""
     from ..recomb.run import RecombParams, run_recomb
@@ -95,5 +100,6 @@ def recomb(
             coverage_floor=coverage_floor,
             coverage_rel_drop=coverage_rel_drop,
             exclude_siblings=exclude_siblings,
+            cluster_lineages=cluster_lineages,
         )
         run_recomb(params, logger)
