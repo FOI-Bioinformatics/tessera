@@ -278,11 +278,31 @@ seed from a **finite pool** instead (`--seed-source`):
   (`--taxon "HIV-1"`, auto-detected if omitted). By default it pulls the RefSeq
   representative set (one genome per lineage, diverse by construction); add
   `--source-complete` for all complete genomes, which are then dereplicated.
+- `nextclade` — a pool reconstructed from a Nextclade dataset
+  (https://docs.nextstrain.org/projects/nextclade/en/stable/user/datasets.html).
+  recomfi auto-detects the dataset from the query (`nextclade sort` when the CLI is
+  installed, otherwise BLAST taxon detection mapped to a dataset), or you pass it
+  explicitly with `--nextclade-dataset <path>` (e.g. `nextstrain/sars-cov-2/XBB`,
+  `community/neherlab/hiv-1/hxb2`). Every reference-tree tip is reconstructed from
+  the dataset reference plus its mutations and labelled by clade, so the report
+  names parents by clade. Fetched pools are cached per dataset version.
 
 ```
 recomfi fill-references --query CRF01_AE.fasta --output filled/ --aligner mafft \
     --seed-source local --candidate-pool subtype_refs/ --curate
 ```
+
+```
+recomfi detect --query CRF01_AE.fasta --output out/ --nextclade
+recomfi fill-references --query q.fasta --output out/ --seed-source nextclade \
+    --nextclade-dataset nextstrain/sars-cov-2/XBB
+```
+A Nextclade dataset is a clade-typing reference tree, so the pool spans clade
+representatives rather than clean recombinant-parental endpoints; it suits a broad
+screen. Single-segment datasets (most flu segments) yield segment-length pool
+genomes, which is logged. The `nextclade` CLI is optional (it only sharpens dataset
+auto-detection).
+
 The sibling drop uses an absolute identity cutoff, which suits divergent-lineage
 recombinants (HIV subtypes ~12 % apart). For closely related parents that have no
 masking sibling (e.g. SARS-CoV-2 sublineages), add `--seed-keep-siblings`. NCBI
