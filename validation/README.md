@@ -81,16 +81,23 @@ Marburg, Oropouche, Zika, hepatitis A, H5 influenza, CCHFV, chikungunya,
 enterovirus D68 and PRRSV. For each dataset it:
 
 1. builds the Nextclade reference pool (the shipped `build_pool`, cached per
-   dataset version);
+   dataset version), keeping only the clade-labelled reference-tree tips (the
+   dataset's example sequences carry no clade and are dropped);
 2. picks the most-divergent pair of well-represented, **non-recombinant** clades
-   (A and B), each represented by its central genome;
+   (A and B), each represented by its central genome; a coarser clade attribute
+   can be pinned per case (`clade_key`, e.g. SARS-CoV-2 `clade_nextstrain`);
 3. splices an A-backbone genome with a B insert over the middle 35-65 % of the
    genome, recording the true donor span in query coordinates;
 4. runs RecomFi pool-only with the two exact source genomes removed (their clades
-   stay represented), so the query is not a trivial self-match;
-5. checks the call: recombination detected, backbone (major parent) clade == A
-   (hierarchical labels match, e.g. `A` == `A.1`), a donor region recovered for
-   clade B overlapping the true span. Wall-clock runtime is recorded per case.
+   stay represented), so the query is not a trivial self-match; window sizes adapt
+   to the genome length and the aligner is per-case (minimap2 for ~200 kb mpox/VZV);
+5. checks the call: recombination detected, backbone (major parent) clade == A,
+   and a donor region recovered for clade B overlapping the true span. Clade labels
+   match hierarchically (`A` == `A.1`); a donor region is also credited to a sibling
+   sub-clade of the donor (e.g. Marburg `RAVV.1` for a `RAVV.2` donor) **only** when
+   the donor lineage is distinct from the backbone's, so a shared-top-level pair
+   (RSV `A.1` / `A.D.1.8`) still requires resolving the exact donor. Runtime is
+   recorded per case.
 
 ```
 export PATH="$HOME/miniforge3/envs/recomfi-aln/bin:$PATH"
@@ -98,55 +105,61 @@ python validation/run_hybrids.py            # all cases
 python validation/run_hybrids.py hiv1 dengue   # only named cases
 ```
 
-Needs MAFFT/skani/skDER on PATH and contacts the Nextclade dataset server on the
-first run (pools are cached afterwards under `~/.cache/recomfi/nextclade`).
+Needs MAFFT/minimap2/skani/skDER on PATH and contacts the Nextclade dataset server
+on the first run (pools are cached afterwards under `~/.cache/recomfi/nextclade`).
+For a short gene/segment dataset that skani rejects the panel falls back to one
+central genome per clade.
 
-A dataset is **SKIP**ped (not failed) when it cannot supply a valid test: a
-gene-fragment / short-segment dataset that skani rejects (flu HA, yellow-fever
-prM-E, H5 HA, PRRSV ORF5), a dataset with fewer than two clades carrying at least
-three genomes (hantavirus, Oropouche, CCHFV), or one that is entirely sub-lineages
-of a single recombinant (SARS-CoV-2 XBB).
+A dataset is **SKIP**ped (not failed) when it cannot supply a valid test: the
+most-divergent clade pair is below ~4 % divergence (too few discriminating sites:
+mpox, VZV, ebola, SARS-CoV-2 within Omicron), or it has fewer than two clades with
+at least three genomes -- including datasets with no clade attribute at all
+(hantavirus, Oropouche, CCHFV).
 
 ### Observed performance (24 pathogens; one representative dataset each)
 
 | case | backbone x donor | divergence | result |
 |------|------------------|-----------:|--------|
 | `dengue` | DENV1 x DENV4 | 33.1 % | PASS |
-| `marburg` | MARV.B.2 x RAVV.2 | 21.5 % | FAIL -- donor (RAVV) region not recovered |
-| `wnv` | 2 x 1B | 20.2 % | FAIL -- backbone clade unlabelled in the tree |
+| `marburg` | MARV.B.2 x RAVV.2 | 21.5 % | PASS |
+| `yellow_fever` | Clade VII x Clade III | 21.0 % | PASS |
+| `wnv` | 2 x 1B | 20.2 % | PASS |
+| `iav_h5_ha` | Am-nonGsGD x 2.2.1.1a | 20.3 % | FAIL -- HA segment; no recombination called |
 | `hmpv` | B1 x A2.2.1 | 19.0 % | PASS |
+| `prrsv2` | L8D x L1C.2 | 18.6 % | FAIL -- ORF5 (~600 bp); donor tract too short |
 | `hepatitis_a` | IIIA x IIA | 16.6 % | FAIL -- backbone/donor inverted |
 | `chikv` | III-Asian x I-WestAfrica | 15.5 % | PASS |
 | `hiv1` | A1 x B | 15.1 % | PASS |
 | `enterovirus_d68` | B3 x A2/D | 11.3 % | PASS |
-| `zika` | Asian x African | 10.9 % | FAIL -- backbone clade unlabelled |
+| `zika` | Asian x African | 10.9 % | PASS |
 | `rubella` | 2B x 1G | 9.0 % | PASS |
+| `flu_h3n2_ha` | K x unassigned | 7.7 % | FAIL -- HA segment; fine subclades |
 | `measles` | H1 x B3 | 7.5 % | FAIL -- a neighbouring genotype wins the backbone |
 | `mumps` | A x K | 6.9 % | FAIL -- neighbouring genotype |
 | `rsv_a` | A.1 x A.D.1.8 | 6.6 % | FAIL -- backbone recovered, donor sub-clade not |
-| `ebola` | Ebov x Ebov | 3.7 % | FAIL -- intra-species, too similar |
-| `mpox` | Ib x IIa | 0.5 % | FAIL -- too similar (minimap2, ~200 kb) |
-| `vzv` | clade 2 x clade ... | 0.2 % | FAIL -- highly conserved genome |
-| `sars_cov_2` | -- | -- | SKIP -- XBB dataset is all one recombinant's sub-lineages |
-| `yellow_fever` | -- | -- | SKIP -- prM-E gene region too short for skani |
-| `hantavirus` | -- | -- | SKIP -- < 2 clades with >= 3 genomes |
-| `flu_h3n2_ha` | -- | -- | SKIP -- HA segment too short for skani |
-| `iav_h5_ha` | -- | -- | SKIP -- HA segment too short for skani |
+| `sars_cov_2` | 22B x ... | 0.4 % | SKIP -- Omicron clades too similar |
+| `ebola` | Ebov x Ebov | 3.7 % | SKIP -- intra-species, too similar |
+| `mpox` | Ib x IIa | 0.5 % | SKIP -- too similar (DNA virus, ~200 kb) |
+| `vzv` | clade 2 x ... | 0.2 % | SKIP -- highly conserved DNA virus |
+| `hantavirus` | -- | -- | SKIP -- no clade attribute in the tree |
+| `oropouche` | -- | -- | SKIP -- no clade attribute in the tree |
 | `cchfv` | -- | -- | SKIP -- < 2 clades with >= 3 genomes |
-| `oropouche` | -- | -- | SKIP -- < 2 clades with >= 3 genomes |
-| `prrsv2` | -- | -- | SKIP -- ORF5 gene region too short for skani |
 
-**6 PASS, 10 FAIL, 8 SKIP.** RecomFi recovers the recombinant cleanly when the
-parental clades are clearly divergent and well represented -- dengue serotypes,
-HIV subtypes, chikungunya/hMPV/EV-D68/rubella genotypes (all >= 9 % divergent).
-It degrades in two regimes: (1) **low divergence** -- closely-related genotypes or
-fine-grained sub-clades (~5-7 %: measles, mumps, RSV-A) and highly conserved
-genomes (mpox 0.5 %, VZV 0.2 %, intra-species ebola 3.7 %), where the backbone or
-the short donor tract is not separable from a neighbouring clade; and (2) a few
-high-divergence **labelling artifacts** (WNV, Zika), where the winning backbone
-genome carries no clade label in the Nextclade tree so the exact-match check scores
-a miss. The pass set is a performance characterisation, not a fixed contract -- the
-clades chosen follow from each dataset's current Nextclade tree.
+**10 PASS, 7 FAIL, 7 SKIP** (0 errors). RecomFi recovers the recombinant cleanly
+when the parental clades are clearly divergent and well represented -- dengue
+serotypes, Marburg/Ravn, yellow-fever and WNV lineages, HIV subtypes,
+chikungunya/hMPV/EV-D68/Zika/rubella genotypes (all >= 9 % divergent). It degrades
+in two regimes: (1) **moderate divergence** -- closely-related genotypes or
+fine-grained sub-clades (~6-8 %: measles, mumps, RSV-A), where the backbone or the
+short donor tract is not cleanly separable from a neighbouring clade (for RSV-A the
+backbone is recovered but the donor sub-clade is not); and (2) **single-gene /
+segment datasets** (flu HA, H5 HA, PRRSV ORF5), which are short and finely
+subdivided, plus one high-divergence margin case where the caller inverted backbone
+and donor (hepatitis A). Conserved DNA viruses and intra-species sets (mpox, VZV,
+ebola) and within-Omicron SARS-CoV-2 are SKIPped as too similar, and three
+segmented viruses carry no usable clade attribute. The pass set is a performance
+characterisation, not a fixed contract -- the clades chosen follow from each
+dataset's current Nextclade tree.
 
 ## Expectation schema (`expected` block)
 

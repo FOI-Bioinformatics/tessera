@@ -62,7 +62,9 @@ DATA = HERE / "data" / "hybrids"
 # backbone (clade A) the flanks. Window sizes adapt to the genome length.
 HYBRIDS: list[dict] = [
     # --- core (Nextstrain-maintained) ---
-    {"name": "sars_cov_2", "dataset": "nextstrain/sars-cov-2/XBB"},
+    # XBB's Pango lineages are too fine to group; use the coarse Nextstrain clade.
+    {"name": "sars_cov_2", "dataset": "nextstrain/sars-cov-2/XBB",
+     "clade_key": "clade_nextstrain"},
     {"name": "dengue", "dataset": "nextstrain/dengue/all"},
     {"name": "measles", "dataset": "nextstrain/measles/genome/WHO-2012"},
     {"name": "mumps", "dataset": "nextstrain/mumps/genome"},
@@ -90,6 +92,10 @@ HYBRIDS: list[dict] = [
 ]
 INSERT = (0.35, 0.65)  # donor (clade B) occupies this fraction of the genome
 MIN_GENOME = 400  # skip a dataset whose genome/segment is too short to splice
+MIN_DIVERGENCE = 4.0  # skip when the most-divergent clade pair is below this (% ) --
+# too few discriminating sites for a meaningful recombination call (conserved DNA
+# viruses, intra-species sets)
+REP_PANEL_MAX = 14  # representative-panel fallback: at most this many clade reps
 THREADS = 4
 
 
@@ -122,7 +128,21 @@ def reconstruct_gapped(reference: str, nuc_muts: list[str]) -> str:
     return "".join(chars)
 
 
-def collect_tips(tree: dict) -> dict[str, tuple[str, list[str]]]:
+def node_clade(node_attrs: dict, clade_key: str | None) -> str:
+    """The clade label for a node: a specific attribute if ``clade_key`` is given
+    (e.g. SARS-CoV-2 ``clade_nextstrain`` instead of the too-fine Pango lineage),
+    otherwise the shipped priority used by the feature."""
+    if clade_key:
+        value = node_attrs.get(clade_key)
+        if isinstance(value, dict):
+            value = value.get("value")
+        return str(value) if value not in (None, "") else "NA"
+    return _clade_of(node_attrs)
+
+
+def collect_tips(
+    tree: dict, clade_key: str | None = None
+) -> dict[str, tuple[str, list[str]]]:
     """Map ``accession -> (clade, root_to_tip_nuc_mutations)`` for every leaf."""
     tips: dict[str, tuple[str, list[str]]] = {}
     stack: list[tuple[dict, list[str]]] = [(tree, [])]
@@ -137,7 +157,7 @@ def collect_tips(tree: dict) -> dict[str, tuple[str, list[str]]]:
             continue
         acc = _accession_of(node)
         if acc and acc not in tips:
-            tips[acc] = (_clade_of(node.get("node_attrs", {}) or {}), path_muts)
+            tips[acc] = (node_clade(node.get("node_attrs", {}) or {}, clade_key), path_muts)
     return tips
 
 
@@ -174,6 +194,21 @@ def clade_match(observed: str, expected: str) -> bool:
     return (observed == expected
             or observed.startswith(expected + ".")
             or expected.startswith(observed + "."))
+
+
+def donor_match(observed: str, donor: str, backbone: str) -> bool:
+    """The recombinant region's clade names the donor's parental lineage.
+
+    Exact/hierarchical match (``clade_match``), or a sibling sub-clade under the
+    donor's top-level clade (e.g. Marburg ``RAVV.1`` for a ``RAVV.2`` donor) --
+    but only when the donor's top-level clade differs from the backbone's, so this
+    cannot trivially credit a shared-top-level pair (e.g. RSV ``A.1`` / ``A.D.1.8``)
+    where distinguishing the donor sub-clade is the actual test.
+    """
+    if clade_match(observed, donor):
+        return True
+    return (donor.split(".")[0] != backbone.split(".")[0]
+            and observed.split(".")[0] == donor.split(".")[0])
 
 
 class CaseSkipped(Exception):
@@ -280,6 +315,30 @@ def clade_of_label(label: str, tips: dict[str, tuple[str, list[str]]]) -> str:
     return "?"
 
 
+def representative_panel(
+    pool: list[Path], tips: dict[str, tuple[str, list[str]]], logger: logging.Logger
+) -> list[Path]:
+    """A clade-representative panel, used when skani rejects a short gene/segment.
+
+    Groups the (already example-free, source-free) pool by clade and keeps one
+    central genome per clade, preferring the larger clades up to ``REP_PANEL_MAX``.
+    This skips skani entirely while still giving the recombination scan a diverse,
+    clade-spanning panel that contains the parental clades.
+    """
+    base_info = {acc.split(".")[0]: (clade, len(muts)) for acc, (clade, muts) in tips.items()}
+    by_clade: dict[str, list[tuple[int, Path]]] = {}
+    for g in pool:
+        clade, nmut = base_info.get(strip_sequence_extension(g.name).split(".")[0], (None, 0))
+        if clade and clade != "NA":
+            by_clade.setdefault(clade, []).append((nmut, g))
+    chosen: list[Path] = []
+    for clade in sorted(by_clade, key=lambda c: -len(by_clade[c]))[:REP_PANEL_MAX]:
+        members = sorted(by_clade[clade])
+        chosen.append(members[len(members) // 2][1])  # the central (median-mutation) genome
+    logger.info("Built a %d-clade representative panel (skani fallback).", len(chosen))
+    return chosen
+
+
 def run_case(case: dict, logger: logging.Logger) -> dict:
     name, path = case["name"], case["dataset"]
     out = DATA / name
@@ -290,7 +349,7 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
                          logger=logger)
     reference = read_reference(_download_text(dataset, "reference", logger))
     tree = json.loads(_download_text(dataset, "treeJson", logger))["tree"]
-    tips = collect_tips(tree)
+    tips = collect_tips(tree, case.get("clade_key"))
 
     clade_a, clade_b, src_a, src_b = pick_parents(tips, reference, case.get("clades", []), logger)
     divergence = 100.0 - pct_identity(
@@ -299,6 +358,8 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
     )
     logger.info("[%s] backbone clade %s (%s) x donor clade %s (%s); inter-clade divergence %.1f%%",
                 name, clade_a, src_a, clade_b, src_b, divergence)
+    if divergence < MIN_DIVERGENCE:
+        raise CaseSkipped(f"clades too similar ({divergence:.1f}% divergence)")
 
     query_seq, q_start, q_end = make_hybrid(reference, tips[src_a][1], tips[src_b][1])
     if len(query_seq) < MIN_GENOME:
@@ -310,17 +371,25 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
         write_fasta_record(fo, f"hybrid_{clade_a}_{clade_b}", query_seq)
     query_label = strip_sequence_extension(query.name)
 
-    # Pool minus the two exact source genomes (their clades remain represented).
+    # Pool = clade-labelled tree tips only (drop Nextclade example sequences, which
+    # carry no clade and would otherwise win the backbone unlabelled), minus the two
+    # exact source genomes (their clades remain represented by other tips).
     drop = {src_a.split(".")[0], src_b.split(".")[0]}
-    pool = [g for g in genomes if strip_sequence_extension(g.name).split(".")[0] not in drop]
+    tip_bases = {acc.split(".")[0] for acc in tips}
+    pool = [
+        g for g in genomes
+        if strip_sequence_extension(g.name).split(".")[0] in tip_bases
+        and strip_sequence_extension(g.name).split(".")[0] not in drop
+    ]
 
     t0 = time.monotonic()
     try:
         selected = select_regional(query, pool, window=sel_window, per_window=2,
                                    drop_siblings=True, logger=logger).selected
-    except ToolExecutionError as exc:  # skani rejects very short gene/segment datasets
-        raise CaseSkipped(f"regional selection failed (genome too short for skani?): {exc}") \
-            from exc
+    except ToolExecutionError:  # skani rejects very short gene/segment datasets
+        selected = representative_panel(pool, tips, logger)
+    if not selected:
+        raise CaseSkipped("no reference panel could be built")
     collection = out / "collection"
     if collection.exists():
         shutil.rmtree(collection)
@@ -347,7 +416,7 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
     major_clade = clade_of_label(regions[0]["major_parent"], tips) if regions else "?"
     donor_hits = [
         r for r in present
-        if clade_match(clade_of_label(r["minor_parent"], tips), clade_b)
+        if donor_match(clade_of_label(r["minor_parent"], tips), clade_b, clade_a)
         and int(r["query_start"]) <= q_end and int(r["query_end"]) >= q_start
     ]
     detected = len(present) >= 1
