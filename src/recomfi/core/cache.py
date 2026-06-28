@@ -38,6 +38,12 @@ def ncbi_virus_cache(taxon: str, *, override: str | Path | None = None) -> Path:
     return path
 
 
+def nextclade_cache(path: str, tag: str, *, override: str | Path | None = None) -> Path:
+    """Cache directory for a reconstructed Nextclade pool, keyed by ``path@tag``."""
+    key = hashlib.sha1(f"{path}@{tag}".encode()).hexdigest()[:12]  # noqa: S324 - non-cryptographic
+    return cache_root(override) / "nextclade" / f"{_slug(path)}_{key}"
+
+
 def pango_alias_path(override: str | Path | None = None) -> Path:
     """The cached Pango ``alias_key.json`` path (fetched once, reused across runs)."""
     return cache_root(override) / "pango" / "alias_key.json"
