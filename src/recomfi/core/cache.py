@@ -38,6 +38,11 @@ def ncbi_virus_cache(taxon: str, *, override: str | Path | None = None) -> Path:
     return path
 
 
+def pango_alias_path(override: str | Path | None = None) -> Path:
+    """The cached Pango ``alias_key.json`` path (fetched once, reused across runs)."""
+    return cache_root(override) / "pango" / "alias_key.json"
+
+
 def cached_genomes(directory: Path) -> list[Path]:
     """Genome FASTA files already present in a cache directory (empty if none/missing)."""
     if not directory.is_dir():

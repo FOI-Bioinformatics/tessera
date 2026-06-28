@@ -20,7 +20,7 @@ from .hmm import DEFAULT_JUMP_RATE
 from .regions import RegionParams, call_regions
 from .report import print_coverage, print_regions, print_summary, write_reports
 from .similarity import compute_similarity
-from .typing import LINEAGES_TSV, LineageMap, load_lineage_map
+from .typing import LINEAGES_TSV, LineageMap, lineage_of, load_lineage_map
 
 
 @dataclass
@@ -50,6 +50,9 @@ class RecombParams:
     # precedence; otherwise a lineages.tsv beside the output or the MSA is read.
     lineage_map: LineageMap | None = None
     lineage_map_path: Path | None = None
+    # The query's own typed lineage (shown in the verdict). Defaults to the query's
+    # entry in the lineage map when present.
+    query_lineage: str | None = None
 
 
 def _discover_lineage_tsv(output: Path, msa: Path) -> Path | None:
@@ -80,6 +83,7 @@ def run_recomb(
         lineage_map = load_lineage_map(tsv) or None
         if lineage_map:
             logger.info("Typed names for %d reference(s) from %s.", len(lineage_map), tsv)
+    query_lineage = params.query_lineage or lineage_of(query_label, lineage_map)
 
     logger.info(
         "Scanning MSA %s for query '%s' (window=%d, step=%d, metric=%s)",
@@ -183,5 +187,6 @@ def run_recomb(
         top_n=params.top_n, plot_format=params.plot_format, logger=logger,
         coverage_gaps=coverage_gaps, coverage_threshold=coverage_threshold,
         extra_sections=extra_sections, lineage_map=lineage_map,
+        query_lineage=query_lineage,
     )
     logger.info("All done.")

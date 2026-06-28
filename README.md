@@ -113,6 +113,13 @@ reference set), pass `--lineage-map accession_to_genotype.tsv` (a `accession<TAB
 table) to any of these commands; user-supplied names take precedence over mined ones.
 With no source, references fall back to bare accessions and the report is unchanged.
 
+The query is also typed from its own header; when its lineage differs from the file
+name the verdict states it ("The query is typed as GII.P16-GII.4"). For a SARS-CoV-2
+query whose lineage is a Pango recombinant (an `X` lineage such as `XBB.1.5`), RecomFi
+looks up the designated parents in the Pango `alias_key.json` (fetched once into the
+cache) and adds a cross-check block, so the recruited parents can be compared with the
+designated ones. The lookup is best-effort: a network failure simply skips it.
+
 Generate a multiple sequence alignment:
 ```
 recomfi msa --query cowpox_with_variolaInsert.fasta.gz --collection collection/ --output msa.fasta

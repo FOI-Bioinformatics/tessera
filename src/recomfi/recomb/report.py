@@ -578,14 +578,23 @@ def _absent_clause(s: dict) -> str:
             f'<strong>donor may be missing</strong> (see Reference coverage).')
 
 
+def _query_lineage_clause(query: str, query_lineage: str | None) -> str:
+    """A clause naming the query's own typed lineage (omitted if it equals the label)."""
+    if not query_lineage or query_lineage == query:
+        return ""
+    return f' The query is typed as <strong>{html.escape(query_lineage)}</strong>.'
+
+
 def _verdict_html(
-    s: dict, query: str, colors: dict[str, str], lineage_map: LineageMap | None = None
+    s: dict, query: str, colors: dict[str, str], lineage_map: LineageMap | None = None,
+    query_lineage: str | None = None,
 ) -> str:
     major = html.escape(typed(s["major"], lineage_map))
+    q_clause = _query_lineage_clause(query, query_lineage)
     if s["n_regions"] == 0:
         lead = (f'No recombination among the present references &mdash; the query is most '
                 f'similar to <strong>{major}</strong> throughout.')
-        return f'<p class="verdict">{lead}{_absent_clause(s)}</p>'
+        return f'<p class="verdict">{lead}{q_clause}{_absent_clause(s)}</p>'
     donors = ", ".join(
         f'{_swatch(colors.get(m, GREY))}<strong>{html.escape(typed(m, lineage_map))}</strong>'
         for m in s["minors"]
@@ -600,7 +609,7 @@ def _verdict_html(
         f'<strong>{major}</strong> backbone carrying {s["n_regions"]} donor {word} from '
         f'{donors}, covering <span class="mono">{_fmt_kb(s["recomb_bp"])}</span> '
         f'(<span class="mono">{s["pct"]:.1f}%</span>) of the query.{conf_clause}'
-        f'{_absent_clause(s)}</p>'
+        f'{q_clause}{_absent_clause(s)}</p>'
     )
 
 
@@ -881,6 +890,7 @@ def write_html_report(
     coverage_threshold: float = 0.0,
     extra_sections: list[tuple[str, str]] | None = None,
     lineage_map: LineageMap | None = None,
+    query_lineage: str | None = None,
 ) -> Path:
     """Write a single self-contained ``report.html``."""
     gaps = coverage_gaps or []
@@ -902,7 +912,7 @@ def write_html_report(
         f"<style>{_CSS}</style></head><body><div class=\"wrap\">"
         '<header><div class="eyebrow">RecomFi &middot; recombination report</div>'
         f'<h1 class="mono">{html.escape(result.query)}</h1>'
-        f"{_verdict_html(s, result.query, colors, lineage_map)}"
+        f"{_verdict_html(s, result.query, colors, lineage_map, query_lineage)}"
         f"{_caveat_html(gaps, coverage_threshold)}</header>"
         f"{_cards_html(s, colors, lineage_map)}"
         '<section class="section"><div class="eyebrow">Query mosaic</div>'
@@ -951,6 +961,7 @@ def write_reports(
     coverage_threshold: float = 0.0,
     extra_sections: list[tuple[str, str]] | None = None,
     lineage_map: LineageMap | None = None,
+    query_lineage: str | None = None,
 ) -> None:
     """Write every table, plot and the HTML report for a completed scan."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -973,4 +984,5 @@ def write_reports(
         result, analysis, regions, top_datasets, provenance, output_dir, logger,
         coverage_gaps=gaps, coverage_threshold=coverage_threshold,
         extra_sections=extra_sections, lineage_map=lineage_map,
+        query_lineage=query_lineage,
     )

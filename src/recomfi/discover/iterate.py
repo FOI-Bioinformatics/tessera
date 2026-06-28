@@ -22,12 +22,15 @@ from ..core.errors import UserInputError
 from ..core.io import read_fasta, strip_sequence_extension
 from ..msa.build import MsaParams, build_msa
 from ..recomb.coverage import CoverageParams, call_coverage_gaps
+from ..recomb.pango import crosscheck_html, expand_recombinant, load_alias_key
 from ..recomb.run import RecombParams, run_recomb
 from ..recomb.similarity import compute_similarity
 from ..recomb.typing import (
     LINEAGES_TSV,
     build_lineage_map,
     dominant_lineage_token,
+    first_header,
+    genotype_from_title,
     lineage_map_from_rows,
     organism_from_title,
     titles_from_collection,
@@ -246,6 +249,11 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
         title_by_label=titles_from_collection(coll_files),
         organism=params.taxon,
     )
+    # Type the query itself from its own header so the verdict can name its lineage
+    # (and a recombinant query can be cross-checked against its designated parents).
+    query_lineage = genotype_from_title(first_header(params.query), params.taxon)
+    if query_lineage:
+        lineage_rows.append((query_label, query_lineage, "query"))
     write_lineage_map(params.output / LINEAGES_TSV, lineage_rows)
     lineage_map = lineage_map_from_rows(lineage_rows)
     if lineage_map:
@@ -256,6 +264,18 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
         table = list(panel_rows.values())
         write_panel_tsv(params.output / "panel_lineages.tsv", table, logger, lineage_map)
         extra_sections.append(("Reference panel", panel_table_html(table, lineage_map)))
+    # For a recombinant SARS-CoV-2 query, list the Pango-designated parents alongside
+    # the recruited ones as a cross-check (best-effort; needs the cached alias key).
+    if params.report and query_lineage and query_lineage.split(".")[0].startswith("X"):
+        parents = expand_recombinant(
+            query_lineage, load_alias_key(cache_override=params.cache_dir, logger=logger)
+        )
+        if parents:
+            logger.info("Pango designates %s as a recombinant of %s.",
+                        query_lineage, ", ".join(parents))
+            extra_sections.append(
+                ("Pango cross-check", crosscheck_html(query_lineage, parents))
+            )
     # Publish the final alignment under a stable name so a separate detection step
     # (recomfi recomb) can consume the panel without guessing the last round number.
     panel_msa = params.output / "panel.msa.fasta"

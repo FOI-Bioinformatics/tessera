@@ -15,6 +15,7 @@ sidecar map and render typed names without importing the discover/NCBI layer.
 
 from __future__ import annotations
 
+import gzip
 import re
 from collections import Counter
 from collections.abc import Iterable, Mapping
@@ -86,10 +87,14 @@ def genotype_from_title(title: str, organism: str | None = None) -> str | None:
     return max(candidates, key=len) if candidates else None
 
 
-def _first_header(path: Path) -> str:
-    """Return the first FASTA defline (without the leading '>'), or '' if none."""
+def first_header(path: Path) -> str:
+    """Return the first FASTA defline (without the leading '>'), or '' if none.
+
+    Handles a gzip-compressed FASTA so the query's own header can be mined too.
+    """
+    opener = gzip.open if str(path).endswith(".gz") else open
     try:
-        with open(path, encoding="utf-8", errors="replace") as fo:
+        with opener(path, "rt", encoding="utf-8", errors="replace") as fo:
             for line in fo:
                 if line.startswith(">"):
                     return line[1:].rstrip("\n")
@@ -106,7 +111,7 @@ def titles_from_collection(files: Iterable[Path]) -> dict[str, str]:
     """
     out: dict[str, str] = {}
     for path in files:
-        header = _first_header(path)
+        header = first_header(path)
         if header:
             out[strip_sequence_extension(path.name)] = header
     return out

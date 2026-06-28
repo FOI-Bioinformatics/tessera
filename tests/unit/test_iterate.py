@@ -358,3 +358,39 @@ def test_capture_writes_typed_lineage_sidecar(monkeypatch, tmp_path, logger):
 
     sidecar = (out / "lineages.tsv").read_text()
     assert "MK573073" in sidecar and "GII.P16-GII.4" in sidecar
+
+
+def test_query_self_typing_writes_query_row(monkeypatch, tmp_path, logger):
+    query, coll, out = _setup(tmp_path)
+    # the query's own header carries a genotype that is not its file name
+    query.write_text(">MG572182.1 Norovirus GII.P16-GII.1 isolate Hu\n" + "ACGT" * 100 + "\n")
+    _common_mocks(monkeypatch, [([], 0.95)])
+
+    fill_references(FillParams(query=query, collection=coll, output=out, report=False), logger)
+
+    rows = (out / "lineages.tsv").read_text().splitlines()
+    query_label = query.stem  # "q"
+    assert any(r.startswith(f"{query_label}\tGII.P16-GII.1\tquery") for r in rows)
+
+
+def test_pango_crosscheck_section_for_recombinant_query(monkeypatch, tmp_path, logger):
+    query, coll, out = _setup(tmp_path)
+    query.write_text(
+        ">OM.1 Severe acute respiratory syndrome coronavirus 2 XBB.1.5\n" + "ACGT" * 100 + "\n"
+    )
+    _common_mocks(monkeypatch, [([], 0.95)])
+    monkeypatch.setattr(iterate, "load_alias_key", lambda **k: {"XBB": ["BJ.1", "CJ.1"]})
+    captured = {}
+    monkeypatch.setattr(
+        iterate, "run_recomb",
+        lambda p, logger, **kw: captured.update(kw),
+    )
+
+    fill_references(
+        FillParams(query=query, collection=coll, output=out, taxon="SARS-CoV-2"), logger
+    )
+
+    titles = [t for t, _ in captured["extra_sections"]]
+    assert "Pango cross-check" in titles
+    body = dict(captured["extra_sections"])["Pango cross-check"]
+    assert "BJ.1" in body and "XBB.1.5" in body
