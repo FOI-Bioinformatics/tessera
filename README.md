@@ -64,6 +64,24 @@ Example folder structure (query is `cowpox_with_variolaInsert.fasta.gz`):
 ```
 
 # Usage
+
+## One-shot detection (no genomes needed)
+Give RecomFi only a query and it detects the taxon, recruits a diverse reference
+panel from NCBI, aligns, and calls recombination:
+```
+recomfi detect --query CRF01_AE.fasta --output out/ --email you@example.org
+```
+It recruits the parental lineages organism-agnostically -- a negative-lineage BLAST
+(exclude the query's own over-represented lineage so the divergent parents surface)
+plus NCBI Virus taxonomy diversity -- drops the query's siblings, and competes
+*lineages* rather than individual genomes, so a recombinant whose own lineage is
+common in NCBI is not masked. The report carries a plain-language verdict with a
+confidence label. Fetched panels are cached per taxon (`--cache-dir`), so a repeat
+run is fast. Needs an aligner and Entrez Direct (skani/skDER and the `datasets` CLI
+improve recruitment). For a heavily sequenced taxon (e.g. SARS-CoV-2) supply a local
+panel with `--candidate-pool`. The steps below show the underlying `msa` / `recomb`
+commands when you want to drive them manually.
+
 Generate a multiple sequence alignment:
 ```
 recomfi msa --query cowpox_with_variolaInsert.fasta.gz --collection collection/ --output msa.fasta

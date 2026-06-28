@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
+from pathlib import Path
 
 import typer
 
@@ -50,9 +51,9 @@ def _parse_key_values(items: list[str], label: str) -> dict[str, str]:
     return out
 
 
-def get_logger() -> logging.Logger:
-    """Return the configured logger for the current run."""
-    return configure_logging(level=_RUN_STATE["log_level"])  # type: ignore[arg-type]
+def get_logger(output_dir: Path | None = None) -> logging.Logger:
+    """Return the configured logger; with ``output_dir`` also persist a run log there."""
+    return configure_logging(output_dir=output_dir, level=_RUN_STATE["log_level"])  # type: ignore[arg-type]
 
 
 @contextmanager
@@ -105,6 +106,7 @@ def main(
 # Register subcommands (import for side effects).
 from . import (  # noqa: E402,F401
     cmd_curate_panel,
+    cmd_detect,
     cmd_fill_references,
     cmd_find_references,
     cmd_msa,

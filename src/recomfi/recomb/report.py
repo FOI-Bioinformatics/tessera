@@ -543,7 +543,30 @@ def _summary(
         "recomb_bp": recomb_bp,
         "pct": (100.0 * recomb_bp / query_len) if query_len else 0.0,
         "minors": minors,
+        "confidence": _confidence(present, absent),
     }
+
+
+def _confidence(present: list[Region], absent: list[Region]) -> str | None:
+    """A plain-language confidence label for the call, from FDR / support / coverage.
+
+    None when there is nothing to qualify (no recombination). A donor-present region
+    with a tiny q-value, a clear discordant-site majority, and a well-covered donor is
+    *high*; a significant but marginal or under-covered call is *moderate*; a
+    donor-absent or barely-significant call is *low*.
+    """
+    if not present:
+        return "low" if absent else None
+    qs = [r.qvalue for r in present if r.qvalue is not None]
+    sups = [r.support for r in present if r.support is not None]
+    min_q = min(qs) if qs else 1.0
+    max_sup = max(sups) if sups else 0.0
+    undercovered = any(r.donor_undercovered for r in present)
+    if min_q <= 1e-5 and max_sup >= 0.70 and not undercovered:
+        return "high"
+    if min_q <= 0.05 and not undercovered:
+        return "moderate"
+    return "low"
 
 
 def _absent_clause(s: dict) -> str:
@@ -564,11 +587,16 @@ def _verdict_html(s: dict, query: str, colors: dict[str, str]) -> str:
         f'{_swatch(colors.get(m, GREY))}<strong>{html.escape(m)}</strong>' for m in s["minors"]
     )
     word = "region" if s["n_regions"] == 1 else "regions"
+    conf = s.get("confidence")
+    conf_clause = (
+        f' <strong>{html.escape(conf)}</strong> confidence.' if conf else ""
+    )
     return (
         f'<p class="verdict">The query is a <strong>recombinant</strong>: a '
         f'<strong>{major}</strong> backbone carrying {s["n_regions"]} donor {word} from '
         f'{donors}, covering <span class="mono">{_fmt_kb(s["recomb_bp"])}</span> '
-        f'(<span class="mono">{s["pct"]:.1f}%</span>) of the query.{_absent_clause(s)}</p>'
+        f'(<span class="mono">{s["pct"]:.1f}%</span>) of the query.{conf_clause}'
+        f'{_absent_clause(s)}</p>'
     )
 
 
