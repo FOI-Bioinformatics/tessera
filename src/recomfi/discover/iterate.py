@@ -16,7 +16,6 @@ import html
 import logging
 import re
 import shutil
-import tempfile
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -68,6 +67,7 @@ class FillParams:
     negative_lineage: bool = True  # on saturation, re-BLAST excluding the query's lineage
     fetch_limit: int = 2000  # cap a broad NCBI Virus fetch (complete genomes)
     derep_diverse_ani: float = 95.0  # aggressive one-per-lineage dereplication of a pool
+    cache_dir: Path | None = None  # where to cache fetched NCBI Virus panels (None = default)
     window_size: int = 1000
     window_step: int = 100
     coverage_floor: float | None = None
@@ -333,26 +333,34 @@ def _seed_from_pool(
             raise UserInputError("--seed-source local needs --candidate-pool <dir>.")
         genomes = iter_pool_genomes(params.candidate_pool)
     else:  # ncbi-virus (or auto-switched into it)
-        with tempfile.TemporaryDirectory() as tmp:
-            genomes = _fetch_diverse(params, Path(tmp), logger)
-            _copy_into(_select_from(params, genomes, logger).selected, collection, logger)
-            return
+        genomes = _fetch_diverse(params, logger)
     _copy_into(_select_from(params, genomes, logger).selected, collection, logger)
 
 
-def _fetch_diverse(params: FillParams, dest: Path, logger: logging.Logger) -> list[Path]:
-    """Fetch a diverse taxon-scoped set from NCBI Virus: the RefSeq representative set,
-    broadening to a ``--limit``-capped set of complete genomes when RefSeq is too thin.
+def _fetch_diverse(params: FillParams, logger: logging.Logger) -> list[Path]:
+    """Fetch a diverse taxon-scoped set from NCBI Virus (cached per taxon): the RefSeq
+    representative set, broadening to a ``--limit``-capped set of complete genomes when
+    RefSeq is too thin.
 
-    The cap bounds the work for a heavily-sequenced taxon (the download is never
-    unbounded). When the cap is hit the sample may miss lineages, so a curated
-    ``--candidate-pool`` is recommended instead -- this is logged, not fatal.
+    The fetched panel is cached on disk by taxon, so a repeat run skips the network.
+    The cap bounds the work for a heavily-sequenced taxon; when it is hit the sample
+    may miss lineages, so a curated ``--candidate-pool`` is recommended (logged).
     """
+    from ..core.cache import cached_genomes, ncbi_virus_cache
     from .pool import detect_taxon, fetch_ncbi_virus
 
     taxon = params.taxon or detect_taxon(params.query, email=params.email, logger=logger)
+    cache = ncbi_virus_cache(taxon, override=params.cache_dir)
+    existing = cached_genomes(cache)
+    if existing:
+        logger.info(
+            "Using the cached NCBI Virus panel for '%s' (%d genome(s)): %s",
+            taxon, len(existing), cache,
+        )
+        return existing
+    cache.mkdir(parents=True, exist_ok=True)
     if params.source_refseq:
-        fetched = fetch_ncbi_virus(taxon, dest, refseq=True, logger=logger)
+        fetched = fetch_ncbi_virus(taxon, cache, refseq=True, logger=logger)
         if len(fetched) >= SEED_MIN_DIVERSE:
             return fetched
         logger.info(
@@ -362,7 +370,7 @@ def _fetch_diverse(params: FillParams, dest: Path, logger: logging.Logger) -> li
         for g in fetched:
             g.unlink()
     fetched = fetch_ncbi_virus(
-        taxon, dest, refseq=False, complete_only=True, limit=params.fetch_limit, logger=logger
+        taxon, cache, refseq=False, complete_only=True, limit=params.fetch_limit, logger=logger
     )
     if len(fetched) >= params.fetch_limit:
         logger.warning(

@@ -223,21 +223,20 @@ def test_parents_mode_falls_back_when_only_siblings(monkeypatch, tmp_path, logge
     assert seeded == {"SIB"}  # fallback keeps the collection non-empty
 
 
-def test_fetch_diverse_broadens_thin_refseq_and_caps(monkeypatch, tmp_path, logger):
-    # RefSeq too thin -> broaden to a --limit-capped complete fetch; the cap is honoured.
+def test_fetch_diverse_broadens_caps_and_caches(monkeypatch, tmp_path, logger):
+    # RefSeq too thin -> broaden to a --limit-capped complete fetch; result is cached.
     from recomfi.discover import pool as pool_mod
 
-    dest = tmp_path / "d"
-    dest.mkdir()
-    seen = {}
+    calls = {"fetch": 0, "limit": None}
 
     def fake_fetch(taxon, d, *, refseq=True, complete_only=False, released_after=None,
                    limit=None, logger):
+        calls["fetch"] += 1
         if refseq:
             p = d / "NC_1.fasta"  # 1 < SEED_MIN_DIVERSE -> broaden
             p.write_text(">x\nA\n")
             return [p]
-        seen["limit"] = limit
+        calls["limit"] = limit
         out = []
         for i in range(limit):  # cap hit -> warning path
             p = d / f"G{i}.fasta"
@@ -248,11 +247,17 @@ def test_fetch_diverse_broadens_thin_refseq_and_caps(monkeypatch, tmp_path, logg
     monkeypatch.setattr(pool_mod, "fetch_ncbi_virus", fake_fetch)
     params = FillParams(
         query=tmp_path / "q.fasta", collection=None, output=tmp_path / "o",
-        taxon="SARS-CoV-2", fetch_limit=5,
+        taxon="SARS-CoV-2", fetch_limit=5, cache_dir=tmp_path / "cache",
     )
-    result = iterate._fetch_diverse(params, dest, logger)
-    assert seen["limit"] == 5
+    result = iterate._fetch_diverse(params, logger)
+    assert calls["limit"] == 5
     assert len(result) == 5  # broadened to the capped complete set
+
+    # A second call for the same taxon hits the cache -- no further fetch.
+    before = calls["fetch"]
+    cached = iterate._fetch_diverse(params, logger)
+    assert calls["fetch"] == before  # network skipped
+    assert len(cached) == 5
 
 
 def test_dominant_lineage_token_extracted_from_titles():

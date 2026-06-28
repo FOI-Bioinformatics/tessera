@@ -61,6 +61,11 @@ def fill_references(
         2000, "--fetch-limit",
         help="Cap a broad NCBI Virus fetch (complete genomes) before dereplication.",
     ),
+    cache_dir: Path | None = typer.Option(
+        None, "--cache-dir",
+        help="Where to cache fetched NCBI Virus panels (default ~/.cache/recomfi or "
+        "$RECOMFI_CACHE), so repeat runs skip the network.",
+    ),
     seed_mode: str = typer.Option(
         "windowed", "--seed-mode",
         help="BLAST seeding (--seed-source blast): 'whole' (closest whole-genome relatives), "
@@ -138,7 +143,7 @@ def fill_references(
             seed_source=seed_source, candidate_pool=candidate_pool, taxon=taxon,
             source_refseq=not source_complete, seed_keep_siblings=seed_keep_siblings,
             auto_diversify=auto_diversify, negative_lineage=negative_lineage,
-            fetch_limit=fetch_limit,
+            fetch_limit=fetch_limit, cache_dir=cache_dir,
             seed_mode=seed_mode, seed_hits=seed_hits, seed_window=seed_window,
             window_size=window_size, window_step=window_step,
             coverage_floor=coverage_floor, coverage_rel_drop=coverage_rel_drop,
