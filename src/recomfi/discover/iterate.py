@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import html
 import logging
+import re
 import shutil
 import tempfile
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -63,6 +65,7 @@ class FillParams:
     # When BLAST seeding finds only siblings (a saturated lineage), switch to recruiting
     # by NCBI Virus taxonomy diversity instead, so the parental lineages are present.
     auto_diversify: bool = True
+    negative_lineage: bool = True  # on saturation, re-BLAST excluding the query's lineage
     fetch_limit: int = 2000  # cap a broad NCBI Virus fetch (complete genomes)
     derep_diverse_ani: float = 95.0  # aggressive one-per-lineage dereplication of a pool
     window_size: int = 1000
@@ -290,6 +293,14 @@ def _seed_collection(
         )
     from .pool import datasets_available
 
+    # Saturation (only siblings found): first try a negative-lineage search -- exclude
+    # the query's own over-represented lineage so the divergent parents surface. Works
+    # for mega-taxa (no download). Fall back to NCBI Virus taxonomy diversity.
+    if saturated and params.negative_lineage:
+        neg = _seed_negative_lineage(query_seq, params, exclude, logger)
+        if neg:
+            logger.info("Negative-lineage search recruited %d reference(s).", len(neg))
+            accessions, saturated = neg, False
     if saturated and params.auto_diversify and datasets_available():
         logger.info(
             "BLAST seeding recruited only siblings of the query (its lineage saturates "
@@ -382,12 +393,74 @@ def _copy_into(genomes: list[Path], collection: Path, logger: logging.Logger) ->
         shutil.copy(g, collection / g.name)
 
 
-def _blast_or_none(seq: str, params: FillParams, logger: logging.Logger) -> list:
+def _blast_or_none(
+    seq: str, params: FillParams, logger: logging.Logger, *, entrez_query: str | None = None
+) -> list:
     try:
-        return blast_subsequence(seq, max_hits=params.seed_hits, logger=logger, email=params.email)
+        return blast_subsequence(
+            seq, max_hits=params.seed_hits, logger=logger, email=params.email,
+            entrez_query=entrez_query,
+        )
     except BlastError as exc:
         logger.warning("  BLAST failed for a seed search, skipping: %s", exc)
         return []
+
+
+# A lineage designation in a hit title: a token carrying a digit, e.g. "CRF01_AE",
+# "GII.P16-GII.1", "BA.2.10.1". Splits on "/" and whitespace so an isolate path like
+# "Hu/GII.P16-GII.1/CR38" yields the shared lineage token, not the per-hit whole path.
+_LINEAGE_TOKEN = re.compile(r"[A-Za-z][\w.\-]*\d[\w.\-]*")
+
+
+def _organism_from_title(title: str) -> str:
+    """The organism/species portion of a BLAST hit title (drop isolate/strain tails)."""
+    return title.split(",")[0].split(" isolate ")[0].split(" strain ")[0].strip()
+
+
+def _dominant_lineage_token(hits: list, min_frac: float = 0.5) -> str | None:
+    """The lineage designation shared by most top hits (the query's own lineage)."""
+    counts: Counter[str] = Counter()
+    for hit in hits:
+        for token in {t.strip("._-/") for t in _LINEAGE_TOKEN.findall(hit.title)}:
+            if len(token) >= 4:
+                counts[token] += 1
+    if not counts:
+        return None
+    token, seen = counts.most_common(1)[0]
+    return token if seen >= max(2, int(min_frac * len(hits))) else None
+
+
+def _seed_negative_lineage(
+    query_seq: str, params: FillParams, exclude: set[str], logger: logging.Logger
+) -> list[str]:
+    """Seed by re-BLASTing each window with the query's own lineage excluded.
+
+    Identifies the dominant lineage token from a whole-query BLAST, then searches each
+    window with ``<organism> NOT <token>`` so the best *non-lineage* hit per region --
+    the regional parent -- surfaces. Returns ``[]`` if no lineage token can be
+    identified (the caller then falls back to taxonomy diversity).
+    """
+    hits = _blast_or_none(query_seq[:1500], params, logger)
+    token = _dominant_lineage_token(hits)
+    if token is None:
+        logger.info("Could not identify the query's lineage from BLAST titles; skipping.")
+        return []
+    organism = _organism_from_title(hits[0].title) if hits else ""
+    entrez_query = (f'"{organism}"[Organism] NOT "{token}"') if organism else f'NOT "{token}"'
+    logger.info(
+        "Saturation: excluding the query's lineage '%s' to recruit divergent parents...", token,
+    )
+    window = max(params.seed_window, MIN_SUBSEQ)
+    selected: list[str] = []
+    for i in range(0, len(query_seq), window):
+        chunk = query_seq[i : i + window]
+        if len(chunk) < MIN_SUBSEQ:
+            continue
+        for hit in _blast_or_none(chunk, params, logger, entrez_query=entrez_query):
+            if _keep(hit, exclude, params) and not _is_sibling_hit(hit) \
+                    and hit.accession not in selected:
+                selected.append(hit.accession)
+    return selected[:SEED_TOTAL_CAP]
 
 
 def _keep(hit, exclude: set[str], params: FillParams) -> bool:

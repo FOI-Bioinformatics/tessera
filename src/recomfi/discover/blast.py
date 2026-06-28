@@ -42,8 +42,13 @@ def blast_subsequence(
     email: str | None = None,
     program: str = "blastn",
     database: str = "nt",
+    entrez_query: str | None = None,
 ) -> list[Hit]:
     """BLAST ``seq`` against NCBI ``database`` and return up to ``max_hits`` hits.
+
+    ``entrez_query`` restricts the searched set with an Entrez expression (e.g.
+    ``'Norovirus[Organism] NOT GII.P16-GII.1'``), used to exclude the query's own
+    over-represented lineage so the divergent parents surface.
 
     Raises :class:`BlastError` on any network/NCBI/parse failure so the caller can
     skip a gap and carry on.
@@ -60,8 +65,11 @@ def blast_subsequence(
 
     logger.info("Submitting %d bp to NCBI %s/%s (this can take minutes)...",
                 len(seq), program, database)
+    qblast_kwargs = {"hitlist_size": max_hits}
+    if entrez_query:
+        qblast_kwargs["entrez_query"] = entrez_query
     try:
-        handle = NCBIWWW.qblast(program, database, seq, hitlist_size=max_hits)
+        handle = NCBIWWW.qblast(program, database, seq, **qblast_kwargs)
         record = NCBIXML.read(handle)
     except Exception as exc:  # noqa: BLE001 - any failure becomes a clean skip
         raise BlastError(f"NCBI BLAST request failed: {exc}") from exc

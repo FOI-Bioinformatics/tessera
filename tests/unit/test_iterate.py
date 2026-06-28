@@ -109,7 +109,7 @@ def test_fresh_start_seeds_collection_from_whole_query_blast(monkeypatch, tmp_pa
 
     blasted: dict[str, str] = {}
 
-    def fake_blast(seq, *, max_hits, logger, email=None):
+    def fake_blast(seq, *, max_hits, logger, email=None, entrez_query=None):
         blasted["seq"] = seq
         blasted["max_hits"] = max_hits
         return [
@@ -170,7 +170,7 @@ def test_saturation_auto_switches_to_ncbi_virus_diversity(monkeypatch, tmp_path,
     monkeypatch.setattr(iterate, "read_fasta", lambda p: [("q", "A" * 300)])
     monkeypatch.setattr(
         iterate, "blast_subsequence",
-        lambda seq, *, max_hits, logger, email=None: [Hit("SIB", "sibling", 98.0, 99.0, 0.0)],
+        lambda seq, **k: [Hit("SIB", "sibling", 98.0, 99.0, 0.0)],
     )
     from recomfi.discover import pool as pool_mod
     monkeypatch.setattr(pool_mod, "datasets_available", lambda: True)
@@ -190,7 +190,7 @@ def test_saturation_auto_switches_to_ncbi_virus_diversity(monkeypatch, tmp_path,
     assert (out / "collection" / "DIVERSE.fasta").exists()
 
 
-def _regional_blast(seq, *, max_hits, logger, email=None):
+def _regional_blast(seq, *, max_hits, logger, email=None, entrez_query=None):
     # one sibling present in every window (near-identical, full coverage) + a distinct
     # regional parent per window (lower identity).
     sib = Hit("SIB", "sibling", 98.0, 99.0, 0.0)
@@ -216,7 +216,7 @@ def test_windowed_mode_keeps_per_window_best_including_siblings(monkeypatch, tmp
 
 def test_parents_mode_falls_back_when_only_siblings(monkeypatch, tmp_path, logger):
     # every window returns only a sibling -> nothing to suppress down to -> seed the best.
-    def only_siblings(seq, *, max_hits, logger, email=None):
+    def only_siblings(seq, *, max_hits, logger, email=None, entrez_query=None):
         return [Hit("SIB", "sibling", 98.0, 99.0, 0.0)]
 
     seeded = _seed_run(monkeypatch, tmp_path, logger, seed_mode="parents", fake_blast=only_siblings)
@@ -253,6 +253,46 @@ def test_fetch_diverse_broadens_thin_refseq_and_caps(monkeypatch, tmp_path, logg
     result = iterate._fetch_diverse(params, dest, logger)
     assert seen["limit"] == 5
     assert len(result) == 5  # broadened to the capped complete set
+
+
+def test_dominant_lineage_token_extracted_from_titles():
+    from recomfi.discover.iterate import _dominant_lineage_token
+
+    hits = [
+        Hit("A", "Norovirus GII isolate Hu/GII.P16-GII.1/RUS/NS18", 98.0, 99.0, 0.0),
+        Hit("B", "Norovirus GII isolate Hu/GII.P16-GII.1/JP/Yuzawa", 98.0, 99.0, 0.0),
+        Hit("C", "Norovirus GII strain GII.P16-GII.1 clone X", 98.0, 99.0, 0.0),
+    ]
+    assert _dominant_lineage_token(hits) == "GII.P16-GII.1"
+    # No digit-bearing token shared across hits -> nothing to exclude.
+    assert _dominant_lineage_token(
+        [Hit("A", "Some virus strain ABC", 98.0, 99.0, 0.0),
+         Hit("B", "Other isolate from host", 98.0, 99.0, 0.0)]
+    ) is None
+
+
+def test_negative_lineage_seeding_recruits_parents(monkeypatch, tmp_path, logger):
+    from recomfi.discover import iterate as it
+
+    query = tmp_path / "q.fasta"
+    query.write_text(">q\n" + "ACGT" * 200 + "\n")
+    captured = {}
+
+    def fake_blast(seq, *, max_hits, logger, email=None, entrez_query=None):
+        if entrez_query is None:  # the whole-query probe -> the saturating lineage
+            return [Hit("SIB1", "Norovirus GII isolate Hu/GII.P16-GII.1/A", 98.0, 99.0, 0.0),
+                    Hit("SIB2", "Norovirus GII isolate Hu/GII.P16-GII.1/B", 98.0, 99.0, 0.0)]
+        captured["entrez_query"] = entrez_query  # per-region negative search
+        return [Hit("PARENT", "Norovirus GII.P16 polymerase", 91.0, 80.0, 1e-9),
+                Hit("SIBX", "Norovirus GII.P16-GII.1 again", 98.0, 99.0, 0.0)]
+
+    monkeypatch.setattr(it, "blast_subsequence", fake_blast)
+    params = FillParams(query=query, collection=None, output=tmp_path / "o", seed_window=400)
+    seeds = it._seed_negative_lineage("ACGT" * 200, params, set(), logger)
+
+    assert "NOT \"GII.P16-GII.1\"" in captured["entrez_query"]
+    assert "Norovirus GII"[:10] in captured["entrez_query"]  # organism restriction
+    assert seeds == ["PARENT"]  # the divergent parent kept; the residual sibling dropped
 
 
 def test_loop_stops_when_coverage_stalls(monkeypatch, tmp_path, logger):

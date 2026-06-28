@@ -52,6 +52,11 @@ def fill_references(
         help="When BLAST seeding finds only siblings (a saturated lineage), switch to "
         "recruiting parental lineages by NCBI Virus taxonomy diversity (needs the datasets CLI).",
     ),
+    negative_lineage: bool = typer.Option(
+        True, "--negative-lineage/--no-negative-lineage",
+        help="On saturation, re-BLAST each region excluding the query's own lineage (from "
+        "the hit titles) to surface the divergent parents -- works for mega-taxa, no download.",
+    ),
     fetch_limit: int = typer.Option(
         2000, "--fetch-limit",
         help="Cap a broad NCBI Virus fetch (complete genomes) before dereplication.",
@@ -132,7 +137,8 @@ def fill_references(
             aligner=aligner, reference=reference, max_rounds=max_rounds,
             seed_source=seed_source, candidate_pool=candidate_pool, taxon=taxon,
             source_refseq=not source_complete, seed_keep_siblings=seed_keep_siblings,
-            auto_diversify=auto_diversify, fetch_limit=fetch_limit,
+            auto_diversify=auto_diversify, negative_lineage=negative_lineage,
+            fetch_limit=fetch_limit,
             seed_mode=seed_mode, seed_hits=seed_hits, seed_window=seed_window,
             window_size=window_size, window_step=window_step,
             coverage_floor=coverage_floor, coverage_rel_drop=coverage_rel_drop,
