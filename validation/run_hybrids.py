@@ -36,6 +36,7 @@ import time
 from pathlib import Path
 
 from recomfi.core.cache import nextclade_cache
+from recomfi.core.errors import ToolExecutionError
 from recomfi.core.io import strip_sequence_extension, write_fasta_record
 from recomfi.discover.nextclade import (
     _MUT,
@@ -175,12 +176,22 @@ def clade_match(observed: str, expected: str) -> bool:
             or expected.startswith(observed + "."))
 
 
-def clade_members(tips: dict[str, tuple[str, list[str]]]) -> dict[str, list[str]]:
-    """Map each clade to its member accessions (skip unlabelled/recombinant tips)."""
+class CaseSkipped(Exception):
+    """A dataset is unsuitable for a hybrid test (reported as SKIP, not ERROR)."""
+
+
+def clade_members(
+    tips: dict[str, tuple[str, list[str]]], *, exclude_recombinant: bool = True
+) -> dict[str, list[str]]:
+    """Map each clade to its member accessions (skip unlabelled, and -- by default
+    -- recombinant clades)."""
     by_clade: dict[str, list[str]] = {}
     for acc, (clade, _) in tips.items():
-        if clade and clade != "NA" and not is_recombinant_clade(clade):
-            by_clade.setdefault(clade, []).append(acc)
+        if not clade or clade == "NA":
+            continue
+        if exclude_recombinant and is_recombinant_clade(clade):
+            continue
+        by_clade.setdefault(clade, []).append(acc)
     return by_clade
 
 
@@ -196,18 +207,30 @@ def clade_representative(members: list[str], tips: dict[str, tuple[str, list[str
 
 
 def pick_parents(
-    tips: dict[str, tuple[str, list[str]]], reference: str, pinned: list[str]
+    tips: dict[str, tuple[str, list[str]]], reference: str, pinned: list[str],
+    logger: logging.Logger,
 ) -> tuple[str, str, str, str]:
     """Return ``(clade_a, clade_b, source_a, source_b)``.
 
     Among clades with at least ``MIN_MEMBERS`` genomes, choose the most-divergent
     pair (each represented by its central genome); the larger clade is the backbone
     (A). A pinned pair overrides the search. Sources are the clades' central genomes.
+
+    Recombinant clades are excluded as parents, but if that leaves fewer than two
+    eligible clades (e.g. the SARS-CoV-2 XBB dataset, which is entirely XBB
+    sub-lineages) they are allowed back in. Too few clades either way is a SKIP.
     """
-    by_clade = clade_members(tips)
-    eligible = {c: m for c, m in by_clade.items() if len(m) >= MIN_MEMBERS}
+    def eligible_of(exclude_recombinant: bool) -> dict[str, list[str]]:
+        by_clade = clade_members(tips, exclude_recombinant=exclude_recombinant)
+        return {c: m for c, m in by_clade.items() if len(m) >= MIN_MEMBERS}
+
+    eligible = eligible_of(exclude_recombinant=True)
     if len(eligible) < 2:
-        raise ValueError(f"dataset has fewer than two clades with >={MIN_MEMBERS} genomes")
+        eligible = eligible_of(exclude_recombinant=False)
+        if len(eligible) >= 2:
+            logger.info("No non-recombinant clade pair; allowing recombinant clades as parents.")
+    if len(eligible) < 2:
+        raise CaseSkipped(f"fewer than two clades with >={MIN_MEMBERS} genomes")
     reps = {c: clade_representative(m, tips) for c, m in eligible.items()}
     rep_seq = {c: reconstruct_gapped(reference, tips[reps[c]][1]) for c in reps}
 
@@ -269,7 +292,7 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
     tree = json.loads(_download_text(dataset, "treeJson", logger))["tree"]
     tips = collect_tips(tree)
 
-    clade_a, clade_b, src_a, src_b = pick_parents(tips, reference, case.get("clades", []))
+    clade_a, clade_b, src_a, src_b = pick_parents(tips, reference, case.get("clades", []), logger)
     divergence = 100.0 - pct_identity(
         reconstruct_gapped(reference, tips[src_a][1]),
         reconstruct_gapped(reference, tips[src_b][1]),
@@ -279,7 +302,7 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
 
     query_seq, q_start, q_end = make_hybrid(reference, tips[src_a][1], tips[src_b][1])
     if len(query_seq) < MIN_GENOME:
-        raise ValueError(f"genome/segment too short to test ({len(query_seq)} bp)")
+        raise CaseSkipped(f"genome/segment too short to test ({len(query_seq)} bp)")
     window, step, sel_window = window_params(len(query_seq))
     aligner = case.get("aligner", "mafft")
     query = out / "hybrid.fasta"
@@ -292,8 +315,12 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
     pool = [g for g in genomes if strip_sequence_extension(g.name).split(".")[0] not in drop]
 
     t0 = time.monotonic()
-    selected = select_regional(query, pool, window=sel_window, per_window=2,
-                               drop_siblings=True, logger=logger).selected
+    try:
+        selected = select_regional(query, pool, window=sel_window, per_window=2,
+                                   drop_siblings=True, logger=logger).selected
+    except ToolExecutionError as exc:  # skani rejects very short gene/segment datasets
+        raise CaseSkipped(f"regional selection failed (genome too short for skani?): {exc}") \
+            from exc
     collection = out / "collection"
     if collection.exists():
         shutil.rmtree(collection)
@@ -345,27 +372,35 @@ def main(argv: list[str]) -> int:
     for case in cases:
         try:
             results.append(run_case(case, logger))
+        except CaseSkipped as exc:  # an unsuitable dataset, not a failure
+            logger.info("[%s] SKIP: %s", case["name"], exc)
+            results.append({"name": case["name"], "pass": None, "skip": str(exc)})
         except Exception as exc:  # noqa: BLE001 - report and continue the batch
             logger.exception("[%s] ERROR", case["name"])
             results.append({"name": case["name"], "pass": None, "error": str(exc)})
 
     print("\n" + "=" * 72)
-    print(f"{'case':9} {'backbone x donor':24} {'div':>5} {'major':>10} "
+    print(f"{'case':16} {'backbone x donor':24} {'div':>5} {'major':>10} "
           f"{'det':>3} {'bb':>3} {'don':>3} {'time':>6}  verdict")
-    print("-" * 72)
+    print("-" * 80)
     for r in results:
+        if r.get("skip") is not None:
+            print(f"{r['name']:16} SKIP: {r['skip'][:54]}")
+            continue
         if r.get("pass") is None:
-            print(f"{r['name']:9} ERROR: {r.get('error', '')[:50]}")
+            print(f"{r['name']:16} ERROR: {r.get('error', '')[:50]}")
             continue
         verdict = "PASS" if r["pass"] else "FAIL"
-        print(f"{r['name']:9} {r['clade_a']+' x '+r['clade_b']:24.24} "
+        print(f"{r['name']:16} {r['clade_a']+' x '+r['clade_b']:24.24} "
               f"{r['divergence']:4.1f}% {r['major_clade']:>10.10} "
               f"{'Y' if r['detected'] else 'n':>3} {'Y' if r['backbone_ok'] else 'n':>3} "
               f"{'Y' if r['donor_ok'] else 'n':>3} {r['runtime']:5.0f}s  {verdict}")
     passed = sum(1 for r in results if r.get("pass"))
-    print(f"\n{passed}/{sum(1 for r in results if r.get('pass') is not None)} passed")
-    failed = [r for r in results if r.get("pass") is False or r.get("pass") is None]
-    return 1 if failed else 0
+    ran = sum(1 for r in results if r.get("pass") is not None)
+    skipped = sum(1 for r in results if r.get("skip") is not None)
+    errored = sum(1 for r in results if r.get("pass") is None and r.get("skip") is None)
+    print(f"\n{passed}/{ran} passed  ({skipped} skipped, {errored} error)")
+    return 1 if errored else 0
 
 
 if __name__ == "__main__":

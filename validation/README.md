@@ -101,23 +101,52 @@ python validation/run_hybrids.py hiv1 dengue   # only named cases
 Needs MAFFT/skani/skDER on PATH and contacts the Nextclade dataset server on the
 first run (pools are cached afterwards under `~/.cache/recomfi/nextclade`).
 
-### Observed performance (5 datasets across distinct viral families)
+A dataset is **SKIP**ped (not failed) when it cannot supply a valid test: a
+gene-fragment / short-segment dataset that skani rejects (flu HA, yellow-fever
+prM-E, H5 HA, PRRSV ORF5), a dataset with fewer than two clades carrying at least
+three genomes (hantavirus, Oropouche, CCHFV), or one that is entirely sub-lineages
+of a single recombinant (SARS-CoV-2 XBB).
+
+### Observed performance (24 pathogens; one representative dataset each)
 
 | case | backbone x donor | divergence | result |
 |------|------------------|-----------:|--------|
-| `hiv1` (HIV-1) | A1 x B | 15.1 % | PASS |
-| `dengue` (DENV) | DENV1 x DENV4 | 33.1 % | PASS |
+| `dengue` | DENV1 x DENV4 | 33.1 % | PASS |
+| `marburg` | MARV.B.2 x RAVV.2 | 21.5 % | FAIL -- donor (RAVV) region not recovered |
+| `wnv` | 2 x 1B | 20.2 % | FAIL -- backbone clade unlabelled in the tree |
+| `hmpv` | B1 x A2.2.1 | 19.0 % | PASS |
+| `hepatitis_a` | IIIA x IIA | 16.6 % | FAIL -- backbone/donor inverted |
+| `chikv` | III-Asian x I-WestAfrica | 15.5 % | PASS |
+| `hiv1` | A1 x B | 15.1 % | PASS |
+| `enterovirus_d68` | B3 x A2/D | 11.3 % | PASS |
+| `zika` | Asian x African | 10.9 % | FAIL -- backbone clade unlabelled |
 | `rubella` | 2B x 1G | 9.0 % | PASS |
-| `rsv_a` (RSV-A) | A.1 x A.D.1.8 | 6.6 % | FAIL -- backbone recovered, 30 % donor sub-clade not distinguished |
-| `measles` | H1 x B3 | 7.5 % | FAIL -- a third genotype wins the backbone |
+| `measles` | H1 x B3 | 7.5 % | FAIL -- a neighbouring genotype wins the backbone |
+| `mumps` | A x K | 6.9 % | FAIL -- neighbouring genotype |
+| `rsv_a` | A.1 x A.D.1.8 | 6.6 % | FAIL -- backbone recovered, donor sub-clade not |
+| `ebola` | Ebov x Ebov | 3.7 % | FAIL -- intra-species, too similar |
+| `mpox` | Ib x IIa | 0.5 % | FAIL -- too similar (minimap2, ~200 kb) |
+| `vzv` | clade 2 x clade ... | 0.2 % | FAIL -- highly conserved genome |
+| `sars_cov_2` | -- | -- | SKIP -- XBB dataset is all one recombinant's sub-lineages |
+| `yellow_fever` | -- | -- | SKIP -- prM-E gene region too short for skani |
+| `hantavirus` | -- | -- | SKIP -- < 2 clades with >= 3 genomes |
+| `flu_h3n2_ha` | -- | -- | SKIP -- HA segment too short for skani |
+| `iav_h5_ha` | -- | -- | SKIP -- HA segment too short for skani |
+| `cchfv` | -- | -- | SKIP -- < 2 clades with >= 3 genomes |
+| `oropouche` | -- | -- | SKIP -- < 2 clades with >= 3 genomes |
+| `prrsv2` | -- | -- | SKIP -- ORF5 gene region too short for skani |
 
-RecomFi recovers the recombinant cleanly when the parental clades are clearly
-divergent and well represented (HIV subtypes, dengue serotypes, rubella
-genotypes). The two failures are the expected harder regime: closely-related
-genotypes / fine-grained sub-clades (~5-7 % apart), where the backbone or the
-short donor tract is not cleanly separable from a neighbouring clade. The pass set
-is a performance characterisation, not a fixed contract -- the exact clades chosen
-follow from each dataset's current Nextclade tree.
+**6 PASS, 10 FAIL, 8 SKIP.** RecomFi recovers the recombinant cleanly when the
+parental clades are clearly divergent and well represented -- dengue serotypes,
+HIV subtypes, chikungunya/hMPV/EV-D68/rubella genotypes (all >= 9 % divergent).
+It degrades in two regimes: (1) **low divergence** -- closely-related genotypes or
+fine-grained sub-clades (~5-7 %: measles, mumps, RSV-A) and highly conserved
+genomes (mpox 0.5 %, VZV 0.2 %, intra-species ebola 3.7 %), where the backbone or
+the short donor tract is not separable from a neighbouring clade; and (2) a few
+high-divergence **labelling artifacts** (WNV, Zika), where the winning backbone
+genome carries no clade label in the Nextclade tree so the exact-match check scores
+a miss. The pass set is a performance characterisation, not a fixed contract -- the
+clades chosen follow from each dataset's current Nextclade tree.
 
 ## Expectation schema (`expected` block)
 
