@@ -117,3 +117,74 @@ def test_resolve_blast_fallback_unmapped_raises(monkeypatch, tmp_path, logger):
     q.write_text(">q\nACGT\n")
     with pytest.raises(UserInputError, match="--nextclade-dataset"):
         nc.resolve_dataset(q, None, email=None, logger=logger)
+
+
+_REF = ">NC ref\n" + "ACGTACGTAC" * 1 + "\n"  # 10 bp reference
+
+_TREE = {
+    "tree": {
+        "name": "root",
+        "branch_attrs": {"mutations": {"nuc": ["A1G"]}},
+        "children": [
+            {"name": "TIP1",
+             "branch_attrs": {"mutations": {"nuc": ["C2T"]}},
+             "node_attrs": {"accession": "ACC1", "clade_membership": {"value": "X"}},
+             "children": []},
+            {"name": "TIP2",
+             "branch_attrs": {"mutations": {"nuc": ["T4-"]}},
+             "node_attrs": {"accession": "ACC2", "clade_membership": "Y"},
+             "children": []},
+        ],
+    },
+}
+
+_EXAMPLES = ">EX1 example\n" + "ACGTACGTAC" + "\n"
+
+
+def _patch_files(monkeypatch):
+    payloads = {
+        "reference.fasta": _REF.encode(),
+        "tree.json": _json.dumps(_TREE).encode(),
+        "sequences.fasta": _EXAMPLES.encode(),
+    }
+
+    def fake_urlopen(url, timeout=0):
+        for name, data in payloads.items():
+            if url.endswith(name):
+                return _Resp(data)
+        raise AssertionError(f"unexpected url {url}")
+
+    monkeypatch.setattr(nc, "urlopen", fake_urlopen)
+
+
+def _dataset():
+    return nc.NextcladeDataset(
+        path="x/y", tag="t",
+        files={"reference": "reference.fasta", "treeJson": "tree.json",
+               "examples": "sequences.fasta"},
+    )
+
+
+def test_build_pool_reconstructs_tips_examples_and_labels(monkeypatch, tmp_path, logger):
+    _patch_files(monkeypatch)
+    genomes = nc.build_pool(_dataset(), cache_dir=tmp_path / "c", logger=logger)
+    by_name = {g.stem: g.read_text() for g in genomes}
+    assert {"ACC1", "ACC2", "EX1"} <= set(by_name)
+    # TIP1: A1G then C2T on ACGTACGTAC -> GTGTACGTAC, header carries clade X
+    assert ">ACC1 X" in by_name["ACC1"]
+    assert "GTGTACGTAC" in by_name["ACC1"].replace("\n", "")
+    # TIP2: A1G then T4 deleted -> GCGACGTAC (gap stripped), clade Y
+    assert ">ACC2 Y" in by_name["ACC2"]
+
+
+def test_build_pool_uses_cache_on_second_call(monkeypatch, tmp_path, logger):
+    _patch_files(monkeypatch)
+    cache = tmp_path / "c"
+    nc.build_pool(_dataset(), cache_dir=cache, logger=logger)
+
+    def boom(url, timeout=0):
+        raise AssertionError("network must not be touched on a cache hit")
+
+    monkeypatch.setattr(nc, "urlopen", boom)
+    again = nc.build_pool(_dataset(), cache_dir=cache, logger=logger)
+    assert {g.stem for g in again} >= {"ACC1", "ACC2", "EX1"}

@@ -26,6 +26,7 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 from ..core.binaries import BinarySpec
+from ..core.cache import cached_genomes
 from ..core.errors import UserInputError
 from ..core.io import write_fasta_record
 from ..core.plugins import ToolCapabilities
@@ -195,3 +196,125 @@ def resolve_dataset(
         f"Could not map the query's taxon ('{taxon}') to a Nextclade dataset. "
         f"Pass --nextclade-dataset <path> explicitly (see {_INDEX_URL})."
     )
+
+
+def _download_text(dataset: NextcladeDataset, role: str, logger: logging.Logger) -> str:
+    url = _dataset_file_url(dataset, role)
+    try:
+        with urlopen(url, timeout=120) as resp:  # noqa: S310 - fixed https URL
+            return resp.read().decode("utf-8", "replace")
+    except (URLError, OSError) as exc:
+        raise UserInputError(f"Could not download {url}: {exc}") from exc
+
+
+def _read_reference(text: str) -> str:
+    return "".join(line.strip() for line in text.splitlines() if not line.startswith(">"))
+
+
+def _write_genome(out_dir: Path, label: str, note: str, seq: str, floor: int) -> Path | None:
+    if len(seq) < floor:  # a truncated reconstruction
+        return None
+    path = out_dir / f"{label}.fasta"
+    with open(path, "w") as fo:
+        write_fasta_record(fo, f"{label} {note}", seq)
+    return path
+
+
+def build_pool(
+    dataset: NextcladeDataset, *, cache_dir: Path, logger: logging.Logger
+) -> list[Path]:
+    """Return the Nextclade pool genomes for ``dataset`` (cached per ``path@tag``).
+
+    Genomes are reconstructed into a temporary directory and atomically moved into
+    ``cache_dir`` on success, so a download interrupted midway never leaves a
+    partial directory that a later run would mistake for a complete cache.
+    """
+    import os
+    import shutil as _shutil
+    import tempfile
+
+    existing = cached_genomes(cache_dir)
+    if existing:
+        logger.info("Using the cached Nextclade pool for '%s' (%d genome(s)): %s",
+                    dataset.path, len(existing), cache_dir)
+        return existing
+
+    reference = _read_reference(_download_text(dataset, "reference", logger))
+    if not reference:
+        raise UserInputError(f"Nextclade dataset '{dataset.path}' has an empty reference.")
+    floor = max(1, len(reference) // 2)
+    tree = json.loads(_download_text(dataset, "treeJson", logger))["tree"]
+
+    cache_dir.parent.mkdir(parents=True, exist_ok=True)
+    build_dir = Path(tempfile.mkdtemp(dir=cache_dir.parent))
+    try:
+        written: list[Path] = []
+        seen: set[str] = set()
+
+        def walk(node: dict, inherited: list[str]) -> None:
+            nuc = (node.get("branch_attrs", {}).get("mutations", {}) or {}).get("nuc", [])
+            path_muts = inherited + nuc
+            children = node.get("children", [])
+            if children:
+                for child in children:
+                    walk(child, path_muts)
+                return
+            acc = _accession_of(node)
+            if not acc or acc in seen:
+                return
+            seen.add(acc)
+            clade = _clade_of(node.get("node_attrs", {}) or {})
+            out = _write_genome(build_dir, acc, clade,
+                                _reconstruct_sequence(reference, path_muts), floor)
+            if out is not None:
+                written.append(out)
+
+        walk(tree, [])
+        logger.info("Reconstructed %d Nextclade tree-tip genome(s).", len(written))
+
+        # Add example sequences; the header's first token (often subtype.country...)
+        # gives a label and clade-ish note, deduped against the reconstructed tips.
+        if "examples" in dataset.files:
+            examples = 0
+            for header, seq in read_fasta_text(_download_text(dataset, "examples", logger)):
+                acc = re.sub(r"[^\w.]", "_", header.split()[0]) if header else ""
+                if not acc or acc in seen:
+                    continue
+                seen.add(acc)
+                note = header.split(".")[0] if "." in header else "example"
+                out = _write_genome(build_dir, acc, note, seq.upper(), floor)
+                if out is not None:
+                    written.append(out)
+                    examples += 1
+            logger.info("Added %d Nextclade example genome(s).", examples)
+
+        if not written:
+            raise UserInputError(
+                f"Nextclade dataset '{dataset.path}' yielded no usable pool genomes."
+            )
+        os.replace(build_dir, cache_dir)  # atomic on the same filesystem
+    except BaseException:
+        _shutil.rmtree(build_dir, ignore_errors=True)
+        raise
+
+    genomes = cached_genomes(cache_dir)  # paths now under the final cache dir
+    logger.info("Nextclade pool: %d genome(s) -> %s", len(genomes), cache_dir)
+    return genomes
+
+
+def read_fasta_text(text: str) -> list[tuple[str, str]]:
+    """Parse FASTA from an in-memory string into ``(header, sequence)`` records."""
+    records: list[tuple[str, str]] = []
+    name: str | None = None
+    seq: list[str] = []
+    for line in text.splitlines():
+        if line.startswith(">"):
+            if name is not None:
+                records.append((name, "".join(seq)))
+            name = line[1:].strip()
+            seq = []
+        elif name is not None:
+            seq.append(line.strip())
+    if name is not None:
+        records.append((name, "".join(seq)))
+    return records
