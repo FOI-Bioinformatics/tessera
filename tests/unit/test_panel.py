@@ -126,3 +126,31 @@ def test_curate_panel_table_roles(monkeypatch, tmp_path, logger):
     assert result.siblings == [sibling]
     roles = {r["genome"]: r["role"] for r in result.table}
     assert roles == {"A1": "backbone", "AE_rel": "sibling-dropped", "C": "representative"}
+
+
+# --- typed Lineage column (conditional) ----------------------------------------
+
+def _panel_row(genome: str, role: str = "representative") -> dict:
+    return {"genome": genome, "role": role, "query_ani": 95.0, "query_af": 90.0}
+
+
+def test_panel_tsv_no_map_keeps_four_columns(tmp_path: Path, logger):
+    path = tmp_path / "panel.tsv"
+    panel.write_panel_tsv(path, [_panel_row("MK573073")], logger)
+    header = path.read_text().splitlines()[0]
+    assert header == "genome\trole\tquery_ani\tquery_af"
+
+
+def test_panel_tsv_with_map_adds_lineage_column(tmp_path: Path, logger):
+    path = tmp_path / "panel.tsv"
+    panel.write_panel_tsv(path, [_panel_row("MK573073")], logger, {"MK573073": "GII.P16-GII.4"})
+    lines = path.read_text().splitlines()
+    assert lines[0] == "genome\trole\tlineage\tquery_ani\tquery_af"
+    assert lines[1].split("\t")[2] == "GII.P16-GII.4"
+
+
+def test_panel_html_lineage_column_conditional():
+    rows = [_panel_row("MK573073")]
+    assert "Lineage" not in panel.panel_table_html(rows)
+    html = panel.panel_table_html(rows, {"MK573073": "GII.P16-GII.4"})
+    assert "Lineage" in html and "GII.P16-GII.4" in html

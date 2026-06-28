@@ -14,9 +14,7 @@ from __future__ import annotations
 
 import html
 import logging
-import re
 import shutil
-from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -26,6 +24,15 @@ from ..msa.build import MsaParams, build_msa
 from ..recomb.coverage import CoverageParams, call_coverage_gaps
 from ..recomb.run import RecombParams, run_recomb
 from ..recomb.similarity import compute_similarity
+from ..recomb.typing import (
+    LINEAGES_TSV,
+    build_lineage_map,
+    dominant_lineage_token,
+    lineage_map_from_rows,
+    organism_from_title,
+    titles_from_collection,
+    write_lineage_map,
+)
 from .blast import BlastError, blast_subsequence
 from .fetch import efetch_available, efetch_fasta
 from .panel import (
@@ -84,6 +91,8 @@ class FillParams:
     sibling_margin: float = 3.0  # query-ANI must beat the backbone's by this many % to be a sibling
     af_min: float = 80.0  # ... over at least this % of the query (whole-genome match)
     derep_ani: float = 99.0  # skDER: collapse references >= this ANI to one representative
+    report: bool = True  # call recombination detection after building the panel (False = stop)
+    lineage_map: Path | None = None  # user TSV (accession<TAB>genotype) to type references
 
 
 @dataclass
@@ -226,21 +235,49 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
 
     _write_trace(params.output, trace, logger)
     final_size = sum(1 for _ in collection.iterdir())
+
+    # Type the recruited references: mine a genotype from each genome's header (NCBI
+    # lineage note or GenBank title), overlaid by a user-supplied --lineage-map, and
+    # persist it next to the panel so the report -- and a later standalone recomb --
+    # can name parents by lineage instead of by bare accession.
+    coll_files = [p for p in collection.iterdir() if p.is_file()]
+    lineage_rows = build_lineage_map(
+        user_tsv=params.lineage_map,
+        title_by_label=titles_from_collection(coll_files),
+        organism=params.taxon,
+    )
+    write_lineage_map(params.output / LINEAGES_TSV, lineage_rows)
+    lineage_map = lineage_map_from_rows(lineage_rows)
+    if lineage_map:
+        logger.info("Typed %d reference(s) with a lineage/genotype name.", len(lineage_map))
+
     extra_sections = [("Reference recovery", _progress_section(trace, final_size))]
     if params.curate and panel_rows:
         table = list(panel_rows.values())
-        write_panel_tsv(params.output / "panel_lineages.tsv", table, logger)
-        extra_sections.append(("Reference panel", panel_table_html(table)))
+        write_panel_tsv(params.output / "panel_lineages.tsv", table, logger, lineage_map)
+        extra_sections.append(("Reference panel", panel_table_html(table, lineage_map)))
+    # Publish the final alignment under a stable name so a separate detection step
+    # (recomfi recomb) can consume the panel without guessing the last round number.
+    panel_msa = params.output / "panel.msa.fasta"
     if last_msa is not None:
+        shutil.copyfile(last_msa, panel_msa)
+    if last_msa is not None and params.report:
         logger.info("Writing the final report for the expanded collection...")
         run_recomb(
             RecombParams(
-                msa=last_msa, output=params.output, query=query_label,
+                msa=panel_msa, output=params.output, query=query_label,
                 window_size=params.window_size, window_step=params.window_step,
                 coverage_floor=params.coverage_floor, coverage_rel_drop=params.coverage_rel_drop,
+                lineage_map=lineage_map or None,
             ),
             logger,
             extra_sections=extra_sections,
+        )
+    elif last_msa is not None:
+        logger.info(
+            "Panel built (no detection run). To call recombination, run:\n"
+            "  recomfi recomb -i %s -q %s -o %s",
+            panel_msa, query_label, params.output,
         )
     logger.info("Final collection (%d references): %s", final_size, collection)
     return trace
@@ -414,28 +451,14 @@ def _blast_or_none(
         return []
 
 
-# A lineage designation in a hit title: a token carrying a digit, e.g. "CRF01_AE",
-# "GII.P16-GII.1", "BA.2.10.1". Splits on "/" and whitespace so an isolate path like
-# "Hu/GII.P16-GII.1/CR38" yields the shared lineage token, not the per-hit whole path.
-_LINEAGE_TOKEN = re.compile(r"[A-Za-z][\w.\-]*\d[\w.\-]*")
-
-
-def _organism_from_title(title: str) -> str:
-    """The organism/species portion of a BLAST hit title (drop isolate/strain tails)."""
-    return title.split(",")[0].split(" isolate ")[0].split(" strain ")[0].strip()
+# Lineage-token extraction lives in recomb.typing (single source of truth). These thin
+# shims keep the hit-object signature used by the negative-lineage seeder and its tests.
+_organism_from_title = organism_from_title
 
 
 def _dominant_lineage_token(hits: list, min_frac: float = 0.5) -> str | None:
     """The lineage designation shared by most top hits (the query's own lineage)."""
-    counts: Counter[str] = Counter()
-    for hit in hits:
-        for token in {t.strip("._-/") for t in _LINEAGE_TOKEN.findall(hit.title)}:
-            if len(token) >= 4:
-                counts[token] += 1
-    if not counts:
-        return None
-    token, seen = counts.most_common(1)[0]
-    return token if seen >= max(2, int(min_frac * len(hits))) else None
+    return dominant_lineage_token([hit.title for hit in hits], min_frac=min_frac)
 
 
 def _seed_negative_lineage(

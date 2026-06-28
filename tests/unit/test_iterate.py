@@ -320,3 +320,41 @@ def test_loop_stops_when_coverage_stalls(monkeypatch, tmp_path, logger):
     )
     assert [r.round for r in trace] == [1, 2]
     assert trace[1].added == []  # round 2 stalled, no second download
+
+
+def test_no_report_skips_detection_but_writes_panel(monkeypatch, tmp_path, logger):
+    query, coll, out = _setup(tmp_path)
+    _common_mocks(monkeypatch, [([], 0.95)])  # converge immediately, no downloads
+    calls = []
+    monkeypatch.setattr(iterate, "run_recomb", lambda p, logger, **kw: calls.append(p))
+
+    fill_references(FillParams(query=query, collection=coll, output=out, report=False), logger)
+
+    assert calls == []  # detection not run with --no-report
+    assert (out / "panel.msa.fasta").exists()  # stable panel alignment still published
+
+
+def test_report_runs_detection_on_stable_panel(monkeypatch, tmp_path, logger):
+    query, coll, out = _setup(tmp_path)
+    _common_mocks(monkeypatch, [([], 0.95)])
+    calls = []
+    monkeypatch.setattr(iterate, "run_recomb", lambda p, logger, **kw: calls.append(p))
+
+    fill_references(FillParams(query=query, collection=coll, output=out), logger)
+
+    assert len(calls) == 1  # detection runs by default
+    assert calls[0].msa == out / "panel.msa.fasta"  # consumes the stable copy, not round{N}
+
+
+def test_capture_writes_typed_lineage_sidecar(monkeypatch, tmp_path, logger):
+    query, coll, out = _setup(tmp_path)
+    # a collection genome whose header carries a genotype to be mined
+    (coll / "MK573073.fasta").write_text(
+        ">MK573073.1 Norovirus GII.P16-GII.4 isolate Hu\nACGT\n"
+    )
+    _common_mocks(monkeypatch, [([], 0.95)])  # converge immediately, no downloads
+
+    fill_references(FillParams(query=query, collection=coll, output=out, report=False), logger)
+
+    sidecar = (out / "lineages.tsv").read_text()
+    assert "MK573073" in sidecar and "GII.P16-GII.4" in sidecar

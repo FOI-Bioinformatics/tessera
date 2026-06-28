@@ -120,6 +120,16 @@ def fill_references(
     derep_ani: float = typer.Option(
         99.0, "--derep-ani", help="skDER: collapse references at or above this ANI %%."
     ),
+    report: bool = typer.Option(
+        True, "--report/--no-report",
+        help="Run recombination detection and write the report after building the panel. "
+        "Use --no-report to stop at the panel and run 'recomfi recomb' separately.",
+    ),
+    lineage_map: Path | None = typer.Option(
+        None, "--lineage-map",
+        help="TSV of reference genotypes (accession<TAB>genotype) to override the typed "
+        "names mined from genome headers; written into the panel's lineages.tsv.",
+    ),
     threads: int = typer.Option(4, "-t", "--threads", help="Aligner worker threads."),
 ) -> None:
     """Iteratively search NCBI and add references until coverage stops improving.
@@ -151,5 +161,6 @@ def fill_references(
             email=email or os.environ.get("NCBI_EMAIL"),
             exclude=tuple(exclude), keep_self_hits=keep_self_hits, threads=threads,
             curate=curate, sibling_margin=sibling_margin, af_min=af_min, derep_ani=derep_ani,
+            report=report, lineage_map=lineage_map,
         )
         fill_references(params, logger)

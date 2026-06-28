@@ -22,6 +22,7 @@ from .analyze import AnalysisResult, rank_datasets, stats_sort_key, winner_label
 from .coverage import CoverageGap
 from .regions import Region
 from .similarity import WindowSimilarity
+from .typing import LineageMap, typed
 
 
 # ---------------------------------------------------------------------------
@@ -577,14 +578,17 @@ def _absent_clause(s: dict) -> str:
             f'<strong>donor may be missing</strong> (see Reference coverage).')
 
 
-def _verdict_html(s: dict, query: str, colors: dict[str, str]) -> str:
-    major = html.escape(s["major"])
+def _verdict_html(
+    s: dict, query: str, colors: dict[str, str], lineage_map: LineageMap | None = None
+) -> str:
+    major = html.escape(typed(s["major"], lineage_map))
     if s["n_regions"] == 0:
         lead = (f'No recombination among the present references &mdash; the query is most '
                 f'similar to <strong>{major}</strong> throughout.')
         return f'<p class="verdict">{lead}{_absent_clause(s)}</p>'
     donors = ", ".join(
-        f'{_swatch(colors.get(m, GREY))}<strong>{html.escape(m)}</strong>' for m in s["minors"]
+        f'{_swatch(colors.get(m, GREY))}<strong>{html.escape(typed(m, lineage_map))}</strong>'
+        for m in s["minors"]
     )
     word = "region" if s["n_regions"] == 1 else "regions"
     conf = s.get("confidence")
@@ -600,9 +604,9 @@ def _verdict_html(s: dict, query: str, colors: dict[str, str]) -> str:
     )
 
 
-def _cards_html(s: dict, colors: dict[str, str]) -> str:
+def _cards_html(s: dict, colors: dict[str, str], lineage_map: LineageMap | None = None) -> str:
     donors = "".join(
-        f'{_swatch(colors.get(m, GREY))}{html.escape(m)} ' for m in s["minors"]
+        f'{_swatch(colors.get(m, GREY))}{html.escape(typed(m, lineage_map))} ' for m in s["minors"]
     ) or "&mdash;"
     regions_val = f'<span class="big">{s["n_regions"]}</span>'
     if s["n_absent"]:
@@ -610,7 +614,7 @@ def _cards_html(s: dict, colors: dict[str, str]) -> str:
     cards = [
         ("Recombinant regions", regions_val),
         ("Backbone &middot; major parent",
-         f'{_swatch(colors.get(s["major"], GREY))}{html.escape(s["major"])}'),
+         f'{_swatch(colors.get(s["major"], GREY))}{html.escape(typed(s["major"], lineage_map))}'),
         ("Donor &middot; minor parent", donors),
         ("Query recombinant",
          f'<span class="big">{s["pct"]:.1f}%</span>'
@@ -624,7 +628,8 @@ def _cards_html(s: dict, colors: dict[str, str]) -> str:
 
 
 def _mosaic_html(
-    regions: list[Region], colors: dict[str, str], s: dict, gaps: list[CoverageGap]
+    regions: list[Region], colors: dict[str, str], s: dict, gaps: list[CoverageGap],
+    lineage_map: LineageMap | None = None,
 ) -> str:
     query_len = s["query_len"] or 1
     backbone = colors.get(s["major"], GREY)
@@ -646,9 +651,11 @@ def _mosaic_html(
     axis = "".join(
         f"<span>{_fmt_kb(frac * query_len)}</span>" for frac in (0, 0.25, 0.5, 0.75, 1.0)
     )
-    legend = f'<span class="leg">{_swatch(backbone)}{html.escape(s["major"])} (backbone)</span>'
+    legend = (f'<span class="leg">{_swatch(backbone)}'
+              f'{html.escape(typed(s["major"], lineage_map))} (backbone)</span>')
     legend += "".join(
-        f'<span class="leg">{_swatch(colors.get(m, GREY))}{html.escape(m)} (donor)</span>'
+        f'<span class="leg">{_swatch(colors.get(m, GREY))}'
+        f'{html.escape(typed(m, lineage_map))} (donor)</span>'
         for m in s["minors"]
     )
     if gaps:
@@ -662,7 +669,10 @@ def _mosaic_html(
     )
 
 
-def _regions_html(regions: list[Region], colors: dict[str, str], query_len: int) -> str:
+def _regions_html(
+    regions: list[Region], colors: dict[str, str], query_len: int,
+    lineage_map: LineageMap | None = None,
+) -> str:
     if not regions:
         return '<p class="empty">No recombinant regions were called.</p>'
     head = (
@@ -681,7 +691,7 @@ def _regions_html(regions: list[Region], colors: dict[str, str], query_len: int)
                     'the true donor is likely absent">donor absent</span>')
         else:
             swatch = _swatch(colors.get(r.minor_parent, GREY))
-            donor = html.escape(r.minor_parent)
+            donor = html.escape(typed(r.minor_parent, lineage_map))
             flag = ('<span class="flag" title="donor is itself a poor match">low conf</span>'
                     if r.donor_undercovered else "")
         support = "&ndash;" if r.support is None else f"{r.support:.2f}"
@@ -695,7 +705,7 @@ def _regions_html(regions: list[Region], colors: dict[str, str], query_len: int)
         rows += (
             "<tr>"
             f'<td class="lbl">{swatch}{donor}{flag}</td>'
-            f'<td class="lbl">{html.escape(r.major_parent)}</td>'
+            f'<td class="lbl">{html.escape(typed(r.major_parent, lineage_map))}</td>'
             f'<td class="num">{_fmt_int(r.query_start)}&ndash;{_fmt_int(r.query_end)}</td>'
             f'<td class="num">{_fmt_kb(qlen)}</td>'
             f'<td class="num">{pct:.1f}%</td>'
@@ -709,14 +719,16 @@ def _regions_html(regions: list[Region], colors: dict[str, str], query_len: int)
     return f'<div class="scroll"><table class="table">{head}{rows}</table></div>'
 
 
-def _winners_html(analysis: AnalysisResult, colors: dict[str, str]) -> str:
+def _winners_html(
+    analysis: AnalysisResult, colors: dict[str, str], lineage_map: LineageMap | None = None
+) -> str:
     items = sorted(analysis.winners_with_ties.items(), key=lambda x: x[1], reverse=True)
     if not items:
         return '<p class="empty">No window winners recorded.</p>'
     top = items[0][1] or 1
     bars = "".join(
         f'<div class="barrow"><span class="blabel">{_swatch(colors.get(label, GREY))}'
-        f'{html.escape(label)}</span><span class="btrack">'
+        f'{html.escape(typed(label, lineage_map))}</span><span class="btrack">'
         f'<span class="bfill" style="width:{100.0 * count / top:.1f}%;'
         f'background:{colors.get(label, GREY)}"></span></span>'
         f'<span class="bnum">{_fmt_int(count)}</span></div>'
@@ -725,12 +737,14 @@ def _winners_html(analysis: AnalysisResult, colors: dict[str, str]) -> str:
     return f'<div class="bars">{bars}</div>'
 
 
-def _stats_html(analysis: AnalysisResult, major: str) -> str:
+def _stats_html(
+    analysis: AnalysisResult, major: str, lineage_map: LineageMap | None = None
+) -> str:
     head = "".join(f"<th>{html.escape(h)}</th>" for h in analysis.stats_header)
     rows = ""
     for dataset, values in sorted(analysis.stats.items(), key=stats_sort_key, reverse=True):
         cls = ' class="hl"' if dataset == major else ""
-        cells = f'<td class="lbl">{html.escape(dataset)}</td>' + "".join(
+        cells = f'<td class="lbl">{html.escape(typed(dataset, lineage_map))}</td>' + "".join(
             f'<td class="num">{html.escape(str(v))}</td>' for v in values
         )
         rows += f"<tr{cls}>{cells}</tr>"
@@ -866,6 +880,7 @@ def write_html_report(
     coverage_gaps: list[CoverageGap] | None = None,
     coverage_threshold: float = 0.0,
     extra_sections: list[tuple[str, str]] | None = None,
+    lineage_map: LineageMap | None = None,
 ) -> Path:
     """Write a single self-contained ``report.html``."""
     gaps = coverage_gaps or []
@@ -887,13 +902,13 @@ def write_html_report(
         f"<style>{_CSS}</style></head><body><div class=\"wrap\">"
         '<header><div class="eyebrow">RecomFi &middot; recombination report</div>'
         f'<h1 class="mono">{html.escape(result.query)}</h1>'
-        f"{_verdict_html(s, result.query, colors)}"
+        f"{_verdict_html(s, result.query, colors, lineage_map)}"
         f"{_caveat_html(gaps, coverage_threshold)}</header>"
-        f"{_cards_html(s, colors)}"
+        f"{_cards_html(s, colors, lineage_map)}"
         '<section class="section"><div class="eyebrow">Query mosaic</div>'
-        f"{_mosaic_html(regions, colors, s, gaps)}</section>"
+        f"{_mosaic_html(regions, colors, s, gaps, lineage_map)}</section>"
         '<section class="section"><div class="eyebrow">Recombinant regions</div>'
-        f'{_regions_html(regions, colors, s["query_len"])}</section>'
+        f'{_regions_html(regions, colors, s["query_len"], lineage_map)}</section>'
         '<section class="section"><div class="eyebrow">Reference coverage</div>'
         f"{_coverage_html(gaps, coverage_threshold)}</section>"
         f"{extras}"
@@ -905,9 +920,9 @@ def write_html_report(
         '<section class="section"><div class="eyebrow">Window winners</div>'
         '<p class="cap">Windows in which each reference is the query\'s closest match '
         '(ties included).</p>'
-        f"{_winners_html(analysis, colors)}</section>"
+        f"{_winners_html(analysis, colors, lineage_map)}</section>"
         '<section class="section"><div class="eyebrow">Per-dataset similarity statistics</div>'
-        f'{_stats_html(analysis, s["major"])}</section>'
+        f'{_stats_html(analysis, s["major"], lineage_map)}</section>'
         f'<section class="section">{_methods_html(provenance)}</section>'
         f"{_footer_html(provenance)}"
         "</div></body></html>"
@@ -935,6 +950,7 @@ def write_reports(
     coverage_gaps: list[CoverageGap] | None = None,
     coverage_threshold: float = 0.0,
     extra_sections: list[tuple[str, str]] | None = None,
+    lineage_map: LineageMap | None = None,
 ) -> None:
     """Write every table, plot and the HTML report for a completed scan."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -956,5 +972,5 @@ def write_reports(
     write_html_report(
         result, analysis, regions, top_datasets, provenance, output_dir, logger,
         coverage_gaps=gaps, coverage_threshold=coverage_threshold,
-        extra_sections=extra_sections,
+        extra_sections=extra_sections, lineage_map=lineage_map,
     )

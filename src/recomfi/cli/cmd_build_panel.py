@@ -1,8 +1,10 @@
-"""The ``recomfi detect`` command: one-shot recombination detection from a query alone.
+"""The ``recomfi build-panel`` command: recruit a donor panel without detecting.
 
-Detects the query's taxon, recruits a diverse reference panel from NCBI (no genomes
-supplied by the user), aligns, and calls recombination with the sibling- and
-lineage-aware caller -- a thin detection-tuned preset over ``fill-references``.
+Builds (or grows) the query's donor/reference panel and stops before recombination
+detection -- a panel-only counterpart to ``detect``. The donors are recruited with the
+same parent-recruiting, sibling-dropping preset as ``detect``; the result is a curated
+``collection/``, a stable ``panel.msa.fasta`` alignment, and ``panel_lineages.tsv``.
+Run detection separately with ``recomfi recomb -i <output>/panel.msa.fasta``.
 """
 
 from __future__ import annotations
@@ -14,13 +16,18 @@ import typer
 from .main import _require_choice, app, get_logger, stage_errors
 
 
-@app.command(name="detect")
-def detect(
+@app.command(name="build-panel")
+def build_panel(
     query: Path = typer.Option(
-        ..., "-q", "--query", help="Path to the query FASTA (the only input needed)."
+        ..., "-q", "--query", help="Path to the query FASTA."
     ),
     output: Path = typer.Option(
-        ..., "-o", "--output", help="Output directory (report, recruited panel, run log)."
+        ..., "-o", "--output", help="Output directory (panel.msa.fasta, collection, run log)."
+    ),
+    collection: Path | None = typer.Option(
+        None, "-c", "--collection",
+        help="Starting reference collection to grow (left untouched; a copy is grown). "
+        "Omit to recruit a panel from NCBI from the query alone.",
     ),
     taxon: str | None = typer.Option(
         None, "--taxon", help="Taxon for NCBI Virus recruitment (auto-detected if omitted)."
@@ -42,17 +49,15 @@ def detect(
     lineage_map: Path | None = typer.Option(
         None, "--lineage-map",
         help="TSV of reference genotypes (accession<TAB>genotype) to override the typed "
-        "names mined from genome headers; the report names parents by lineage.",
+        "names mined from genome headers; written into the panel's lineages.tsv.",
     ),
     threads: int = typer.Option(4, "-t", "--threads", help="Aligner worker threads."),
 ) -> None:
-    """Detect recombination in a query with no reference genomes supplied.
+    """Recruit a donor panel for the query and stop before detection.
 
-    Recruits the parental lineages from NCBI (negative-lineage BLAST + taxonomy
-    diversity), drops the query's siblings, and competes lineages, so a recombinant
-    query whose own lineage is common in NCBI is not masked. Needs an aligner and
-    Entrez Direct; for a heavily sequenced taxon (e.g. SARS-CoV-2) supply
-    ``--candidate-pool``.
+    Uses the same recruitment as ``detect`` (recruit parental lineages, drop the
+    query's siblings, curate the panel), but writes only the panel -- no report.
+    The follow-up command to call recombination is logged on completion.
     """
     import os
 
@@ -63,16 +68,16 @@ def detect(
     with stage_errors(logger):
         _require_choice(aligner, set(aligner_registry.names()), "--aligner")
         params = FillParams(
-            query=query, collection=None, output=output,
+            query=query, collection=collection, output=output,
             aligner=aligner, max_rounds=max_rounds,
             window_size=window_size, window_step=window_step,
             email=email or os.environ.get("NCBI_EMAIL"),
             threads=threads, cache_dir=cache_dir,
-            # Detection-tuned preset: recruit parents, drop siblings, curate the panel.
+            # Same parent-recruiting preset as `detect`, but stop at the panel.
             seed_source="local" if candidate_pool else "blast",
             candidate_pool=candidate_pool, taxon=taxon,
             seed_mode="parents", curate=True,
             auto_diversify=True, negative_lineage=True,
-            lineage_map=lineage_map,
+            report=False, lineage_map=lineage_map,
         )
         fill_references(params, logger)

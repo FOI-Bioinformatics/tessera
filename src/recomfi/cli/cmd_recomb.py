@@ -74,6 +74,11 @@ def recomb(
         help="Pool near-duplicate references into lineages and compete the lineages, so "
         "duplicates do not tie every window and fragment the call (hmm).",
     ),
+    lineage_map: Path | None = typer.Option(
+        None, "--lineage-map",
+        help="TSV of reference genotypes (accession<TAB>genotype) to name parents by "
+        "lineage in the report. Defaults to a 'lineages.tsv' beside the output or MSA.",
+    ),
 ) -> None:
     """Identify recombination events in a multiple sequence alignment."""
     from ..recomb.run import RecombParams, run_recomb
@@ -101,5 +106,6 @@ def recomb(
             coverage_rel_drop=coverage_rel_drop,
             exclude_siblings=exclude_siblings,
             cluster_lineages=cluster_lineages,
+            lineage_map_path=lineage_map,
         )
         run_recomb(params, logger)

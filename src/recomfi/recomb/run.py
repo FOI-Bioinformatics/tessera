@@ -20,6 +20,7 @@ from .hmm import DEFAULT_JUMP_RATE
 from .regions import RegionParams, call_regions
 from .report import print_coverage, print_regions, print_summary, write_reports
 from .similarity import compute_similarity
+from .typing import LINEAGES_TSV, LineageMap, load_lineage_map
 
 
 @dataclass
@@ -45,6 +46,20 @@ class RecombParams:
     # Reference-coverage diagnostic.
     coverage_floor: float | None = None  # None -> adaptive baseline
     coverage_rel_drop: float = 0.05
+    # Typed genotype/lineage names for references. A map keyed by reference label takes
+    # precedence; otherwise a lineages.tsv beside the output or the MSA is read.
+    lineage_map: LineageMap | None = None
+    lineage_map_path: Path | None = None
+
+
+def _discover_lineage_tsv(output: Path, msa: Path) -> Path | None:
+    """Find a ``lineages.tsv`` written by panel building, beside the output or the MSA."""
+    candidates = [
+        Path(output) / LINEAGES_TSV,
+        Path(msa).parent / LINEAGES_TSV,
+        Path(msa).with_suffix(".lineages.tsv"),
+    ]
+    return next((p for p in candidates if p.exists()), None)
 
 
 def run_recomb(
@@ -58,6 +73,13 @@ def run_recomb(
     after the coverage section -- used by ``fill-references`` to show its rounds.
     """
     query_label = strip_sequence_extension(params.query)
+
+    lineage_map = params.lineage_map
+    if lineage_map is None:
+        tsv = params.lineage_map_path or _discover_lineage_tsv(params.output, params.msa)
+        lineage_map = load_lineage_map(tsv) or None
+        if lineage_map:
+            logger.info("Typed names for %d reference(s) from %s.", len(lineage_map), tsv)
 
     logger.info(
         "Scanning MSA %s for query '%s' (window=%d, step=%d, metric=%s)",
@@ -160,6 +182,6 @@ def run_recomb(
         result, analysis, regions, per_window_winners, provenance, output_dir,
         top_n=params.top_n, plot_format=params.plot_format, logger=logger,
         coverage_gaps=coverage_gaps, coverage_threshold=coverage_threshold,
-        extra_sections=extra_sections,
+        extra_sections=extra_sections, lineage_map=lineage_map,
     )
     logger.info("All done.")

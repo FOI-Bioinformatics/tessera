@@ -105,6 +105,7 @@ def main(
 
 # Register subcommands (import for side effects).
 from . import (  # noqa: E402,F401
+    cmd_build_panel,
     cmd_curate_panel,
     cmd_detect,
     cmd_fill_references,

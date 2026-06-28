@@ -34,6 +34,7 @@ from ..core.errors import UserInputError
 from ..core.io import strip_sequence_extension
 from ..core.plugins import ToolCapabilities
 from ..core.process import run_tool
+from ..recomb.typing import LineageMap, lineage_of
 
 SKANI = ToolCapabilities(
     name="skani", conda=("bioconda::skani",),
@@ -328,15 +329,28 @@ def curate_collection(
     return result
 
 
-def write_panel_tsv(path: Path, table: list[dict], logger: logging.Logger) -> None:
-    """Write the per-genome curation table (genome, role, query-ANI, query-AF)."""
+def write_panel_tsv(
+    path: Path, table: list[dict], logger: logging.Logger, lineage_map: LineageMap | None = None
+) -> None:
+    """Write the per-genome curation table (genome, role, query-ANI, query-AF).
+
+    With a non-empty ``lineage_map`` a ``lineage`` column carrying each genome's typed
+    genotype is inserted; without one the output is the original four columns.
+    """
     logger.info("Writing reference panel: %s", path)
     with open(path, "w") as fo:
-        fo.write("genome\trole\tquery_ani\tquery_af\n")
+        if lineage_map:
+            fo.write("genome\trole\tlineage\tquery_ani\tquery_af\n")
+        else:
+            fo.write("genome\trole\tquery_ani\tquery_af\n")
         for r in table:
             ani = "" if r["query_ani"] is None else f"{r['query_ani']:.2f}"
             af = "" if r["query_af"] is None else f"{r['query_af']:.2f}"
-            fo.write(f"{r['genome']}\t{r['role']}\t{ani}\t{af}\n")
+            if lineage_map:
+                lineage = lineage_of(r["genome"], lineage_map) or ""
+                fo.write(f"{r['genome']}\t{r['role']}\t{lineage}\t{ani}\t{af}\n")
+            else:
+                fo.write(f"{r['genome']}\t{r['role']}\t{ani}\t{af}\n")
 
 
 _ROLE_LABEL = {
@@ -348,22 +362,31 @@ _ROLE_LABEL = {
 _ROLE_ORDER = {"backbone": 0, "representative": 1, "sibling-dropped": 2, "redundant-dropped": 3}
 
 
-def panel_table_html(table: list[dict]) -> str:
-    """An HTML block describing the curated panel, for the report."""
+def panel_table_html(table: list[dict], lineage_map: LineageMap | None = None) -> str:
+    """An HTML block describing the curated panel, for the report.
+
+    A ``Lineage`` column is added when ``lineage_map`` is non-empty.
+    """
     rows = ""
     for r in sorted(table, key=lambda x: (_ROLE_ORDER.get(x["role"], 9), -(x["query_ani"] or 0))):
         ani = "&mdash;" if r["query_ani"] is None else f"{r['query_ani']:.1f}%"
         af = "&mdash;" if r["query_af"] is None else f"{r['query_af']:.0f}%"
+        lineage_cell = ""
+        if lineage_map:
+            lineage = lineage_of(r["genome"], lineage_map)
+            lineage_cell = f'<td class="lbl">{html.escape(lineage) if lineage else "&mdash;"}</td>'
         rows += (
             "<tr>"
             f'<td class="lbl">{html.escape(r["genome"])}</td>'
             f'<td class="lbl">{_ROLE_LABEL.get(r["role"], r["role"])}</td>'
+            f'{lineage_cell}'
             f'<td class="num">{ani}</td>'
             f'<td class="num">{af}</td>'
             "</tr>"
         )
+    lineage_head = "<th>Lineage</th>" if lineage_map else ""
     head = (
-        "<tr><th>Reference</th><th>Role</th><th>Query ANI</th>"
+        f"<tr><th>Reference</th><th>Role</th>{lineage_head}<th>Query ANI</th>"
         "<th>Query coverage</th></tr>"
     )
     cap = (

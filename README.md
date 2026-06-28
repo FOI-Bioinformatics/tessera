@@ -82,6 +82,37 @@ improve recruitment). For a heavily sequenced taxon (e.g. SARS-CoV-2) supply a l
 panel with `--candidate-pool`. The steps below show the underlying `msa` / `recomb`
 commands when you want to drive them manually.
 
+### Build the panel and detect separately
+To recruit the donor panel without running detection -- so you can inspect the panel,
+or re-run detection with different window/HMM settings without re-fetching or
+re-aligning -- use `build-panel`, then `recomb`:
+```
+recomfi build-panel --query CRF01_AE.fasta --output panel/ --email you@example.org
+recomfi recomb --msa panel/panel.msa.fasta --query CRF01_AE --output panel/
+```
+`build-panel` uses the same parent-recruiting, sibling-dropping recruitment as
+`detect` but stops at the panel, writing `panel/collection/` (the donor genomes), a
+stable `panel/panel.msa.fasta` alignment, and `panel/panel_lineages.tsv`. The exact
+`recomfi recomb` follow-up command is logged on completion. The panel is recruited
+for this query (donors are its regional best matches), so it is not a reusable
+organism-wide reference set. Pass `--collection` to grow an existing collection
+instead of recruiting from scratch. The full-featured `fill-references` command takes
+`--no-report` for the same effect.
+
+### Typed lineage names in the report
+When `detect`, `build-panel`, or `fill-references` recruit a panel, each reference is
+typed with a genotype mined from its genome header -- the NCBI lineage note
+(`pangolinClassification` / `isolate.lineage`) or a designation token in the GenBank
+title (e.g. `GII.P16-GII.4`, `CRF01_AE`, `B.1.1.7`). The mapping is written to
+`<output>/lineages.tsv`, and the report then names parents by lineage, e.g.
+"GII.P16-GII.4 (MK573073)" instead of the bare accession. A standalone
+`recomfi recomb` picks up a `lineages.tsv` sitting beside the output or the MSA, so the
+two-step workflow above carries the typed names through. To override or supply names
+(for schemes that titles do not carry well, such as HIV pure subtypes or a curated CRF
+reference set), pass `--lineage-map accession_to_genotype.tsv` (a `accession<TAB>genotype`
+table) to any of these commands; user-supplied names take precedence over mined ones.
+With no source, references fall back to bare accessions and the report is unchanged.
+
 Generate a multiple sequence alignment:
 ```
 recomfi msa --query cowpox_with_variolaInsert.fasta.gz --collection collection/ --output msa.fasta
