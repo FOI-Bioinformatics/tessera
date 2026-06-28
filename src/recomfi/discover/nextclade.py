@@ -43,7 +43,9 @@ NEXTCLADE = ToolCapabilities(
 
 # A nuc mutation: ref-base, 1-based position, alt-base ('-' = deletion).
 _MUT = re.compile(r"^([A-Za-z])(\d+)([A-Za-z-])$")
-# Clade-label node attributes, most specific first; clade_membership is universal.
+# Clade-label node attributes in priority order: Nextclade_pango and clade_nextstrain
+# take precedence; clade_membership is the universal key present in most datasets,
+# with subclade and LANL_subtype as further fallbacks used only when it is absent.
 _CLADE_KEYS = ("Nextclade_pango", "clade_nextstrain", "clade_membership", "subclade",
                "LANL_subtype")
 
@@ -251,17 +253,20 @@ def build_pool(
         written: list[Path] = []
         seen: set[str] = set()
 
-        def walk(node: dict, inherited: list[str]) -> None:
+        # Iterative DFS: avoids hitting Python's recursion limit on very deep trees.
+        stack: list[tuple[dict, list[str]]] = [(tree, [])]
+        while stack:
+            node, inherited = stack.pop()
             nuc = (node.get("branch_attrs", {}).get("mutations", {}) or {}).get("nuc", [])
             path_muts = inherited + nuc
             children = node.get("children", [])
             if children:
                 for child in children:
-                    walk(child, path_muts)
-                return
+                    stack.append((child, path_muts))
+                continue
             acc = _accession_of(node)
             if not acc or acc in seen:
-                return
+                continue
             seen.add(acc)
             clade = _clade_of(node.get("node_attrs", {}) or {})
             out = _write_genome(build_dir, acc, clade,
@@ -269,24 +274,31 @@ def build_pool(
             if out is not None:
                 written.append(out)
 
-        walk(tree, [])
         logger.info("Reconstructed %d Nextclade tree-tip genome(s).", len(written))
 
         # Add example sequences; the header's first token (often subtype.country...)
         # gives a label and clade-ish note, deduped against the reconstructed tips.
+        # A download failure here is non-fatal: the tips-only pool is still valid.
         if "examples" in dataset.files:
-            examples = 0
-            for header, seq in read_fasta_text(_download_text(dataset, "examples", logger)):
-                acc = re.sub(r"[^\w.]", "_", header.split()[0]) if header else ""
-                if not acc or acc in seen:
-                    continue
-                seen.add(acc)
-                note = header.split(".")[0] if "." in header else "example"
-                out = _write_genome(build_dir, acc, note, seq.upper(), floor)
-                if out is not None:
-                    written.append(out)
-                    examples += 1
-            logger.info("Added %d Nextclade example genome(s).", examples)
+            try:
+                examples = 0
+                for header, seq in read_fasta_text(_download_text(dataset, "examples", logger)):
+                    acc = re.sub(r"[^\w.]", "_", header.split()[0]) if header else ""
+                    if not acc or acc in seen:
+                        continue
+                    seen.add(acc)
+                    note = header.split(".")[0] if "." in header else "example"
+                    out = _write_genome(build_dir, acc, note, seq.upper(), floor)
+                    if out is not None:
+                        written.append(out)
+                        examples += 1
+                logger.info("Added %d Nextclade example genome(s).", examples)
+            except (UserInputError, URLError, OSError) as exc:
+                logger.warning(
+                    "Could not fetch Nextclade example sequences (%s); "
+                    "using the reconstructed tips only.",
+                    exc,
+                )
 
         if not written:
             raise UserInputError(

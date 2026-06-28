@@ -63,7 +63,7 @@ class FillParams:
     aligner: str = "mafft"
     reference: str | None = None
     max_rounds: int = 3
-    seed_source: str = "blast"  # fresh-start source: "blast" | "local" | "ncbi-virus"
+    seed_source: str = "blast"  # fresh-start source: "blast" | "local" | "ncbi-virus" | "nextclade"
     seed_mode: str = "windowed"  # blast seeding: "whole" | "windowed" | "parents"
     seed_hits: int = 10  # BLAST hits to keep per seed search (per window, or whole-query)
     seed_window: int = 1500  # window width (bp) for windowed/parents/pool seeding

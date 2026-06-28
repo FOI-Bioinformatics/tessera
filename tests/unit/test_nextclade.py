@@ -188,3 +188,78 @@ def test_build_pool_uses_cache_on_second_call(monkeypatch, tmp_path, logger):
     monkeypatch.setattr(nc, "urlopen", boom)
     again = nc.build_pool(_dataset(), cache_dir=cache, logger=logger)
     assert {g.stem for g in again} >= {"ACC1", "ACC2", "EX1"}
+
+
+def test_build_pool_examples_failure_is_nonfatal(monkeypatch, tmp_path, logger):
+    """A URLError on the examples file must not abort build_pool; tips are still returned."""
+    from urllib.error import URLError as _URLError
+
+    payloads = {
+        "reference.fasta": _REF.encode(),
+        "tree.json": _json.dumps(_TREE).encode(),
+    }
+
+    def fake_urlopen(url, timeout=0):
+        for name, data in payloads.items():
+            if url.endswith(name):
+                return _Resp(data)
+        if url.endswith("sequences.fasta"):
+            raise _URLError("boom")
+        raise AssertionError(f"unexpected url: {url}")
+
+    monkeypatch.setattr(nc, "urlopen", fake_urlopen)
+    genomes = nc.build_pool(_dataset(), cache_dir=tmp_path / "c", logger=logger)
+    names = {g.stem for g in genomes}
+    assert "ACC1" in names
+    assert "ACC2" in names
+
+
+def test_build_pool_handles_deep_tree(monkeypatch, tmp_path, logger):
+    """Iterative tree walk must not raise RecursionError on a 1200-node linear chain.
+
+    Both json.dumps and json.loads also recurse on deeply nested dicts, so we
+    build the Python dict iteratively and inject it via patched helpers to keep
+    the test self-contained and fast.
+    """
+    import json as _stdlib_json
+
+    depth = 1200
+    # Build the deep Python dict iteratively -- Python dict construction never recurses.
+    tip: dict = {
+        "name": "TIP_DEEP",
+        "branch_attrs": {"mutations": {"nuc": []}},
+        "node_attrs": {"accession": "DEEP1", "clade_membership": "deep"},
+        "children": [],
+    }
+    node: dict = tip
+    for _ in range(depth):
+        node = {
+            "name": "internal",
+            "branch_attrs": {"mutations": {"nuc": []}},
+            "node_attrs": {},
+            "children": [node],
+        }
+    deep_tree_obj = {"tree": node}
+
+    # Bypass _download_text so we never serialise/parse the deep dict via JSON.
+    def fake_download_text(dataset, role, logger_):  # type: ignore[override]
+        if role == "reference":
+            return _REF
+        return "__DEEP_SENTINEL__"  # intercepted by patched_loads below
+
+    _real_loads = _stdlib_json.loads
+
+    def patched_loads(s, **kwargs):
+        if s == "__DEEP_SENTINEL__":
+            return deep_tree_obj
+        return _real_loads(s, **kwargs)
+
+    monkeypatch.setattr(nc, "_download_text", fake_download_text)
+    monkeypatch.setattr(_stdlib_json, "loads", patched_loads)
+
+    ds = nc.NextcladeDataset(
+        path="x/y", tag="t",
+        files={"reference": "reference.fasta", "treeJson": "tree.json"},
+    )
+    genomes = nc.build_pool(ds, cache_dir=tmp_path / "c", logger=logger)
+    assert any(g.stem == "DEEP1" for g in genomes)
