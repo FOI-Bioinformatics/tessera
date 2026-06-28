@@ -394,3 +394,36 @@ def test_pango_crosscheck_section_for_recombinant_query(monkeypatch, tmp_path, l
     assert "Pango cross-check" in titles
     body = dict(captured["extra_sections"])["Pango cross-check"]
     assert "BJ.1" in body and "XBB.1.5" in body
+
+
+def test_seed_source_nextclade_routes_through_pool_selection(monkeypatch, tmp_path, logger):
+    query = tmp_path / "q.fasta"
+    query.write_text(">q\n" + "ACGT" * 100 + "\n")
+    out = tmp_path / "out"
+    _common_mocks(monkeypatch, [([], 0.95)])  # converge immediately, no NCBI rounds
+    monkeypatch.setattr(iterate, "read_fasta", lambda p: [("q", "ACGT" * 100)])
+
+    pool_dir = tmp_path / "pool"
+    pool_dir.mkdir()
+    (pool_dir / "REF1.fasta").write_text(">REF1 A1\nACGT\n")
+
+    captured = {}
+
+    def fake_fetch(params, logger):
+        captured["dataset"] = params.nextclade_dataset
+        return [pool_dir / "REF1.fasta"]
+
+    def fake_select(params, genomes, logger):
+        from recomfi.discover.pool import PoolSelection
+        return PoolSelection(selected=list(genomes))
+
+    monkeypatch.setattr(iterate, "_fetch_nextclade", fake_fetch)
+    monkeypatch.setattr(iterate, "_select_from", fake_select)
+
+    fill_references(
+        FillParams(query=query, collection=None, output=out, seed_source="nextclade",
+                   nextclade_dataset="nextstrain/sars-cov-2/XBB"),
+        logger,
+    )
+    assert captured["dataset"] == "nextstrain/sars-cov-2/XBB"
+    assert (out / "collection" / "REF1.fasta").exists()

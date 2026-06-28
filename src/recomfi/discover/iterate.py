@@ -69,6 +69,7 @@ class FillParams:
     seed_window: int = 1500  # window width (bp) for windowed/parents/pool seeding
     candidate_pool: Path | None = None  # local genome pool (seed_source="local")
     taxon: str | None = None  # taxon for NCBI Virus ("ncbi-virus"); auto-detected when None
+    nextclade_dataset: str | None = None  # Nextclade dataset path; None = auto-detect
     source_refseq: bool = True  # NCBI Virus: fetch the RefSeq set (else all complete genomes)
     seed_keep_siblings: bool = False  # keep the query's siblings when selecting from a pool
     # When BLAST seeding finds only siblings (a saturated lineage), switch to recruiting
@@ -337,7 +338,7 @@ def _seed_collection(
     """
     if not query_records:
         raise UserInputError(f"Query FASTA {params.query} has no sequence to search with.")
-    if params.seed_source in ("local", "ncbi-virus"):
+    if params.seed_source in ("local", "ncbi-virus", "nextclade"):
         _seed_from_pool(params, collection, logger)
         return
     query_seq = query_records[0][1].replace("-", "")
@@ -385,13 +386,27 @@ def _seed_from_pool(
     """Seed by regional selection from a genome pool (local directory or NCBI Virus)."""
     from .pool import iter_pool_genomes
 
-    if params.seed_source == "local" and not force_ncbi:
+    if params.seed_source == "nextclade" and not force_ncbi:
+        genomes = _fetch_nextclade(params, logger)
+    elif params.seed_source == "local" and not force_ncbi:
         if params.candidate_pool is None:
             raise UserInputError("--seed-source local needs --candidate-pool <dir>.")
         genomes = iter_pool_genomes(params.candidate_pool)
     else:  # ncbi-virus (or auto-switched into it)
         genomes = _fetch_diverse(params, logger)
     _copy_into(_select_from(params, genomes, logger).selected, collection, logger)
+
+
+def _fetch_nextclade(params: FillParams, logger: logging.Logger) -> list[Path]:
+    """Reconstruct a candidate pool from a Nextclade dataset (cached per path@tag)."""
+    from ..core.cache import nextclade_cache
+    from .nextclade import build_pool, resolve_dataset
+
+    dataset = resolve_dataset(
+        params.query, params.nextclade_dataset, email=params.email, logger=logger
+    )
+    cache = nextclade_cache(dataset.path, dataset.tag, override=params.cache_dir)
+    return build_pool(dataset, cache_dir=cache, logger=logger)
 
 
 def _fetch_diverse(params: FillParams, logger: logging.Logger) -> list[Path]:
