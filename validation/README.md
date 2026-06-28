@@ -69,6 +69,51 @@ the NCBI Virus lineage filter) before relying on that dataset for anything
 beyond a smoke test; the recombination call (major BA.2.10.1, BA.2.75 over
 spike) is consistent with the expected XBB topology regardless.
 
+## Synthetic hybrid harness (`run_hybrids.py`)
+
+A second, generative harness that stress-tests detection on **synthetic
+recombinants** built from Nextclade datasets, so the inputs are not limited to
+the handful of curated published events above. For each configured dataset it:
+
+1. builds the Nextclade reference pool (the shipped `build_pool`, cached per
+   dataset version);
+2. picks the most-divergent pair of well-represented, **non-recombinant** clades
+   (A and B), each represented by its central genome;
+3. splices an A-backbone genome with a B insert over the middle 35-65 % of the
+   genome, recording the true donor span in query coordinates;
+4. runs RecomFi pool-only with the two exact source genomes removed (their clades
+   stay represented), so the query is not a trivial self-match;
+5. checks the call: recombination detected, backbone (major parent) clade == A
+   (hierarchical labels match, e.g. `A` == `A.1`), a donor region recovered for
+   clade B overlapping the true span. Wall-clock runtime is recorded per case.
+
+```
+export PATH="$HOME/miniforge3/envs/recomfi-aln/bin:$PATH"
+python validation/run_hybrids.py            # all cases
+python validation/run_hybrids.py hiv1 dengue   # only named cases
+```
+
+Needs MAFFT/skani/skDER on PATH and contacts the Nextclade dataset server on the
+first run (pools are cached afterwards under `~/.cache/recomfi/nextclade`).
+
+### Observed performance (5 datasets across distinct viral families)
+
+| case | backbone x donor | divergence | result |
+|------|------------------|-----------:|--------|
+| `hiv1` (HIV-1) | A1 x B | 15.1 % | PASS |
+| `dengue` (DENV) | DENV1 x DENV4 | 33.1 % | PASS |
+| `rubella` | 2B x 1G | 9.0 % | PASS |
+| `rsv_a` (RSV-A) | A.1 x A.D.1.8 | 6.6 % | FAIL -- backbone recovered, 30 % donor sub-clade not distinguished |
+| `measles` | H1 x B3 | 7.5 % | FAIL -- a third genotype wins the backbone |
+
+RecomFi recovers the recombinant cleanly when the parental clades are clearly
+divergent and well represented (HIV subtypes, dengue serotypes, rubella
+genotypes). The two failures are the expected harder regime: closely-related
+genotypes / fine-grained sub-clades (~5-7 % apart), where the backbone or the
+short donor tract is not cleanly separable from a neighbouring clade. The pass set
+is a performance characterisation, not a fixed contract -- the exact clades chosen
+follow from each dataset's current Nextclade tree.
+
 ## Expectation schema (`expected` block)
 
 - `major_parent` -- the top window-winner must equal this label.
