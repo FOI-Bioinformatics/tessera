@@ -223,11 +223,11 @@ def test_parents_mode_falls_back_when_only_siblings(monkeypatch, tmp_path, logge
     assert seeded == {"SIB"}  # fallback keeps the collection non-empty
 
 
-def test_fetch_diverse_broadens_caps_and_caches(monkeypatch, tmp_path, logger):
-    # RefSeq too thin -> broaden to a --limit-capped complete fetch; result is cached.
+def test_fetch_diverse_broadens_downloads_all_and_caches(monkeypatch, tmp_path, logger):
+    # RefSeq too thin -> broaden to the FULL complete set (no pre-cap; dereplicated later).
     from recomfi.discover import pool as pool_mod
 
-    calls = {"fetch": 0, "limit": None}
+    calls = {"fetch": 0, "limit": "unset"}
 
     def fake_fetch(taxon, d, *, refseq=True, complete_only=False, released_after=None,
                    limit=None, logger):
@@ -238,7 +238,7 @@ def test_fetch_diverse_broadens_caps_and_caches(monkeypatch, tmp_path, logger):
             return [p]
         calls["limit"] = limit
         out = []
-        for i in range(limit):  # cap hit -> warning path
+        for i in range(8):  # the full complete set (more than fetch_limit), not truncated
             p = d / f"G{i}.fasta"
             p.write_text(">x\nA\n")
             out.append(p)
@@ -250,14 +250,14 @@ def test_fetch_diverse_broadens_caps_and_caches(monkeypatch, tmp_path, logger):
         taxon="SARS-CoV-2", fetch_limit=5, cache_dir=tmp_path / "cache",
     )
     result = iterate._fetch_diverse(params, logger)
-    assert calls["limit"] == 5
-    assert len(result) == 5  # broadened to the capped complete set
+    assert calls["limit"] is None  # the full set is downloaded, not pre-capped
+    assert len(result) == 8  # all genomes returned for local dereplication
 
     # A second call for the same taxon hits the cache -- no further fetch.
     before = calls["fetch"]
     cached = iterate._fetch_diverse(params, logger)
     assert calls["fetch"] == before  # network skipped
-    assert len(cached) == 5
+    assert len(cached) == 8  # the full cached set is returned (dereplicated downstream)
 
 
 def test_dominant_lineage_token_extracted_from_titles():

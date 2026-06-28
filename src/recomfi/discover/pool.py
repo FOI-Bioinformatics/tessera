@@ -120,8 +120,11 @@ def fetch_ncbi_virus(
     """Download a taxon-scoped genome set from NCBI Virus and split it into ``dest``.
 
     By default fetches the RefSeq/representative set (small and diverse). Use
-    ``complete_only`` (optionally with ``released_after`` / ``limit``) for a broader
-    set, then dereplicate; a broad fetch can be large, so ``limit`` caps it.
+    ``complete_only`` (optionally with ``released_after``) for a broader set, then
+    dereplicate. ``limit`` caps how many genomes are kept after download (the
+    ``datasets`` CLI cannot count-limit a virus-genome download), bounding the
+    downstream split/align work; a heavily sequenced taxon still downloads in full,
+    so a curated ``--candidate-pool`` is preferable there.
     """
     if not datasets_available():
         raise UserInputError(
@@ -134,8 +137,6 @@ def fetch_ncbi_virus(
         command = ["datasets", "download", "virus", "genome", "taxon", taxon,
                    "--no-progressbar", "--filename", str(zip_path)]
         command += _scope_flags(refseq, complete_only, released_after)
-        if limit is not None:
-            command += ["--limit", str(limit)]
         scope = "RefSeq" if refseq else ("complete" if complete_only else "all")
         logger.info("Fetching %s '%s' genomes from NCBI Virus...", scope, taxon)
         run_tool(DATASETS, command, logger=logger, log_prefix="datasets")
@@ -148,7 +149,7 @@ def fetch_ncbi_virus(
                 f"NCBI Virus returned no genomes for '{taxon}'. Try --taxon or a broader scope."
             )
         labels = _lineage_labels(data_dir / "data_report.jsonl")
-        written = _split_fasta(fna, dest, labels)
+        written = _split_fasta(fna, dest, labels, limit=limit)
     logger.info("Fetched %d genome(s) from NCBI Virus into %s.", len(written), dest)
     return written
 
@@ -174,10 +175,18 @@ def _lineage_labels(report: Path) -> dict[str, str]:
     return labels
 
 
-def _split_fasta(fna: Path, dest: Path, labels: dict[str, str]) -> list[Path]:
-    """Split a multi-FASTA into one file per accession under ``dest``."""
+def _split_fasta(
+    fna: Path, dest: Path, labels: dict[str, str], limit: int | None = None
+) -> list[Path]:
+    """Split a multi-FASTA into one file per accession under ``dest``.
+
+    With ``limit`` set, at most that many records are written (a downstream cap for a
+    heavily sequenced taxon; dereplication then keeps the panel diverse).
+    """
     written: list[Path] = []
     for header, seq in read_fasta(fna):
+        if limit is not None and len(written) >= limit:
+            break
         acc = header.split()[0]
         out = dest / f"{acc}.fasta"
         with open(out, "w") as fo:

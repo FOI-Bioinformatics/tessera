@@ -49,6 +49,9 @@ SKDER = ToolCapabilities(
 DEFAULT_SIBLING_MARGIN = 3.0  # query-ANI must beat the backbone's by this many %
 DEFAULT_AF_MIN = 80.0  # ... over at least this % of the query (whole-genome match)
 DEFAULT_DEREP_ANI = 99.0  # skDER: genomes >= this ANI collapse to one representative
+# Above this total inline-path length, pass skDER a staging directory instead of
+# individual paths (a large pool overflows the OS command-line length limit).
+_ARG_LIST_LIMIT = 100_000
 # A whole-genome near-twin: when the backbone is a partial-coverage parent (it donated
 # only one region, so its ANI is high but its query coverage is not), a genome that
 # covers nearly the whole query at comparable ANI is the query's own lineage, even
@@ -178,14 +181,28 @@ def dereplicate(
         return list(genomes), []
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "skder"
+        genome_args = [str(g.resolve()) for g in genomes]
+        # skDER's -g accepts file paths or a directory. A large pool (thousands of
+        # genomes) passed inline overflows the OS command-line length limit, so stage
+        # the genomes into one directory and pass that directory instead.
+        if sum(len(a) for a in genome_args) > _ARG_LIST_LIMIT:
+            staged = Path(tmp) / "genomes"
+            staged.mkdir()
+            for i, g in enumerate(genomes):
+                (staged / f"g{i}_{g.name}").symlink_to(g.resolve())  # unique, keeps suffix
+            genome_args = [str(staged)]
         run_tool(
             SKDER,
-            ["skder", "-g", *[str(g.resolve()) for g in genomes],
-             "-o", str(out), "-i", str(ani), "-d", "greedy"],
+            ["skder", "-g", *genome_args, "-o", str(out), "-i", str(ani), "-d", "greedy"],
             logger=logger, log_prefix="skder",
         )
-        reps_text = (out / "skDER_Results.txt").read_text().splitlines()
-    rep_paths = {Path(line.strip()).resolve() for line in reps_text if line.strip()}
+        # Resolve representative paths while the staging symlinks still exist, so a
+        # staged symlink dereferences to its real genome rather than a dangling path.
+        rep_paths = {
+            Path(line.strip()).resolve()
+            for line in (out / "skDER_Results.txt").read_text().splitlines()
+            if line.strip()
+        }
     representatives = [g for g in genomes if g.resolve() in rep_paths]
     redundant = [g for g in genomes if g.resolve() not in rep_paths]
     return representatives, redundant

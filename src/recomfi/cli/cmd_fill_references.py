@@ -59,7 +59,8 @@ def fill_references(
     ),
     fetch_limit: int = typer.Option(
         2000, "--fetch-limit",
-        help="Cap a broad NCBI Virus fetch (complete genomes) before dereplication.",
+        help="Notify (and dereplicate locally) when a broad NCBI Virus fetch returns "
+        "more than this many complete genomes; the full set is downloaded either way.",
     ),
     cache_dir: Path | None = typer.Option(
         None, "--cache-dir",

@@ -396,12 +396,13 @@ def _seed_from_pool(
 
 def _fetch_diverse(params: FillParams, logger: logging.Logger) -> list[Path]:
     """Fetch a diverse taxon-scoped set from NCBI Virus (cached per taxon): the RefSeq
-    representative set, broadening to a ``--limit``-capped set of complete genomes when
-    RefSeq is too thin.
+    representative set, broadening to the full set of complete genomes when RefSeq is
+    too thin.
 
     The fetched panel is cached on disk by taxon, so a repeat run skips the network.
-    The cap bounds the work for a heavily-sequenced taxon; when it is hit the sample
-    may miss lineages, so a curated ``--candidate-pool`` is recommended (logged).
+    The full set is dereplicated locally during regional selection, so a heavily
+    sequenced taxon is reduced to diverse representatives rather than truncated to a
+    biased sample.
     """
     from ..core.cache import cached_genomes, ncbi_virus_cache
     from .pool import detect_taxon, fetch_ncbi_virus
@@ -427,13 +428,12 @@ def _fetch_diverse(params: FillParams, logger: logging.Logger) -> list[Path]:
         for g in fetched:
             g.unlink()
     fetched = fetch_ncbi_virus(
-        taxon, cache, refseq=False, complete_only=True, limit=params.fetch_limit, logger=logger
+        taxon, cache, refseq=False, complete_only=True, logger=logger
     )
-    if len(fetched) >= params.fetch_limit:
-        logger.warning(
-            "Fetched a capped sample of %d '%s' genomes (the taxon is heavily sequenced); the "
-            "panel may miss lineages. For best diversity supply --seed-source local "
-            "--candidate-pool <dir> (e.g. a lineage/Pango reference set).",
+    if len(fetched) > params.fetch_limit:
+        logger.info(
+            "Fetched %d '%s' complete genomes (a heavily sequenced taxon); dereplicating "
+            "locally to a diverse panel -- this can take a few minutes.",
             len(fetched), taxon,
         )
     return fetched
