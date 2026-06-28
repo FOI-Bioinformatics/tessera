@@ -53,21 +53,55 @@ from recomfi.recomb.typing import LINEAGES_TSV, lineage_map_from_rows, write_lin
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data" / "hybrids"
 
-# One entry per hybrid test case. ``clades`` may pin the two parent clades; left
-# empty the most-divergent well-represented pair is used. The donor (clade B)
-# occupies the middle ``insert`` fraction of the genome; the backbone (clade A) the
-# flanks.
+# One representative dataset per distinct Nextclade pathogen (14 core + 10
+# community). ``clades`` may pin the two parent clades; left empty the
+# most-divergent well-represented pair is used. ``aligner`` defaults to mafft;
+# large genomes (mpox, VZV) use minimap2 so the per-genome alignment is tractable.
+# The donor (clade B) occupies the middle ``insert`` fraction of the genome; the
+# backbone (clade A) the flanks. Window sizes adapt to the genome length.
 HYBRIDS: list[dict] = [
-    {"name": "hiv1", "dataset": "community/neherlab/hiv-1/hxb2"},
+    # --- core (Nextstrain-maintained) ---
+    {"name": "sars_cov_2", "dataset": "nextstrain/sars-cov-2/XBB"},
     {"name": "dengue", "dataset": "nextstrain/dengue/all"},
     {"name": "measles", "dataset": "nextstrain/measles/genome/WHO-2012"},
-    {"name": "rsv_a", "dataset": "nextstrain/rsv/a/EPI_ISL_412866"},
+    {"name": "mumps", "dataset": "nextstrain/mumps/genome"},
     {"name": "rubella", "dataset": "nextstrain/rubella/genome"},
+    {"name": "rsv_a", "dataset": "nextstrain/rsv/a/EPI_ISL_412866"},
+    {"name": "hmpv", "dataset": "nextstrain/hmpv/all-clades/NC_039199"},
+    {"name": "wnv", "dataset": "nextstrain/wnv/all-lineages"},
+    {"name": "yellow_fever", "dataset": "nextstrain/yellow-fever/prM-E"},
+    {"name": "ebola", "dataset": "nextstrain/orthoebolavirus/ebov"},
+    {"name": "hantavirus", "dataset": "nextstrain/orthohantavirus/andv/l"},
+    {"name": "flu_h3n2_ha", "dataset": "nextstrain/flu/h3n2/ha/EPI1857216"},
+    {"name": "mpox", "dataset": "nextstrain/mpox/all-clades", "aligner": "minimap2"},
+    {"name": "vzv", "dataset": "nextstrain/herpes/vzv/NC_001348", "aligner": "minimap2"},
+    # --- community ---
+    {"name": "hiv1", "dataset": "community/neherlab/hiv-1/hxb2"},
+    {"name": "marburg", "dataset": "community/genspectrum/marburg/HK1980/all-lineages"},
+    {"name": "oropouche", "dataset": "community/itps/orov/L/refseq"},
+    {"name": "zika", "dataset": "community/itps/zikav"},
+    {"name": "hepatitis_a", "dataset": "community/masphl-bioinformatics/hav/whole-genome"},
+    {"name": "iav_h5_ha", "dataset": "community/moncla-lab/iav-h5/ha/all-clades"},
+    {"name": "cchfv", "dataset": "community/pathoplexus/cchfv/L"},
+    {"name": "chikv", "dataset": "community/v-gen-lab/chikV/genotypes"},
+    {"name": "enterovirus_d68", "dataset": "enpen/enterovirus/ev-d68"},
+    {"name": "prrsv2", "dataset": "community/isuvdl/mazeller/prrsv2/orf5/yimim2023"},
 ]
 INSERT = (0.35, 0.65)  # donor (clade B) occupies this fraction of the genome
-WINDOW, STEP = 500, 50
-SELECT_WINDOW = 1500
+MIN_GENOME = 400  # skip a dataset whose genome/segment is too short to splice
 THREADS = 4
+
+
+def window_params(genome_len: int) -> tuple[int, int, int]:
+    """Adaptive (recomb window, step, regional-selection window) for a genome length.
+
+    Scales the sliding window to the genome so short gene/segment datasets (flu HA,
+    a PRRSV ORF) are not given a window wider than the alignment.
+    """
+    window = max(120, min(500, genome_len // 12))
+    step = max(20, window // 10)
+    select_window = max(window, min(1500, genome_len // 4))
+    return window, step, select_window
 
 
 def reconstruct_gapped(reference: str, nuc_muts: list[str]) -> str:
@@ -244,6 +278,10 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
                 name, clade_a, src_a, clade_b, src_b, divergence)
 
     query_seq, q_start, q_end = make_hybrid(reference, tips[src_a][1], tips[src_b][1])
+    if len(query_seq) < MIN_GENOME:
+        raise ValueError(f"genome/segment too short to test ({len(query_seq)} bp)")
+    window, step, sel_window = window_params(len(query_seq))
+    aligner = case.get("aligner", "mafft")
     query = out / "hybrid.fasta"
     with open(query, "w") as fo:
         write_fasta_record(fo, f"hybrid_{clade_a}_{clade_b}", query_seq)
@@ -254,7 +292,7 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
     pool = [g for g in genomes if strip_sequence_extension(g.name).split(".")[0] not in drop]
 
     t0 = time.monotonic()
-    selected = select_regional(query, pool, window=SELECT_WINDOW, per_window=2,
+    selected = select_regional(query, pool, window=sel_window, per_window=2,
                                drop_siblings=True, logger=logger).selected
     collection = out / "collection"
     if collection.exists():
@@ -271,9 +309,9 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
 
     msa = out / "panel.msa.fasta"
     build_msa(MsaParams(query=query, collection=collection, output=msa,
-                        aligner="mafft", threads=THREADS), logger)
+                        aligner=aligner, threads=THREADS), logger)
     run_recomb(RecombParams(msa=msa, output=out, query=query_label,
-                            window_size=WINDOW, window_step=STEP,
+                            window_size=window, window_step=step,
                             lineage_map=lineage_map), logger)
     runtime = time.monotonic() - t0
 

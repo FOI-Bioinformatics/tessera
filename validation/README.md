@@ -73,7 +73,12 @@ spike) is consistent with the expected XBB topology regardless.
 
 A second, generative harness that stress-tests detection on **synthetic
 recombinants** built from Nextclade datasets, so the inputs are not limited to
-the handful of curated published events above. For each configured dataset it:
+the handful of curated published events above. It carries one representative
+dataset per distinct Nextclade pathogen -- **14 core (Nextstrain-maintained) plus
+10 community** -- covering SARS-CoV-2, dengue, measles, mumps, rubella, RSV, hMPV,
+WNV, yellow fever, ebola, hantavirus, influenza (flu HA), mpox, VZV, HIV-1,
+Marburg, Oropouche, Zika, hepatitis A, H5 influenza, CCHFV, chikungunya,
+enterovirus D68 and PRRSV. For each dataset it:
 
 1. builds the Nextclade reference pool (the shipped `build_pool`, cached per
    dataset version);
