@@ -43,11 +43,12 @@ NEXTCLADE = ToolCapabilities(
 
 # A nuc mutation: ref-base, 1-based position, alt-base ('-' = deletion).
 _MUT = re.compile(r"^([A-Za-z])(\d+)([A-Za-z-])$")
-# Clade-label node attributes in priority order: Nextclade_pango and clade_nextstrain
-# take precedence; clade_membership is the universal key present in most datasets,
-# with subclade and LANL_subtype as further fallbacks used only when it is absent.
-_CLADE_KEYS = ("Nextclade_pango", "clade_nextstrain", "clade_membership", "subclade",
-               "LANL_subtype")
+# Clade-label node attributes in priority order. The dataset-specific informative
+# labels come first -- Nextclade_pango / clade_nextstrain (SARS-CoV-2), LANL_subtype
+# (HIV) -- then clade_membership, the universal key present in most datasets but often
+# the coarser label; subclade (flu) is the final fallback.
+_CLADE_KEYS = ("Nextclade_pango", "clade_nextstrain", "LANL_subtype", "clade_membership",
+               "subclade")
 
 
 def _attr(value):

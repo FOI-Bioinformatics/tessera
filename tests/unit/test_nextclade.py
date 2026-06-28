@@ -25,6 +25,10 @@ def test_clade_priority_prefers_pango_then_universal_membership():
                          "clade_membership": {"value": "21L"}}) == "BA.2"
     assert nc._clade_of({"clade_membership": "H2"}) == "H2"  # bare scalar
     assert nc._clade_of({"author": {"value": "x"}}) == "NA"  # no clade key
+    # LANL_subtype (HIV) is the informative label and wins over the coarser
+    # clade_membership when both are present.
+    assert nc._clade_of({"LANL_subtype": "CRF109_0107",
+                         "clade_membership": "other"}) == "CRF109_0107"
 
 
 def test_accession_prefers_attr_then_name_and_is_sanitised():
