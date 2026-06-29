@@ -116,6 +116,19 @@ closest match. A run of windows where a non-major parent's support clears 70 % a
 the backbone is a region, carrying that support as a confidence the other callers express
 only as a p-value.
 
+## Barcode caller (`--method barcode`, lineage-marker attribution)
+
+For **typed** panels (a Nextclade dataset or `--lineage-map`), the shared primitive of the
+recent lineage-attribution methods (RecombinHunt, rebar, VirusRecom): compete *lineages*
+via their characteristic markers rather than individual genomes. It builds per-clade
+markers -- columns where one clade is near-fixed for a base rare in every other clade --
+and scans the query window by window for the clade whose local markers it carries; a run
+where a non-major clade dominates is a region attributed to that lineage. A marker is
+denoised across the clade's members and the comparison is multi-way, so the call is robust
+to a single near-identical adjacent-clade genome winning by chance -- the failure mode of
+the genome-level callers at low divergence. It is silent on untyped panels, and opt-in
+(needs typed references). It composes with `--pool-consensus` but needs only a typed panel.
+
 ## Parent-free recombination signal (PHI + Rmin)
 
 Alongside the parent-attributed regions, every run reports a parent-agnostic
@@ -199,6 +212,9 @@ sources:
   Identification of breakpoints in intergenotypic recombinants of HIV type 1 by
   bootscanning. *AIDS Research and Human Retroviruses* 11(11):1423-1425. SimPlot++:
   Samson S, Lord E, Makarenkov V (2022). *Bioinformatics* 38(11):3118-3120.
+- **Lineage-marker attribution (barcode).** Alfonsi T, Bernasconi A, Chiara M, Ceri S
+  (2024). Data-driven recombination detection in viral genomes. *Nature Communications*
+  15:3187 (RecombinHunt); the same per-lineage characteristic-mutation idea as rebar/sc2rf.
 - **3SEQ triplet test.** Boni MF, Posada D, Feldman MW (2007). An exact nonparametric
   method for inferring mosaic structure in sequence triplets. *Genetics* 176(2):1035-1047.
 - **PHI test (Pairwise Homoplasy Index).** Bruen TC, Philippe H, Bryant D (2006). A
