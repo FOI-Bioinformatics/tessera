@@ -911,7 +911,7 @@ _GLOSSARY = [
 # Sources for the reimplemented callers and statistics (dependency-free numpy).
 _REFERENCES = [
     ("HMM segmentation (jpHMM-style)",
-     "Schultz A-K, Zhang M, Bulla I, et al. (2006). A jumping profile hidden Markov "
+     "Schultz A-K, Zhang M, Leitner T, et al. (2006). A jumping profile hidden Markov "
      "model and applications to recombination sites in HIV and HCV genomes. BMC "
      "Bioinformatics 7:265."),
     ("3SEQ triplet test",

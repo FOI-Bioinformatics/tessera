@@ -160,7 +160,7 @@ sites and recovers the shaded region (q ~1e-12).*
 The callers and statistics reimplemented here (dependency-free numpy) follow these
 sources:
 
-- **HMM segmentation (jpHMM-style).** Schultz A-K, Zhang M, Bulla I, et al. (2006). A
+- **HMM segmentation (jpHMM-style).** Schultz A-K, Zhang M, Leitner T, et al. (2006). A
   jumping profile hidden Markov model and applications to recombination sites in HIV and
   HCV genomes. *BMC Bioinformatics* 7:265.
 - **3SEQ triplet test.** Boni MF, Posada D, Feldman MW (2007). An exact nonparametric
