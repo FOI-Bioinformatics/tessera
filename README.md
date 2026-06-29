@@ -58,19 +58,21 @@ a heavily sequenced taxon (e.g. SARS-CoV-2) supply a local panel with
 `--candidate-pool`. How the panel is recruited, found, and curated is covered in
 [docs/reference-panels.md](docs/reference-panels.md).
 
-**Manual two-step.** When you already have a query and a collection of references, run
-the alignment and the scan yourself:
+**Manual two-step.** When you already have an alignment, scan it directly. The shipped
+example needs no aligner:
 
 ```
-tessera msa --query cowpox_with_variolaInsert.fasta.gz --collection collection/ --output msa.fasta
-tessera recomb --msa msa.fasta --query cowpox_with_variolaInsert --output tessera_out
+tessera recomb --msa example_data/divergent.msa.fasta --query query --output out/ \
+    --window-size 300 --window-step 30
 ```
 
-State the query label to `recomb` as it appears in the MSA (the query file name
-without extension). The window, step, caller, and region-calling parameters are
-configurable -- see [docs/detection-methods.md](docs/detection-methods.md) and
-`tessera recomb --help`. For a single-contig query, `tessera msa --query-as-backbone`
-uses the query itself as the backbone.
+State the query label to `recomb` as it appears in the MSA (for a FASTA you align
+yourself, the query file name without extension). To build the alignment from
+unaligned genomes first, run `tessera msa --query q.fasta --collection refs/ --output
+msa.fasta` (see [docs/aligners.md](docs/aligners.md); `--query-as-backbone` uses a
+single-contig query as the backbone). The window, step, caller, and region-calling
+parameters are configurable -- see [docs/detection-methods.md](docs/detection-methods.md)
+and `tessera recomb --help`.
 
 Run `tessera --help` (or `tessera <command> --help`) for the full set of commands and
 options: `detect`, `build-panel`, `msa`, `recomb`, `find-references`,
@@ -78,22 +80,18 @@ options: `detect`, `build-panel`, `msa`, `recomb`, `find-references`,
 
 ## Example dataset
 
-`example_data/` holds an orthopoxvirus example. The query is a short-read assembly
-(8 contigs) of a synthetic cowpox sample with a variola segment; the collection is
-reference-labelled orthopoxvirus sequences from `BV-BRC.org`.
+`example_data/` holds two small, pre-aligned synthetic alignments that run directly
+with `tessera recomb` (no aligner needed) and contrast the detection methods:
 
-```
-example_data/
-├── collection/
-│   ├── camelpox.fasta.gz
-│   ├── cowpox.fasta.gz
-│   ├── cowpox_KC813504.fasta.gz
-│   ├── monkeypox.fasta.gz
-│   ├── taterapox.fasta.gz
-│   ├── vaccinia.fasta.gz
-│   └── variola.fasta.gz
-└── cowpox_with_variolaInsert.fasta.gz
-```
+- `divergent.msa.fasta` -- parents ~11 % apart, a large insert. The default HMM caller
+  localizes the mosaic confidently (q ~1e-29); the figure below shows the crossover.
+- `cryptic_insert.msa.fasta` -- parents ~1 % apart, a short 800 bp insert. The HMM
+  finds nothing, but `--method 3seq` recovers it (q ~1e-12) -- the case the triplet
+  test exists for.
+
+Each is a `query` (a `parent_A` backbone with a `parent_B` insert), the two parents,
+and an outgroup. See [example_data/README.md](example_data/README.md) for the exact
+commands; regenerate with `python example_data/make_example.py`.
 
 ## How detection works
 
@@ -111,10 +109,10 @@ q-value, and a breakpoint interval. Full detail -- the HMM, low-divergence windo
 the 3SEQ test, and the PHI/Rmin diagnostic -- is in
 [docs/detection-methods.md](docs/detection-methods.md).
 
-![similarity of the nearest five references](wiki/plot_x5.png)
+![divergent recombinant: a clean similarity crossover](docs/figures/divergent.png)
 
-*Similarity in each window of the nearest five references. The query is most similar
-to a cowpox sequence but has a middle region similar to variola -- a putative
+*`example_data/divergent.msa.fasta`. The query tracks `parent_A` (similarity ~1)
+except over the shaded called region, where it switches to `parent_B` -- a
 recombination event, called automatically and reported in both MSA and query
 coordinates.*
 

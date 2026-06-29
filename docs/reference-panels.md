@@ -70,7 +70,7 @@ references (accession, identity, whether already in your collection), and -- wit
 `--download` -- fetches the best new one into a collection directory to re-run with.
 
 ```
-tessera find-references --msa msa.fasta --query cowpox_with_variolaInsert \
+tessera find-references --msa msa.fasta --query my_query \
     --collection collection/ --email you@example.org --download collection/
 ```
 
@@ -97,7 +97,7 @@ the whole cycle -- build MSA, scan, BLAST, download -- for several rounds, growi
 copy of the collection each time:
 
 ```
-tessera fill-references --query cowpox_with_variolaInsert.fasta.gz \
+tessera fill-references --query my_query.fasta \
     --collection collection/ --output filled/ --aligner mafft --email you@example.org
 ```
 

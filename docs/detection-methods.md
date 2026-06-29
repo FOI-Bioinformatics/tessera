@@ -120,15 +120,15 @@ fragmented query -- is uninformative and reported as `NA` in `similarity_windows
 reported alongside MSA coordinates, so regions need not be mapped back to the query by
 hand.
 
-![similarity of the nearest five references](../wiki/plot_x5.png)
+![divergent recombinant: a clean similarity crossover](figures/divergent.png)
 
-*Similarity in each window of the nearest five sequences to the query. Values towards
-1 indicate high similarity. Here the query is most similar to a cowpox sequence but
-has a region in the middle similar to a variola sequence -- a putative recombination
-event, called automatically and reported in `recombination_regions.tsv` in both MSA
-and query coordinates.*
+*`example_data/divergent.msa.fasta` (parents ~11 % apart). The query tracks `parent_A`
+except over the shaded called region, where it switches to `parent_B`. With divergent
+parents the HMM caller localizes the event confidently (q ~1e-29); 3SEQ agrees.*
 
-![major versus leading minor parent](../wiki/plot_x2.png)
+![cryptic insert: the 3SEQ caller recovers a short low-divergence tract](figures/cryptic_3seq.png)
 
-*The two sequences most likely involved in the recombination, with the called region
-shaded.*
+*`example_data/cryptic_insert.msa.fasta` (parents ~1 % apart, an 800 bp insert with
+~10 discriminating sites). The dip is shallow and narrow, so the HMM segmentation
+finds nothing across a base-pair window; `--method 3seq` pools the discriminating
+sites and recovers the shaded region (q ~1e-12).*
