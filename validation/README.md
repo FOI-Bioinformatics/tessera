@@ -169,9 +169,41 @@ at least three genomes -- including datasets with no clade attribute at all
 | `oropouche` | -- | -- | SKIP -- no clade attribute in the tree |
 | `cchfv` | -- | -- | SKIP -- < 2 clades with >= 3 genomes |
 
-**13 PASS, 7 FAIL, 4 SKIP** (0 errors). Tessera recovers the recombinant cleanly
-across the full divergence range that has both parents represented -- from dengue
-serotypes (33 %) down to measles and mumps genotypes (~7 %).
+**13 PASS, 7 FAIL, 4 SKIP** (0 errors); of the 20 cases that run, **19 call a
+recombinant region** (only the H5 HA segment calls none) and **10 recover the donor by
+both callers** (the `agr` column). Tessera recovers the recombinant cleanly across the
+full divergence range that has both parents represented -- from dengue serotypes (33 %)
+down to measles and mumps genotypes (~7 %). The 7 FAILs are not detection misses but
+labelling / hard-case edges (see the audit below).
+
+#### Failure audit
+
+Inspecting the called regions of the 7 FAILs, **6 of 7 detect the recombination
+correctly** -- they fail on lineage *labelling*, not detection. Two causes:
+
+*A. Detection correct, lineage attribution off (4).* The recombinant region is found
+(often by both callers) but the backbone or donor genome is tagged with the wrong
+sub-lineage.
+- `mpox` (0.5 %) -- region spans the true insert, IIa donor recovered; the backbone
+  genome that wins carries the coarse tree tag `Ib/IIb`.
+- `vzv` (0.2 %) -- donor (clade 9) recovered; at near-identity a clade-VIII genome wins
+  the backbone instead of the spliced clade-2 genome.
+- `ebola` (3.7 %) -- region and backbone correct; the donor is attributed to a different
+  Ebov sub-lineage than the true `Ebov-2018b` (a deep, 3.7 %-distant sub-lineage).
+- `rsv_a` (6.6 %) -- region and backbone `A.1` correct; the donor is attributed to an
+  `A`-sublineage other than the true `A.D.1.8` (the two share top-level `A`).
+
+*B. Genuinely hard short / single-segment data (3).*
+- `flu_h3n2_ha` (~1.7 kb HA) -- 3SEQ calls a region, but among near-tied HA subclades
+  the backbone winner is `J.2`, not the spliced `K`.
+- `iav_h5_ha` (~1.7 kb HA) -- no caller region at all (only coverage gaps); the donor
+  never beats the major significantly on the short segment.
+- `prrsv2` (~0.6 kb ORF5) -- two short, conflicting micro-regions over a ~200 bp tract.
+
+So the weak spots are **lineage attribution among near-identical / deeply-nested
+genomes** (A) and **statistical power on short segments** (B) -- not the detection step.
+The `rsv_a` / `ebola` donor mis-attributions are a panel-density limitation (one
+representative per clade, true donor removed) and correctly stay FAIL.
 
 Low-divergence DNA-virus / intra-species panels (mpox 0.5 %, VZV 0.2 %, ebola
 3.7 %) auto-trigger **informative-site windowing** (`mode` column). This is the real
