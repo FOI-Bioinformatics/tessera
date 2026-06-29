@@ -36,7 +36,7 @@ from .stats import benjamini_hochberg, sign_test_pvalue
 # The region callers, in canonical (display) order; the single source of truth for the
 # valid ``--method`` set. The default ensemble runs the four statistical callers and
 # merges them; heuristic is legacy and opt-in (or via ``all``).
-CALLERS = ("hmm", "3seq", "maxchi", "bootscan", "heuristic")
+CALLERS = ("hmm", "3seq", "maxchi", "bootscan", "barcode", "heuristic")
 DEFAULT_METHODS = ("hmm", "3seq", "maxchi", "bootscan")
 
 
@@ -94,6 +94,10 @@ class RegionParams:
     # leaving distinct parents -- even diffusely-divergent ones a few % apart -- separate.
     cluster_merge_identity: float = 0.985
     cluster_min_refs: int = 4  # skip clustering below this many references (curated panels)
+    # Reference genotypes (label -> clade) for the barcode caller's per-clade markers. Used
+    # ONLY by that caller, never the genome competition, so it cannot reproduce the reverted
+    # competition-layer pooling regression.
+    lineage_map: dict[str, str] | None = None
 
     @classmethod
     def with_defaults(
@@ -108,6 +112,7 @@ class RegionParams:
         alpha: float = 0.05,
         exclude_siblings: bool = True,
         cluster_lineages: bool = True,
+        lineage_map: dict[str, str] | None = None,
     ) -> RegionParams:
         return cls(
             min_region=window_size if min_region is None else min_region,
@@ -119,6 +124,7 @@ class RegionParams:
             alpha=alpha,
             exclude_siblings=exclude_siblings,
             cluster_lineages=cluster_lineages,
+            lineage_map=lineage_map,
         )
 
 
@@ -213,6 +219,9 @@ def call_regions(
     elif params.method == "bootscan":
         from .bootscan import call_regions_bootscan
         regions, major, siblings = call_regions_bootscan(result, analysis, window_size, params)
+    elif params.method == "barcode":
+        from .barcode import call_regions_barcode
+        regions, major, siblings = call_regions_barcode(result, analysis, window_size, params)
     else:
         regions, major = _call_regions_heuristic(result, analysis, window_size, params)
         siblings = []

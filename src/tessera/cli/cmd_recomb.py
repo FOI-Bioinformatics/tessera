@@ -30,8 +30,9 @@ def recomb(
         "hmm (HMM segmentation + a discordant-site "
         "significance test), 3seq (scan-aware triplet max-drawdown test; strong at low "
         "divergence), maxchi (chi-square triplet test, complementary to 3seq), bootscan "
-        "(distance + bootstrap support for the closest parent), heuristic (legacy "
-        "margin/merge). Pass a single name (e.g. --method hmm) for one caller.",
+        "(distance + bootstrap support for the closest parent), barcode (clade-marker "
+        "lineage attribution; needs typed references), heuristic (legacy margin/merge). "
+        "Pass a single name (e.g. --method hmm) for one caller.",
     ),
     jump_rate: float = typer.Option(
         1e-3, "--jump-rate",

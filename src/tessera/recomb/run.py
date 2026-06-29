@@ -214,6 +214,7 @@ def run_recomb(
             alpha=params.alpha,
             exclude_siblings=params.exclude_siblings,
             cluster_lineages=params.cluster_lineages,
+            lineage_map=lineage_map,
         )
 
     # Run each selected caller (sharing the one similarity scan + analysis), then merge
