@@ -73,11 +73,13 @@ HYBRIDS: list[dict] = [
     {"name": "hmpv", "dataset": "nextstrain/hmpv/all-clades/NC_039199"},
     {"name": "wnv", "dataset": "nextstrain/wnv/all-lineages"},
     {"name": "yellow_fever", "dataset": "nextstrain/yellow-fever/prM-E"},
-    {"name": "ebola", "dataset": "nextstrain/orthoebolavirus/ebov"},
+    {"name": "ebola", "dataset": "nextstrain/orthoebolavirus/ebov", "min_divergence": 0.0},
     {"name": "hantavirus", "dataset": "nextstrain/orthohantavirus/andv/l"},
     {"name": "flu_h3n2_ha", "dataset": "nextstrain/flu/h3n2/ha/EPI1857216"},
-    {"name": "mpox", "dataset": "nextstrain/mpox/all-clades", "aligner": "minimap2"},
-    {"name": "vzv", "dataset": "nextstrain/herpes/vzv/NC_001348", "aligner": "minimap2"},
+    {"name": "mpox", "dataset": "nextstrain/mpox/all-clades", "aligner": "minimap2",
+     "min_divergence": 0.0},
+    {"name": "vzv", "dataset": "nextstrain/herpes/vzv/NC_001348", "aligner": "minimap2",
+     "min_divergence": 0.0},
     # --- community ---
     {"name": "hiv1", "dataset": "community/neherlab/hiv-1/hxb2"},
     {"name": "marburg", "dataset": "community/genspectrum/marburg/HK1980/all-lineages"},
@@ -329,7 +331,7 @@ def representative_panel(
     by_clade: dict[str, list[tuple[int, Path]]] = {}
     for g in pool:
         clade, nmut = base_info.get(strip_sequence_extension(g.name).split(".")[0], (None, 0))
-        if clade and clade != "NA":
+        if clade and clade not in ("NA", "unassigned") and not is_recombinant_clade(clade):
             by_clade.setdefault(clade, []).append((nmut, g))
     chosen: list[Path] = []
     for clade in sorted(by_clade, key=lambda c: -len(by_clade[c]))[:REP_PANEL_MAX]:
@@ -358,7 +360,7 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
     )
     logger.info("[%s] backbone clade %s (%s) x donor clade %s (%s); inter-clade divergence %.1f%%",
                 name, clade_a, src_a, clade_b, src_b, divergence)
-    if divergence < MIN_DIVERGENCE:
+    if divergence < case.get("min_divergence", MIN_DIVERGENCE):
         raise CaseSkipped(f"clades too similar ({divergence:.1f}% divergence)")
 
     query_seq, q_start, q_end = make_hybrid(reference, tips[src_a][1], tips[src_b][1])
@@ -394,6 +396,14 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
                                    drop_siblings=False, logger=logger).selected
     except ToolExecutionError:  # skani rejects very short gene/segment datasets
         selected = representative_panel(pool, tips, logger)
+    # On a near-identical panel (mpox/VZV ~0.5%) dereplication collapses the parent
+    # clades into one representative, leaving nothing to compete; rebuild from one
+    # central genome per clade so both parents are present for the detector to test.
+    sel_clades = {clade_of_label(g.name, tips) for g in selected}
+    if len([c for c in sel_clades if c not in ("?", "NA")]) < 2:
+        logger.info("[%s] regional selection collapsed to %d clade(s); using clade "
+                    "representatives instead.", name, len(sel_clades))
+        selected = representative_panel(pool, tips, logger)
     if not selected:
         raise CaseSkipped("no reference panel could be built")
     collection = out / "collection"
@@ -412,10 +422,11 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
     msa = out / "panel.msa.fasta"
     build_msa(MsaParams(query=query, collection=collection, output=msa,
                         aligner=aligner, threads=THREADS), logger)
-    run_recomb(RecombParams(msa=msa, output=out, query=query_label,
-                            window_size=window, window_step=step,
-                            lineage_map=lineage_map), logger)
+    windowing = run_recomb(RecombParams(msa=msa, output=out, query=query_label,
+                                        window_size=window, window_step=step,
+                                        lineage_map=lineage_map), logger)
     runtime = time.monotonic() - t0
+    mode = "info-site" if windowing.startswith("informative") else "bp"
 
     regions = parse_regions(out / "recombination_regions.tsv")
     present = [r for r in regions if r.get("donor_absent") != "yes"]
@@ -432,7 +443,7 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
         "name": name, "clade_a": clade_a, "clade_b": clade_b,
         "divergence": divergence, "n_refs": len(selected),
         "true_span": (q_start, q_end), "n_regions": len(present),
-        "major_clade": major_clade, "detected": detected,
+        "major_clade": major_clade, "detected": detected, "mode": mode,
         "backbone_ok": backbone_ok, "donor_ok": donor_ok,
         "pass": detected and backbone_ok and donor_ok, "runtime": runtime,
     }
@@ -454,10 +465,10 @@ def main(argv: list[str]) -> int:
             logger.exception("[%s] ERROR", case["name"])
             results.append({"name": case["name"], "pass": None, "error": str(exc)})
 
-    print("\n" + "=" * 72)
+    print("\n" + "=" * 80)
     print(f"{'case':16} {'backbone x donor':24} {'div':>5} {'major':>10} "
-          f"{'det':>3} {'bb':>3} {'don':>3} {'time':>6}  verdict")
-    print("-" * 80)
+          f"{'det':>3} {'bb':>3} {'don':>3} {'mode':>9} {'time':>6}  verdict")
+    print("-" * 88)
     for r in results:
         if r.get("skip") is not None:
             print(f"{r['name']:16} SKIP: {r['skip'][:54]}")
@@ -469,7 +480,8 @@ def main(argv: list[str]) -> int:
         print(f"{r['name']:16} {r['clade_a']+' x '+r['clade_b']:24.24} "
               f"{r['divergence']:4.1f}% {r['major_clade']:>10.10} "
               f"{'Y' if r['detected'] else 'n':>3} {'Y' if r['backbone_ok'] else 'n':>3} "
-              f"{'Y' if r['donor_ok'] else 'n':>3} {r['runtime']:5.0f}s  {verdict}")
+              f"{'Y' if r['donor_ok'] else 'n':>3} {r['mode']:>9} "
+              f"{r['runtime']:5.0f}s  {verdict}")
     passed = sum(1 for r in results if r.get("pass"))
     ran = sum(1 for r in results if r.get("pass") is not None)
     skipped = sum(1 for r in results if r.get("skip") is not None)

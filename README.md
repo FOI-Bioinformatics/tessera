@@ -160,6 +160,8 @@ Recombination regions (major parent: cowpox_KC813504):
 ```
 A high support with a small q-value is a confident call; a region with strong directional support but a large q-value (few distinguishing sites, e.g. a recombination between near-identical lineages) is flagged as marginal rather than dropped.
 
+**Low-divergence panels (intra-species sets, DNA viruses).** When the references are nearly identical — e.g. mpox clades (~0.5 %), VZV (~0.2 %), within-species ebola — a fixed base-pair window holds only a handful of discriminating columns diluted by hundreds of identical ones, so the per-reference emission contrast collapses and the segmentation loses power. The signal is still there (low *percentage* divergence over a large genome is still hundreds of variable sites), just buried. RecomFi therefore switches to **informative-site windowing**: windows span a fixed number of polymorphic columns rather than a fixed base-pair width, concentrating the signal so the HMM regains contrast. This is automatic when the references differ at less than ~8 % of columns, and controllable with `--informative-sites` / `--no-informative-sites` (and `--informative-window` / `--informative-step`). Breakpoint intervals are necessarily coarser at low divergence — you cannot localise a switch more finely than the spacing of the discriminating sites.
+
 It remains an **indicative screen, not a full phylogenetic test** (such as 3SEQ or GARD). Treat regions as candidates to confirm.
 
 Output files in the chosen directory:

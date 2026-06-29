@@ -34,7 +34,14 @@ from .similarity import WindowSimilarity, _best_per_window, _canonical_mask
 
 
 def _window_bounds(result: WindowSimilarity, window_size: int) -> list[tuple[int, int]]:
-    """The ``[start, end)`` column span of each window (matches compute_similarity)."""
+    """The ``[start, end)`` column span of each window.
+
+    Informative-site windowing carries each window's exact column span in
+    ``result.window_spans``; otherwise the base-pair window is centred on each
+    position (matches ``compute_similarity``).
+    """
+    if result.window_spans:
+        return list(result.window_spans)
     half = window_size // 2
     return [(p - half, p - half + window_size) for p in result.positions]
 

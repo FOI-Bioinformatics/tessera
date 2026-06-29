@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .. import __version__
+from ..core.errors import UserInputError
 from ..core.io import strip_sequence_extension
 from .analyze import analyze, winners_per_window
 from .coverage import (
@@ -19,7 +20,11 @@ from .coverage import (
 from .hmm import DEFAULT_JUMP_RATE
 from .regions import RegionParams, call_regions
 from .report import print_coverage, print_regions, print_summary, write_reports
-from .similarity import compute_similarity
+from .similarity import (
+    compute_similarity,
+    compute_similarity_informative,
+    informative_site_count,
+)
 from .typing import LINEAGES_TSV, LineageMap, lineage_of, load_lineage_map
 
 
@@ -39,6 +44,17 @@ class RecombParams:
     alpha: float = 0.05  # significance level for the donor-vs-major site test
     exclude_siblings: bool = True  # set aside the query's own-lineage siblings first
     cluster_lineages: bool = True  # pool near-duplicate references into lineages first
+    # Informative-site windowing for near-identical panels (intra-species sets, DNA
+    # viruses: mpox, VZV, ebola). None -> auto: switch when a base-pair window would
+    # hold fewer than min_info_per_window polymorphic sites. True/False force it.
+    informative_sites: bool | None = None
+    informative_window: int = 40  # polymorphic sites per window
+    informative_step: int = 5  # step in informative-site index space
+    # Auto-trigger: switch to informative-site windowing when the references differ at
+    # fewer than this fraction of columns (low inter-reference divergence, so a
+    # base-pair window dilutes the few discriminating sites). 8% sits below the
+    # genotype-level panels that work in base-pair mode (measles ~10%, HIV ~37%).
+    informative_max_fraction: float = 0.08
     # Heuristic-only thresholds (None -> derive from the window size).
     min_region: int | None = None
     margin: float = 0.0
@@ -55,6 +71,61 @@ class RecombParams:
     query_lineage: str | None = None
 
 
+def _select_windowing(bp_result, params: RecombParams, query_label: str, logger):
+    """Choose base-pair or informative-site windowing; return ``(result, label)``.
+
+    Informative-site windowing is for near-identical panels where a base-pair window
+    holds too few polymorphic columns. It is auto-enabled (``informative_sites=None``)
+    when the expected informative sites per base-pair window fall below
+    ``min_info_per_window``, and only for the HMM caller (the heuristic path assumes
+    base-pair window geometry). Falls back to base-pair windowing if the panel has
+    fewer than ``informative_window`` informative sites.
+    """
+    forced = params.informative_sites
+    if params.method != "hmm":
+        if forced:
+            logger.warning(
+                "--informative-sites requires --method hmm; using base-pair windowing."
+            )
+        return bp_result, "base-pair"
+
+    n_info = informative_site_count(bp_result.rows, query_label)
+    fraction = n_info / bp_result.width if bp_result.width else 0.0
+    use_informative = forced
+    if use_informative is None:
+        use_informative = (
+            n_info >= params.informative_window
+            and fraction < params.informative_max_fraction
+        )
+    if not use_informative:
+        return bp_result, "base-pair"
+
+    try:
+        result = compute_similarity_informative(
+            str(params.msa), query_label,
+            info_window=params.informative_window,
+            info_step=params.informative_step,
+            metric=params.metric,
+        )
+    except UserInputError as exc:
+        logger.warning(
+            "Informative-site windowing unavailable (%s); using base-pair windowing.", exc
+        )
+        return bp_result, "base-pair"
+
+    spans = result.window_spans
+    mean_bp = (spans[-1][1] - spans[0][0]) / max(len(result.positions), 1) if spans else 0
+    logger.info(
+        "Near-identical panel (%d informative site(s), %.2f%% of columns): using "
+        "informative-site windowing -- %d window(s), ~%.0f bp/window.",
+        n_info, 100.0 * fraction, len(result.positions), mean_bp,
+    )
+    return result, (
+        f"informative-site ({params.informative_window} sites/window, "
+        f"step {params.informative_step})"
+    )
+
+
 def _discover_lineage_tsv(output: Path, msa: Path) -> Path | None:
     """Find a ``lineages.tsv`` written by panel building, beside the output or the MSA."""
     candidates = [
@@ -69,8 +140,9 @@ def run_recomb(
     params: RecombParams,
     logger: logging.Logger,
     extra_sections: list[tuple[str, str]] | None = None,
-) -> None:
-    """Run the full recombination scan described by ``params``.
+) -> str:
+    """Run the full recombination scan described by ``params``; return the windowing
+    label used ("base-pair" or "informative-site (...)").
 
     ``extra_sections`` are ``(title, html)`` blocks inserted into the HTML report
     after the coverage section -- used by ``fill-references`` to show its rounds.
@@ -89,13 +161,19 @@ def run_recomb(
         "Scanning MSA %s for query '%s' (window=%d, step=%d, metric=%s)",
         params.msa, query_label, params.window_size, params.window_step, params.metric,
     )
-    result = compute_similarity(
+    bp_result = compute_similarity(
         str(params.msa),
         query_label,
         window_size=params.window_size,
         window_step=params.window_step,
         metric=params.metric,
     )
+    # On a near-identical panel a base-pair window holds too few discriminating
+    # sites for the HMM emission to separate the references; switch to windows that
+    # span a fixed number of informative (polymorphic) columns instead. Auto unless
+    # forced; the base-pair result is kept for the coverage diagnostic either way.
+    result, windowing = _select_windowing(bp_result, params, query_label, logger)
+
     analysis = analyze(result)
     per_window_winners = winners_per_window(result)
 
@@ -131,7 +209,7 @@ def run_recomb(
         rel_drop=params.coverage_rel_drop,
     )
     coverage_gaps, coverage_threshold = call_coverage_gaps(
-        result, params.window_size, coverage_params
+        bp_result, params.window_size, coverage_params
     )
     flag_undercovered_regions(regions, coverage_threshold)
     if coverage_gaps:
@@ -172,6 +250,7 @@ def run_recomb(
             else f"heuristic (min {region_params.min_region} / margin "
                  f"{region_params.margin} / merge {region_params.merge_gap})"
         ),
+        "windowing": windowing,
         "major parent": major_parent or "n/a",
         "coverage threshold / gaps": f"{coverage_threshold:.3f} / {len(coverage_gaps)}",
     }
@@ -190,3 +269,4 @@ def run_recomb(
         query_lineage=query_lineage,
     )
     logger.info("All done.")
+    return windowing

@@ -8,7 +8,13 @@ from pathlib import Path
 import pytest
 
 from recomfi.core.errors import UserInputError
-from recomfi.recomb.similarity import compute_similarity
+from recomfi.recomb.similarity import (
+    _informative_column_mask,
+    _read_alignment,
+    compute_similarity,
+    compute_similarity_informative,
+    informative_site_count,
+)
 
 from ..conftest import write_fasta
 
@@ -94,3 +100,64 @@ def test_window_larger_than_alignment_raises(tmp_path: Path) -> None:
     msa = write_fasta(tmp_path / "m.fasta", {"q": "ACGT", "r": "ACGT"})
     with pytest.raises(UserInputError):
         compute_similarity(str(msa), "q", window_size=100, window_step=10)
+
+
+# --- informative-site windowing (low-divergence mode) ----------------------
+
+def test_informative_column_mask_flags_only_variable_columns(tmp_path: Path) -> None:
+    msa = write_fasta(tmp_path / "m.fasta", {
+        "query": "ACGT",
+        "refA": "ACGT",   # matches everywhere
+        "refB": "ATGT",   # differs at col 1
+        "refC": "ACGA",   # differs at col 3
+    })
+    rows = _read_alignment(str(msa))
+    mask = _informative_column_mask(rows, ["refA", "refB", "refC"])
+    assert mask.tolist() == [False, True, False, True]
+    assert informative_site_count(rows, "query") == 2
+
+
+def test_informative_mask_ignores_gaps_and_single_ref(tmp_path: Path) -> None:
+    # col0: A vs gap -> only one canonical ref -> not informative.
+    # col1: C vs C -> agree -> not informative. col2: G vs T -> informative.
+    msa = write_fasta(tmp_path / "m.fasta", {
+        "query": "ACG", "refA": "ACG", "refB": "-CT",
+    })
+    rows = _read_alignment(str(msa))
+    assert _informative_column_mask(rows, ["refA", "refB"]).tolist() == [False, False, True]
+
+
+def test_informative_windowing_recovers_low_divergence_recombinant(tmp_path: Path) -> None:
+    # 600 bp, only 5 SNPs (<1% divergence): bp-windowing has almost no contrast,
+    # informative-site windowing recovers the A-backbone / B-insert mosaic.
+    pa = bytearray(b"A" * 600)
+    pb = bytearray(b"A" * 600)
+    pa[100] = pa[200] = ord("G")   # parentA-specific (first half)
+    pb[400] = pb[500] = ord("C")   # parentB-specific (second half)
+    pa[300] = ord("G")
+    pb[300] = ord("C")             # col 300 distinguishes the two parents
+    query = bytes(pa[:300]) + bytes(pb[300:])  # backbone A, insert B
+    msa = write_fasta(tmp_path / "msa.fasta", {
+        "query": query.decode(),
+        "parentA": bytes(pa).decode(),
+        "parentB": bytes(pb).decode(),
+    })
+
+    result = compute_similarity_informative(str(msa), "query", info_window=2, info_step=1)
+    # windows span the informative columns, not fixed bp
+    assert result.window_spans
+    assert result.numerators["parentA"][0] > result.numerators["parentB"][0]   # A early
+    assert result.numerators["parentB"][-1] > result.numerators["parentA"][-1]  # B late
+
+    from recomfi.recomb.hmm import segment_query
+    segments, major = segment_query(result, jump_rate=1e-3)
+    states = [s.state for s in segments]
+    assert states[0] == "parentA" and "parentB" in states
+    switch = next(s for s in segments if s.state == "parentB")
+    assert 200 <= switch.query_start <= 400  # breakpoint near the true splice at 300
+
+
+def test_informative_too_few_sites_raises(tmp_path: Path) -> None:
+    msa = write_fasta(tmp_path / "m.fasta", {"query": "ACGTACGT", "refA": "ACGTACGT"})
+    with pytest.raises(UserInputError, match="informative site"):
+        compute_similarity_informative(str(msa), "query", info_window=5, info_step=1)

@@ -94,7 +94,11 @@ enterovirus D68 and PRRSV. For each dataset it:
    Sibling-dropping is **off**: the synthetic pool has no recombinant twin of the
    query, and for a close-parent hybrid the backbone parent is >95 % genome-wide ANI
    to the query (its 70 % backbone dominates the average) and would otherwise be
-   discarded as a masking twin -- the documented `--seed-keep-siblings` case;
+   discarded as a masking twin -- the documented `--seed-keep-siblings` case. On a
+   near-identical panel (mpox/VZV ~0.5 %) dereplication collapses the parent clades
+   into one representative, so the panel is rebuilt from one central genome per
+   clade; RecomFi then auto-switches to informative-site windowing (the `mode`
+   column);
 5. checks the call: recombination detected, backbone (major parent) clade == A,
    and a donor region recovered for clade B overlapping the true span. Clade labels
    match hierarchically (`A` == `A.1`); a donor region is also credited to a sibling
@@ -141,23 +145,29 @@ at least three genomes -- including datasets with no clade attribute at all
 | `measles` | H1 x B3 | 7.5 % | PASS |
 | `mumps` | A x K | 6.9 % | PASS |
 | `rsv_a` | A.1 x A.D.1.8 | 6.6 % | FAIL -- backbone recovered, deep donor sub-clade not |
-| `ebola` | Ebov x Ebov | 3.7 % | SKIP -- intra-species, too similar |
-| `mpox` | Ib x IIa | 0.5 % | SKIP -- too similar (DNA virus, ~200 kb) |
+| `ebola` | Ebov x Ebov | 3.7 % | FAIL -- info-site; backbone recovered, deep donor sub-lineage not |
+| `mpox` | Ib x IIa | 0.5 % | FAIL -- info-site; recombination + donor recovered, backbone labelled `Ib/IIb` |
 | `sars_cov_2` | 22B x ... | 0.4 % | SKIP -- Omicron clades too similar |
-| `vzv` | clade 2 x ... | 0.2 % | SKIP -- highly conserved DNA virus |
+| `vzv` | clade 2 x ... | 0.2 % | FAIL -- info-site; genome too conserved to call |
 | `hantavirus` | -- | -- | SKIP -- no clade attribute in the tree |
 | `oropouche` | -- | -- | SKIP -- no clade attribute in the tree |
 | `cchfv` | -- | -- | SKIP -- < 2 clades with >= 3 genomes |
 
-**13 PASS, 4 FAIL, 7 SKIP** (0 errors). RecomFi recovers the recombinant cleanly
+**13 PASS, 7 FAIL, 4 SKIP** (0 errors). RecomFi recovers the recombinant cleanly
 across the full divergence range that has both parents represented -- from dengue
-serotypes (33 %) down to measles and mumps genotypes (~7 %). The four remaining
-failures are genuinely hard: RSV-A (the donor is a deep RSV-A sub-clade only 6.6 %
-from the backbone and sharing the same top-level clade), and three single-gene /
-segment datasets (flu HA, H5 HA, PRRSV ORF5) that are short and finely subdivided.
-Conserved DNA viruses and intra-species sets (mpox, VZV, ebola) and within-Omicron
-SARS-CoV-2 are SKIPped as too similar (< 4 % divergence); three segmented viruses
-carry no usable clade attribute.
+serotypes (33 %) down to measles and mumps genotypes (~7 %).
+
+Low-divergence DNA-virus / intra-species panels (mpox 0.5 %, VZV 0.2 %, ebola
+3.7 %) auto-trigger **informative-site windowing** (`mode` column). This is the real
+win: on mpox, base-pair windowing detects *nothing* (every window is ~997/1000
+identical to both parents), while informative-site windowing detects the
+recombination, recovers the IIa donor across the true insert, and places the
+breakpoint. Their strict PASS still fails on edges that are not detection misses:
+mpox's backbone genome carries the coarser tree label `Ib/IIb` (the recombination
+itself is called correctly), ebola's donor is a deep Ebov sub-lineage 3.7 % from the
+backbone, and VZV at 0.2 % is simply too conserved for any caller. Only within-Omicron
+SARS-CoV-2 stays SKIP (< 4 % and the dataset offers no more-divergent pair); three
+segmented viruses carry no usable clade attribute.
 
 The moderate-divergence cases (measles, mumps, and the earlier hepatitis-A
 inversion) were not a caller limitation but a **panel-recruitment artifact**: for a
@@ -165,9 +175,10 @@ hybrid of close parents the backbone parent is >95 % genome-wide ANI to the quer
 so the default sibling-drop discarded it and the caller crowned a neighbouring or
 the donor clade. Keeping siblings (the documented `--seed-keep-siblings` setting for
 close parents with no masking twin) restores the backbone parent and the calls come
-out correct -- a useful reminder that for close-parent recombinants the real tool
-should keep siblings. The pass set is a performance characterisation, not a fixed
-contract -- the clades chosen follow from each dataset's current Nextclade tree.
+out correct. The remaining single-gene / segment failures (flu HA, H5 HA, PRRSV
+ORF5) are short and finely subdivided. The pass set is a performance characterisation,
+not a fixed contract -- the clades chosen follow from each dataset's current
+Nextclade tree.
 
 ## Expectation schema (`expected` block)
 

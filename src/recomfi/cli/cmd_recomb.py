@@ -79,6 +79,21 @@ def recomb(
         help="TSV of reference genotypes (accession<TAB>genotype) to name parents by "
         "lineage in the report. Defaults to a 'lineages.tsv' beside the output or MSA.",
     ),
+    informative_sites: bool | None = typer.Option(
+        None, "--informative-sites/--no-informative-sites",
+        help="Window over polymorphic (informative) sites instead of fixed base-pair "
+        "windows -- recovers signal on near-identical panels (intra-species sets, DNA "
+        "viruses: mpox, VZV, ebola). Default: auto, on when a base-pair window would "
+        "hold too few discriminating sites (hmm).",
+    ),
+    informative_window: int = typer.Option(
+        40, "--informative-window",
+        help="Informative-site mode: polymorphic sites per window.",
+    ),
+    informative_step: int = typer.Option(
+        5, "--informative-step",
+        help="Informative-site mode: step in informative-site index space.",
+    ),
 ) -> None:
     """Identify recombination events in a multiple sequence alignment."""
     from ..recomb.run import RecombParams, run_recomb
@@ -106,6 +121,9 @@ def recomb(
             coverage_rel_drop=coverage_rel_drop,
             exclude_siblings=exclude_siblings,
             cluster_lineages=cluster_lineages,
+            informative_sites=informative_sites,
+            informative_window=informative_window,
+            informative_step=informative_step,
             lineage_map_path=lineage_map,
         )
         run_recomb(params, logger)
