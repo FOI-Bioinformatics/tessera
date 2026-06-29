@@ -224,18 +224,29 @@ def _write_genome(out_dir: Path, label: str, note: str, seq: str, floor: int) ->
 
 
 def build_pool(
-    dataset: NextcladeDataset, *, cache_dir: Path, logger: logging.Logger
+    dataset: NextcladeDataset, *, cache_dir: Path, logger: logging.Logger,
+    per_clade_consensus: bool = False,
 ) -> list[Path]:
     """Return the Nextclade pool genomes for ``dataset`` (cached per ``path@tag``).
 
     Genomes are reconstructed into a temporary directory and atomically moved into
     ``cache_dir`` on success, so a download interrupted midway never leaves a
     partial directory that a later run would mistake for a complete cache.
+
+    With ``per_clade_consensus`` the pool is **one denoised consensus genome per clade**
+    (majority base per column across the clade's tree tips) instead of every tip -- a
+    stable per-lineage reference (the jpHMM principle) that resists losing the
+    backbone/donor competition to a near-identical adjacent-clade genome at low
+    divergence. Cached separately (a ``_consensus`` sibling directory).
     """
     import os
     import shutil as _shutil
     import tempfile
 
+    from ..recomb.consensus import consensus_sequence
+
+    if per_clade_consensus:
+        cache_dir = cache_dir.parent / f"{cache_dir.name}_consensus"
     existing = cached_genomes(cache_dir)
     if existing:
         logger.info("Using the cached Nextclade pool for '%s' (%d genome(s)): %s",
@@ -253,6 +264,7 @@ def build_pool(
     try:
         written: list[Path] = []
         seen: set[str] = set()
+        clade_tips: dict[str, list[str]] = {}  # consensus mode: clade -> reconstructed seqs
 
         # Iterative DFS: avoids hitting Python's recursion limit on very deep trees.
         stack: list[tuple[dict, list[str]]] = [(tree, [])]
@@ -270,12 +282,26 @@ def build_pool(
                 continue
             seen.add(acc)
             clade = _clade_of(node.get("node_attrs", {}) or {})
-            out = _write_genome(build_dir, acc, clade,
-                                _reconstruct_sequence(reference, path_muts), floor)
+            seq = _reconstruct_sequence(reference, path_muts)
+            if per_clade_consensus:
+                clade_tips.setdefault(clade, []).append(seq)
+                continue
+            out = _write_genome(build_dir, acc, clade, seq, floor)
             if out is not None:
                 written.append(out)
 
-        logger.info("Reconstructed %d Nextclade tree-tip genome(s).", len(written))
+        if per_clade_consensus:
+            for clade, seqs in clade_tips.items():
+                if not clade or clade == "NA":
+                    continue  # untyped tips cannot form a clade consensus
+                label = re.sub(r"[^\w.]", "_", clade) + "_consensus"
+                out = _write_genome(build_dir, label, clade, consensus_sequence(seqs), floor)
+                if out is not None:
+                    written.append(out)
+            logger.info("Built %d per-clade consensus genome(s) from %d tree tip(s).",
+                        len(written), sum(len(s) for s in clade_tips.values()))
+        else:
+            logger.info("Reconstructed %d Nextclade tree-tip genome(s).", len(written))
 
         # Add example sequences; the header's first token (often subtype.country...)
         # gives a label and clade-ish note, deduped against the reconstructed tips.

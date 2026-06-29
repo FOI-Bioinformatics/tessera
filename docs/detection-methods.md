@@ -24,9 +24,12 @@ the parent-free Hudson-Kaplan Rmin signal corroborates it. A region called by mo
 confidence** -- agreement is the point of running an ensemble: the union of the callers
 raises recall, their agreement raises precision.
 
-Select callers with a comma list or `all`: `--method hmm,3seq` (default), `--method
-hmm` (one caller, reproducing the single-method report), `--method all` (adds the legacy
-heuristic). The same `--method` is available on `tessera detect` and `tessera
+Two further callers can join the ensemble (opt-in): **MaxChi** (a chi-square triplet
+test, complementary to 3SEQ) and **Bootscan** (a distance + bootstrap method that yields
+a support for the closest parent). Select callers with a comma list or `all`: `--method
+hmm,3seq` (default), `--method hmm` (one caller, reproducing the single-method report),
+`--method hmm,3seq,maxchi,bootscan`, or `--method all` (every caller, including the
+legacy heuristic). The same `--method` is available on `tessera detect` and `tessera
 fill-references`. The individual callers are described below.
 
 ## HMM caller (`--method hmm`)
@@ -87,6 +90,27 @@ the donors tested. Because it is purely informative-site based it keeps full pow
 near-identical panels -- it detects the mpox clade-I/II recombination where base-pair
 windowing finds nothing -- and because the null accounts for scanning every
 breakpoint it does not over-call.
+
+## MaxChi caller (`--method maxchi`, chi-square triplet test)
+
+A third triplet caller after Maynard Smith (1992) (the RDP family), on the same
+discriminating-site +1/-1 walk as 3SEQ but with an independent statistic: rather than
+the maximum *drawdown* it tests whether the **proportion** of donor matches differs
+sharply inside a tract versus outside it -- a 2x2 chi-square -- with a scan-aware
+permutation null. Drawdown and proportion are sensitive to different mosaics (a
+shallow-but-wide tract is weak under one and strong under the other), so MaxChi and 3SEQ
+are genuinely independent votes; a region significant under both is corroborated by two
+tests, exactly as RDP treats them as separate methods.
+
+## Bootscan caller (`--method bootscan`, distance + bootstrap)
+
+The published method of choice for identifying *which parent* a region came from, after
+Salminen (1995) (SimPlot++ 2022). Per window it measures the query's identity to each
+candidate parent, then resamples the window's alignment columns with replacement; the
+**bootstrap support** of a parent is the fraction of resamples in which it is the query's
+closest match. A run of windows where a non-major parent's support clears 70 % and beats
+the backbone is a region, carrying that support as a confidence the other callers express
+only as a p-value.
 
 ## Parent-free recombination signal (PHI + Rmin)
 
@@ -162,9 +186,15 @@ sites and recovers the shaded region (q ~1e-12).*
 The callers and statistics reimplemented here (dependency-free numpy) follow these
 sources:
 
-- **HMM segmentation (jpHMM-style).** Schultz A-K, Zhang M, Leitner T, et al. (2006). A
-  jumping profile hidden Markov model and applications to recombination sites in HIV and
-  HCV genomes. *BMC Bioinformatics* 7:265.
+- **HMM segmentation + per-clade consensus (jpHMM-style).** Schultz A-K, Zhang M,
+  Leitner T, et al. (2006). A jumping profile hidden Markov model and applications to
+  recombination sites in HIV and HCV genomes. *BMC Bioinformatics* 7:265.
+- **MaxChi.** Maynard Smith J (1992). Analyzing the mosaic structure of genes. *Journal
+  of Molecular Evolution* 34(2):126-129.
+- **Bootscan / SimPlot.** Salminen MO, Carr JK, Burke DS, McCutchan FE (1995).
+  Identification of breakpoints in intergenotypic recombinants of HIV type 1 by
+  bootscanning. *AIDS Research and Human Retroviruses* 11(11):1423-1425. SimPlot++:
+  Samson S, Lord E, Makarenkov V (2022). *Bioinformatics* 38(11):3118-3120.
 - **3SEQ triplet test.** Boni MF, Posada D, Feldman MW (2007). An exact nonparametric
   method for inferring mosaic structure in sequence triplets. *Genetics* 176(2):1035-1047.
 - **PHI test (Pairwise Homoplasy Index).** Bruen TC, Philippe H, Bryant D (2006). A

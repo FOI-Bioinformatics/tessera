@@ -162,7 +162,11 @@ For an over-represented lineage, seed from a **finite pool** instead
   explicitly with `--nextclade-dataset <path>` (e.g. `nextstrain/sars-cov-2/XBB`,
   `community/neherlab/hiv-1/hxb2`). Every reference-tree tip is reconstructed from the
   dataset reference plus its mutations and labelled by clade, so the report names
-  parents by clade. Fetched pools are cached per dataset version.
+  parents by clade. Fetched pools are cached per dataset version. Add `--pool-consensus`
+  to compete **one denoised consensus genome per clade** (the majority base per column
+  across the clade's tips) instead of every tip -- a stable per-lineage reference (the
+  jpHMM principle) that is harder to lose to a near-identical adjacent-clade genome at low
+  divergence. The consensus pool is cached separately.
 
 ```
 tessera fill-references --query CRF01_AE.fasta --output filled/ --aligner mafft \

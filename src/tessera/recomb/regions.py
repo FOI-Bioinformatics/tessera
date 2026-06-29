@@ -35,7 +35,7 @@ from .stats import benjamini_hochberg, sign_test_pvalue
 
 # The region callers, in canonical (display) order; the single source of truth for the
 # valid ``--method`` set. The default ensemble runs hmm + 3seq; heuristic is legacy.
-CALLERS = ("hmm", "3seq", "heuristic")
+CALLERS = ("hmm", "3seq", "maxchi", "bootscan", "heuristic")
 DEFAULT_METHODS = ("hmm", "3seq")
 
 
@@ -206,6 +206,12 @@ def call_regions(
     elif params.method == "3seq":
         from .threeseq import call_regions_3seq
         regions, major, siblings = call_regions_3seq(result, analysis, params)
+    elif params.method == "maxchi":
+        from .maxchi import call_regions_maxchi
+        regions, major, siblings = call_regions_maxchi(result, analysis, params)
+    elif params.method == "bootscan":
+        from .bootscan import call_regions_bootscan
+        regions, major, siblings = call_regions_bootscan(result, analysis, window_size, params)
     else:
         regions, major = _call_regions_heuristic(result, analysis, window_size, params)
         siblings = []

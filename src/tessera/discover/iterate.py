@@ -98,6 +98,9 @@ class FillParams:
     derep_ani: float = 99.0  # skDER: collapse references >= this ANI to one representative
     report: bool = True  # call recombination detection after building the panel (False = stop)
     methods: tuple[str, ...] = DEFAULT_METHODS  # region caller(s) for the detection step
+    # Nextclade seeding: use one denoised consensus genome per clade as the pool (a stable
+    # per-lineage reference) instead of every tree tip. See discover/nextclade.build_pool.
+    pool_consensus: bool = False
     lineage_map: Path | None = None  # user TSV (accession<TAB>genotype) to type references
 
 
@@ -408,7 +411,8 @@ def _fetch_nextclade(params: FillParams, logger: logging.Logger) -> list[Path]:
         params.query, params.nextclade_dataset, email=params.email, logger=logger
     )
     cache = nextclade_cache(dataset.path, dataset.tag, override=params.cache_dir)
-    return build_pool(dataset, cache_dir=cache, logger=logger)
+    return build_pool(dataset, cache_dir=cache, logger=logger,
+                      per_clade_consensus=params.pool_consensus)
 
 
 def _fetch_diverse(params: FillParams, logger: logging.Logger) -> list[Path]:
