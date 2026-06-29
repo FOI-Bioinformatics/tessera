@@ -309,6 +309,19 @@ def parse_regions(path: Path) -> list[dict]:
     return [dict(zip(header, ln.split("\t"), strict=False)) for ln in lines[1:]]
 
 
+def parse_signal(path: Path) -> tuple[str, str]:
+    """Read the parent-free PHI p-value and Rmin from the profile TSV header line:
+    ``# PHI p-value\t<p>\t(window ..., <n> sites, Rmin <rmin>)``."""
+    if not path.exists():
+        return "-", "-"
+    head = path.read_text().splitlines()[0]
+    fields = head.split("\t")
+    phi_p = fields[1] if len(fields) > 1 else "-"
+    tail = fields[2] if len(fields) > 2 else ""
+    rmin = tail.split("Rmin")[-1].strip(" )") if "Rmin" in tail else "-"
+    return phi_p, rmin
+
+
 def clade_of_label(label: str, tips: dict[str, tuple[str, list[str]]]) -> str:
     base = strip_sequence_extension(label).split(".")[0]
     for acc, (clade, _) in tips.items():
@@ -429,6 +442,7 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
     mode = "info-site" if windowing.startswith("informative") else "bp"
 
     regions = parse_regions(out / "recombination_regions.tsv")
+    phi_p, rmin = parse_signal(out / "recombination_profile.tsv")
     present = [r for r in regions if r.get("donor_absent") != "yes"]
     major_clade = clade_of_label(regions[0]["major_parent"], tips) if regions else "?"
     donor_hits = [
@@ -444,7 +458,7 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
         "divergence": divergence, "n_refs": len(selected),
         "true_span": (q_start, q_end), "n_regions": len(present),
         "major_clade": major_clade, "detected": detected, "mode": mode,
-        "backbone_ok": backbone_ok, "donor_ok": donor_ok,
+        "backbone_ok": backbone_ok, "donor_ok": donor_ok, "phi_p": phi_p, "rmin": rmin,
         "pass": detected and backbone_ok and donor_ok, "runtime": runtime,
     }
 
@@ -467,8 +481,9 @@ def main(argv: list[str]) -> int:
 
     print("\n" + "=" * 80)
     print(f"{'case':16} {'backbone x donor':24} {'div':>5} {'major':>10} "
-          f"{'det':>3} {'bb':>3} {'don':>3} {'mode':>9} {'time':>6}  verdict")
-    print("-" * 88)
+          f"{'det':>3} {'bb':>3} {'don':>3} {'mode':>9} {'PHI p':>8} {'Rmin':>4} "
+          f"{'time':>6}  verdict")
+    print("-" * 104)
     for r in results:
         if r.get("skip") is not None:
             print(f"{r['name']:16} SKIP: {r['skip'][:54]}")
@@ -481,6 +496,7 @@ def main(argv: list[str]) -> int:
               f"{r['divergence']:4.1f}% {r['major_clade']:>10.10} "
               f"{'Y' if r['detected'] else 'n':>3} {'Y' if r['backbone_ok'] else 'n':>3} "
               f"{'Y' if r['donor_ok'] else 'n':>3} {r['mode']:>9} "
+              f"{r.get('phi_p', '-'):>8.8} {r.get('rmin', '-'):>4} "
               f"{r['runtime']:5.0f}s  {verdict}")
     passed = sum(1 for r in results if r.get("pass"))
     ran = sum(1 for r in results if r.get("pass") is not None)

@@ -20,6 +20,7 @@ from pathlib import Path
 
 from .analyze import AnalysisResult, rank_datasets, stats_sort_key, winner_label
 from .coverage import CoverageGap
+from .diagnostics import RecombinationSignal
 from .regions import Region
 from .similarity import WindowSimilarity
 from .typing import LineageMap, typed
@@ -240,6 +241,22 @@ def write_coverage_tsv(
                 g.msa_start, g.msa_end, g.query_start, g.query_end, g.length_bp,
                 g.n_windows, g.best_label, g.mean_best, g.kind,
             ])) + "\n")
+
+
+def write_profile_tsv(
+    signal: RecombinationSignal, output_dir: Path, logger: logging.Logger
+) -> None:
+    """Write the per-informative-site PHI profile (the parent-free signal track)."""
+    path = output_dir / "recombination_profile.tsv"
+    logger.info("Writing recombination signal profile: %s", path)
+    with open(path, "w") as fo:
+        fo.write(
+            f"# PHI p-value\t{signal.phi_p:.4g}\t(window {signal.phi_window} "
+            f"informative sites, {signal.n_informative} sites, Rmin {signal.rmin})\n"
+        )
+        fo.write("msa_pos\tquery_pos\tphi\n")
+        for msa_pos, query_pos, value in signal.profile:
+            fo.write(f"{msa_pos}\t{query_pos}\t{value:.4f}\n")
 
 
 # ---------------------------------------------------------------------------
@@ -812,8 +829,8 @@ def _methods_html(provenance: dict[str, str]) -> str:
 
 def _footer_html(provenance: dict[str, str]) -> str:
     files = [
-        "recombination_regions.tsv", "coverage_gaps.tsv", "window_winners.tsv",
-        "similarity_stats.tsv", "similarity_windows.tsv",
+        "recombination_regions.tsv", "coverage_gaps.tsv", "recombination_profile.tsv",
+        "window_winners.tsv", "similarity_stats.tsv", "similarity_windows.tsv",
         "similarity_top*.pdf", "similarity_pair.pdf",
     ]
     flist = ", ".join(f"<code>{f}</code>" for f in files)
@@ -878,6 +895,62 @@ def _coverage_html(gaps: list[CoverageGap], threshold: float) -> str:
     return f'{intro}<div class="scroll"><table class="table">{head}{rows}</table></div>'
 
 
+def _signal_profile_div(signal: RecombinationSignal) -> str:
+    """A compact line of the PHI profile (mean local incompatibility) vs MSA position;
+    a dip marks where recombination signal concentrates."""
+    if not signal.profile:
+        return ""
+    import plotly.graph_objects as go
+
+    xs = [msa_pos for msa_pos, _, _ in signal.profile]
+    ys = [value for _, _, value in signal.profile]
+    fig = go.Figure(go.Scatter(x=xs, y=ys, mode="lines", line={"color": "#6b46c1", "width": 1}))
+    fig.update_layout(
+        template="plotly_white", height=220, margin={"l": 50, "r": 20, "t": 10, "b": 40},
+        xaxis_title="MSA position", yaxis_title="local incompatibility",
+    )
+    return fig.to_html(full_html=False, include_plotlyjs=False)
+
+
+def _signal_html(signal: RecombinationSignal | None, alpha: float = 0.05) -> str:
+    """The parent-free recombination-signal section: PHI p-value, Rmin, profile."""
+    if signal is None:
+        return (
+            '<p class="cap">Too few informative sites in the alignment for a parent-free '
+            'recombination test.</p>'
+        )
+    significant = signal.phi_p < alpha
+    verdict = (
+        '<strong>significant recombination signal</strong>' if significant
+        else 'no significant recombination signal'
+    )
+    intervals = ", ".join(
+        f"{_fmt_int(lo)}&ndash;{_fmt_int(hi)}" for lo, hi in signal.rmin_intervals[:8]
+    )
+    if len(signal.rmin_intervals) > 8:
+        intervals += ", &hellip;"
+    intro = (
+        '<p class="cap">A parent-free test that asks only whether the alignment carries '
+        'recombination at all (no candidate parents needed), strongest where divergence is '
+        'low or the true donor is absent. The PHI test (Bruen et al. 2006) is significant '
+        'when nearby sites are more compatible than a random reordering; Rmin (Hudson &amp; '
+        'Kaplan 1985) is the minimum number of recombination events the four-gamete test '
+        'forces, with the intervals (query coordinates) as breakpoint candidates.</p>'
+    )
+    rows = (
+        f'<tr><td class="lbl">PHI test</td><td class="num strong">p = {signal.phi_p:.4g}</td>'
+        f'<td class="lbl">{verdict} (alpha {alpha:g}; {signal.n_informative} informative '
+        f'sites)</td></tr>'
+        f'<tr><td class="lbl">Min recombination events (Rmin)</td>'
+        f'<td class="num strong">{signal.rmin}</td>'
+        f'<td class="lbl">{"intervals " + intervals if intervals else "none"}</td></tr>'
+    )
+    return (
+        f'{intro}<div class="scroll"><table class="table">{rows}</table></div>'
+        f'{_signal_profile_div(signal)}'
+    )
+
+
 def write_html_report(
     result: WindowSimilarity,
     analysis: AnalysisResult,
@@ -891,6 +964,7 @@ def write_html_report(
     extra_sections: list[tuple[str, str]] | None = None,
     lineage_map: LineageMap | None = None,
     query_lineage: str | None = None,
+    signal: RecombinationSignal | None = None,
 ) -> Path:
     """Write a single self-contained ``report.html``."""
     gaps = coverage_gaps or []
@@ -927,6 +1001,8 @@ def write_html_report(
         'alignment; coloured bands are called donor regions, hatched bands are low-coverage '
         'stretches. Drag to zoom, hover for values.</p>'
         f"{plot_div}</section>"
+        '<section class="section"><div class="eyebrow">Recombination signal (parent-free)</div>'
+        f"{_signal_html(signal)}</section>"
         '<section class="section"><div class="eyebrow">Window winners</div>'
         '<p class="cap">Windows in which each reference is the query\'s closest match '
         '(ties included).</p>'
@@ -962,6 +1038,7 @@ def write_reports(
     extra_sections: list[tuple[str, str]] | None = None,
     lineage_map: LineageMap | None = None,
     query_lineage: str | None = None,
+    signal: RecombinationSignal | None = None,
 ) -> None:
     """Write every table, plot and the HTML report for a completed scan."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -972,6 +1049,8 @@ def write_reports(
     write_winners_tsv(analysis, output_dir, logger)
     write_regions_tsv(regions, output_dir, logger)
     write_coverage_tsv(gaps, coverage_threshold, output_dir, logger)
+    if signal is not None:
+        write_profile_tsv(signal, output_dir, logger)
 
     top_datasets = rank_datasets(analysis, top_n)
     logger.info("Top %d nearest datasets: %s", len(top_datasets), ", ".join(top_datasets))
@@ -984,5 +1063,5 @@ def write_reports(
         result, analysis, regions, top_datasets, provenance, output_dir, logger,
         coverage_gaps=gaps, coverage_threshold=coverage_threshold,
         extra_sections=extra_sections, lineage_map=lineage_map,
-        query_lineage=query_lineage,
+        query_lineage=query_lineage, signal=signal,
     )

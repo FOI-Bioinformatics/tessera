@@ -95,6 +95,15 @@ def recomb(
         5, "--informative-step",
         help="Informative-site mode: step in informative-site index space.",
     ),
+    phi: bool = typer.Option(
+        True, "--phi/--no-phi",
+        help="Report the parent-free recombination signal (PHI test + Hudson-Kaplan "
+        "Rmin) alongside the called regions. Independent of --method.",
+    ),
+    phi_window: int = typer.Option(
+        100, "--phi-window",
+        help="PHI test window width, in informative-site ranks.",
+    ),
 ) -> None:
     """Identify recombination events in a multiple sequence alignment."""
     from ..recomb.run import RecombParams, run_recomb
@@ -125,6 +134,8 @@ def recomb(
             informative_sites=informative_sites,
             informative_window=informative_window,
             informative_step=informative_step,
+            phi=phi,
+            phi_window=phi_window,
             lineage_map_path=lineage_map,
         )
         run_recomb(params, logger)

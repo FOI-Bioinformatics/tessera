@@ -107,6 +107,13 @@ enterovirus D68 and PRRSV. For each dataset it:
    (RSV `A.1` / `A.D.1.8`) still requires resolving the exact donor. Runtime is
    recorded per case.
 
+The summary table also carries the **parent-free** recombination signal per case
+(`PHI p` and `Rmin`), read from `recombination_profile.tsv`. This is independent of the
+backbone/donor verdict: it confirms the dependency-free PHI test and Hudson-Kaplan Rmin
+fire on the recombinant hybrids across the whole divergence range -- including the
+low-divergence mpox (0.5%) and ebola (3.7%) cases where the parent-attributed callers
+have least to work with (PHI p at the permutation floor, Rmin well above zero).
+
 ```
 export PATH="$HOME/miniforge3/envs/recomfi-aln/bin:$PATH"
 python validation/run_hybrids.py            # all cases

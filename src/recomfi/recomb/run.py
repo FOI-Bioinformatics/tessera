@@ -17,6 +17,7 @@ from .coverage import (
     flag_undercovered_regions,
     gaps_as_regions,
 )
+from .diagnostics import recombination_signal
 from .hmm import DEFAULT_JUMP_RATE
 from .regions import RegionParams, call_regions
 from .report import print_coverage, print_regions, print_summary, write_reports
@@ -50,6 +51,10 @@ class RecombParams:
     informative_sites: bool | None = None
     informative_window: int = 40  # polymorphic sites per window
     informative_step: int = 5  # step in informative-site index space
+    # Parent-free recombination signal (PHI test + Hudson-Kaplan Rmin), reported
+    # alongside the parent-attributed regions. Independent of --method; cheap.
+    phi: bool = True
+    phi_window: int = 100  # PHI window width, in informative-site ranks
     # Auto-trigger: switch to informative-site windowing when the references differ at
     # fewer than this fraction of columns (low inter-reference divergence, so a
     # base-pair window dilutes the few discriminating sites). 8% sits below the
@@ -174,6 +179,21 @@ def run_recomb(
     # forced; the base-pair result is kept for the coverage diagnostic either way.
     result, windowing = _select_windowing(bp_result, params, query_label, logger)
 
+    # Parent-free recombination signal: does the alignment carry recombination at all,
+    # and where -- computed once from every sequence, independent of the caller. Most
+    # informative where divergence is low or the true donor is absent from the panel.
+    signal = None
+    if params.phi:
+        signal = recombination_signal(
+            bp_result.rows, query_label, bp_result.column_to_query,
+            window=params.phi_window,
+        )
+        if signal is not None:
+            logger.info(
+                "Recombination signal (parent-free): PHI p=%.4g, Rmin=%d (%d informative "
+                "sites).", signal.phi_p, signal.rmin, signal.n_informative,
+            )
+
     analysis = analyze(result)
     per_window_winners = winners_per_window(result)
 
@@ -260,6 +280,12 @@ def run_recomb(
         provenance["excluded siblings (query's own lineage)"] = ", ".join(
             ev.label for ev in excluded_siblings
         )
+    if signal is not None:
+        provenance["recombination signal (PHI)"] = (
+            f"p={signal.phi_p:.4g} ({signal.n_informative} informative sites, "
+            f"window {signal.phi_window})"
+        )
+        provenance["min recombination events (Rmin)"] = str(signal.rmin)
 
     output_dir = Path(params.output)
     logger.info("Writing outputs to %s", output_dir)
@@ -268,7 +294,7 @@ def run_recomb(
         top_n=params.top_n, plot_format=params.plot_format, logger=logger,
         coverage_gaps=coverage_gaps, coverage_threshold=coverage_threshold,
         extra_sections=extra_sections, lineage_map=lineage_map,
-        query_lineage=query_lineage,
+        query_lineage=query_lineage, signal=signal,
     )
     logger.info("All done.")
     return windowing
