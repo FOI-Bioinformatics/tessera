@@ -157,14 +157,14 @@ at least three genomes -- including datasets with no clade attribute at all
 | `enterovirus_d68` | B3 x A2/D | 11.3 % | PASS |
 | `zika` | Asian x African | 10.9 % | PASS |
 | `rubella` | 2B x 1G | 9.0 % | PASS |
-| `flu_h3n2_ha` | K x unassigned | 7.7 % | FAIL -- HA segment; fine subclades |
+| `flu_h3n2_ha` | K x unassigned | 7.7 % | FAIL -- HA segment; the ensemble's 3SEQ now calls a region, but the fine subclade is not matched |
 | `measles` | H1 x B3 | 7.5 % | PASS |
 | `mumps` | A x K | 6.9 % | PASS |
 | `rsv_a` | A.1 x A.D.1.8 | 6.6 % | FAIL -- backbone recovered, deep donor sub-clade not |
 | `ebola` | Ebov x Ebov | 3.7 % | FAIL -- info-site; backbone recovered, deep donor sub-lineage not |
 | `mpox` | Ib x IIa | 0.5 % | FAIL -- info-site; recombination + donor recovered, backbone labelled `Ib/IIb` |
 | `sars_cov_2` | 22B x ... | 0.4 % | SKIP -- Omicron clades too similar |
-| `vzv` | clade 2 x ... | 0.2 % | FAIL -- info-site; genome too conserved to call |
+| `vzv` | clade 2 x ... | 0.2 % | FAIL -- info-site; the ensemble's 3SEQ now calls a region and recovers the donor, but the backbone clade is mislabelled |
 | `hantavirus` | -- | -- | SKIP -- no clade attribute in the tree |
 | `oropouche` | -- | -- | SKIP -- no clade attribute in the tree |
 | `cchfv` | -- | -- | SKIP -- < 2 clades with >= 3 genomes |
@@ -180,10 +180,17 @@ identical to both parents), while informative-site windowing detects the
 recombination, recovers the IIa donor across the true insert, and places the
 breakpoint. Their strict PASS still fails on edges that are not detection misses:
 mpox's backbone genome carries the coarser tree label `Ib/IIb` (the recombination
-itself is called correctly), ebola's donor is a deep Ebov sub-lineage 3.7 % from the
-backbone, and VZV at 0.2 % is simply too conserved for any caller. Only within-Omicron
+itself is called correctly), and ebola's donor is a deep Ebov sub-lineage 3.7 % from the
+backbone. With the default ensemble the 3SEQ caller now also calls a region on VZV
+(0.2 %) and recovers the donor -- a pure sensitivity gain over the HMM alone -- though
+the backbone clade is still mislabelled, so it stays FAIL. Only within-Omicron
 SARS-CoV-2 stays SKIP (< 4 % and the dataset offers no more-divergent pair); three
 segmented viruses carry no usable clade attribute.
+
+The PASS/FAIL set is unchanged from the single-HMM baseline (13/20), so the ensemble
+adds recall without cost: 10 of the 20 cases that run recover their donor by **both**
+callers (the `agr` column), and on `flu_h3n2_ha` and `vzv` 3SEQ now calls a region the
+HMM alone missed -- those remain FAIL on fine clade labelling, not on detection.
 
 The moderate-divergence cases (measles, mumps, and the earlier hepatitis-A
 inversion) were not a caller limitation but a **panel-recruitment artifact**: for a
