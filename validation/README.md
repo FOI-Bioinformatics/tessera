@@ -118,6 +118,11 @@ clade-defining sites are mutually compatible and dilute the genome-wide average)
 can stay non-significant even where detection succeeds (e.g. yellow fever); there the
 Rmin count and the per-site PHI profile carry the parent-free signal.
 
+Detection runs the default **ensemble** (`hmm,3seq`), so the table's `agr` column marks
+cases whose recovered donor region was called by more than one method (agreement, hence
+higher confidence). The ensemble's union does not lower the documented PASS/FAIL set --
+it can only add 3SEQ-recovered regions the HMM alone would miss.
+
 ```
 export PATH="$HOME/miniforge3/envs/recomfi-aln/bin:$PATH"
 python validation/run_hybrids.py            # all cases

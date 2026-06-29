@@ -61,6 +61,11 @@ def detect(
         help="TSV of reference genotypes (accession<TAB>genotype) to override the typed "
         "names mined from genome headers; the report names parents by lineage.",
     ),
+    method: str = typer.Option(
+        "hmm,3seq", "--method",
+        help="Region caller(s): a comma-separated list of hmm/3seq/heuristic, or 'all'. "
+        "Several run as an ensemble and their regions are merged (default hmm,3seq).",
+    ),
     threads: int = typer.Option(4, "-t", "--threads", help="Aligner worker threads."),
 ) -> None:
     """Detect recombination in a query with no reference genomes supplied.
@@ -75,6 +80,7 @@ def detect(
 
     from ..aligners.base import registry as aligner_registry
     from ..discover.iterate import FillParams, fill_references
+    from ..recomb.regions import parse_methods
 
     logger = get_logger(output)
     with stage_errors(logger):
@@ -91,6 +97,6 @@ def detect(
             candidate_pool=candidate_pool, taxon=taxon,
             seed_mode="parents", curate=True,
             auto_diversify=True, negative_lineage=True,
-            lineage_map=lineage_map,
+            methods=parse_methods(method), lineage_map=lineage_map,
         )
         fill_references(params, logger)

@@ -96,17 +96,20 @@ commands; regenerate with `python example_data/make_example.py`.
 ## How detection works
 
 The reference winning the most windows is the **major parent** (the backbone donor).
-The default HMM caller then reports a segment as recombinant only when a donor beats
-the major parent on the **discordant sites** by a sign test, so it recovers subtle
-breakpoints without inventing regions from noise. On near-identical panels (mpox, VZV,
-within-species sets) Tessera automatically switches to **informative-site windowing**
-to keep the signal from being diluted. Every run also reports the parent-free PHI test
-and Hudson-Kaplan Rmin, which flag recombination even when the donor is missing from
-the panel.
+By default Tessera runs an **ensemble** of callers -- the HMM segmentation and the 3SEQ
+triplet test (`--method hmm,3seq`) -- and merges their regions into one consensus: the
+union raises recall (3SEQ recovers short low-divergence tracts the HMM dilutes), and a
+region called by more than one method is flagged as agreeing and treated as higher
+confidence. The HMM reports a segment only when a donor beats the major parent on the
+**discordant sites** by a sign test, and on near-identical panels Tessera automatically
+switches to **informative-site windowing** to keep the signal from being diluted. Every
+run also reports the parent-free PHI test and Hudson-Kaplan Rmin, which flag
+recombination even when the donor is missing from the panel.
 
-Each called region carries a support, a sign-test p-value with a Benjamini-Hochberg
-q-value, and a breakpoint interval. Full detail -- the HMM, low-divergence windowing,
-the 3SEQ test, and the PHI/Rmin diagnostic -- is in
+Each called region carries the calling method(s), a support, a sign-test p-value with a
+Benjamini-Hochberg q-value, and a breakpoint interval. Pin a single caller with
+`--method hmm`. Full detail -- the ensemble, the HMM, low-divergence windowing, the
+3SEQ test, and the PHI/Rmin diagnostic -- is in
 [docs/detection-methods.md](docs/detection-methods.md).
 
 ![divergent recombinant: a clean similarity crossover](docs/figures/divergent.png)

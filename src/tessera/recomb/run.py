@@ -18,8 +18,9 @@ from .coverage import (
     gaps_as_regions,
 )
 from .diagnostics import recombination_signal
+from .ensemble import consensus_regions, reconcile_major
 from .hmm import DEFAULT_JUMP_RATE
-from .regions import RegionParams, call_regions
+from .regions import DEFAULT_METHODS, RegionParams, call_regions
 from .report import print_coverage, print_regions, print_summary, write_reports
 from .similarity import (
     compute_similarity,
@@ -39,8 +40,9 @@ class RecombParams:
     metric: str = "pdist"
     top_n: int = 5
     plot_format: str = "pdf"
-    # Region calling. method="hmm" (default, statistical) or "heuristic" (legacy).
-    method: str = "hmm"
+    # Region calling. The default ensemble runs the hmm and 3seq callers and merges
+    # their regions into a consensus; a single-method tuple reproduces one caller.
+    methods: tuple[str, ...] = DEFAULT_METHODS
     jump_rate: float = DEFAULT_JUMP_RATE  # HMM prior switch probability per window
     alpha: float = 0.05  # significance level for the donor-vs-major site test
     exclude_siblings: bool = True  # set aside the query's own-lineage siblings first
@@ -87,10 +89,11 @@ def _select_windowing(bp_result, params: RecombParams, query_label: str, logger)
     fewer than ``informative_window`` informative sites.
     """
     forced = params.informative_sites
-    if params.method != "hmm":
+    # Informative-site windowing is the HMM caller's; it only applies when hmm runs.
+    if "hmm" not in params.methods:
         if forced:
             logger.warning(
-                "--informative-sites requires --method hmm; using base-pair windowing."
+                "--informative-sites applies to the hmm caller; using base-pair windowing."
             )
         return bp_result, "base-pair"
 
@@ -196,20 +199,40 @@ def run_recomb(
 
     analysis = analyze(result)
     per_window_winners = winners_per_window(result)
+    # 3seq / heuristic assume base-pair window geometry; the HMM uses the selected
+    # (possibly informative-site) result. Reuse the same analysis when they coincide.
+    analysis_bp = analysis if result is bp_result else analyze(bp_result)
 
-    region_params = RegionParams.with_defaults(
-        params.window_size,
-        min_region=params.min_region,
-        margin=params.margin,
-        merge_gap=params.merge_gap,
-        method=params.method,
-        jump_rate=params.jump_rate,
-        alpha=params.alpha,
-        exclude_siblings=params.exclude_siblings,
-        cluster_lineages=params.cluster_lineages,
-    )
-    regions, major_parent, excluded_siblings = call_regions(
-        result, analysis, params.window_size, region_params
+    def _region_params(method: str) -> RegionParams:
+        return RegionParams.with_defaults(
+            params.window_size,
+            min_region=params.min_region,
+            margin=params.margin,
+            merge_gap=params.merge_gap,
+            method=method,
+            jump_rate=params.jump_rate,
+            alpha=params.alpha,
+            exclude_siblings=params.exclude_siblings,
+            cluster_lineages=params.cluster_lineages,
+        )
+
+    # Run each selected caller (sharing the one similarity scan + analysis), then merge
+    # their regions into a single consensus that records per-region method agreement.
+    per_method: dict[str, list] = {}
+    majors: dict[str, str | None] = {}
+    excluded_siblings: list = []
+    for method in params.methods:
+        res, ana = (result, analysis) if method == "hmm" else (bp_result, analysis_bp)
+        regs, major_m, sibs = call_regions(res, ana, params.window_size, _region_params(method))
+        per_method[method] = regs
+        majors[method] = major_m
+        if method == "hmm":
+            excluded_siblings = sibs
+
+    major_parent, per_major = reconcile_major(majors)
+    regions, method_breakdown = consensus_regions(
+        per_method, major=major_parent,
+        rmin_intervals=signal.rmin_intervals if signal else None,
     )
     if excluded_siblings:
         logger.info(
@@ -218,9 +241,11 @@ def run_recomb(
             len(excluded_siblings),
             ", ".join(f"{ev.label} (leads {ev.lead_frac:.0%})" for ev in excluded_siblings),
         )
+    n_agree = sum(1 for r in regions if len(r.methods) >= 2)
     logger.info(
-        "Major parent: %s; %d recombinant region(s) called.",
-        major_parent or "n/a", len(regions),
+        "Caller(s): %s -- major parent %s; %d recombinant region(s)%s.",
+        ", ".join(params.methods), major_parent or "n/a", len(regions),
+        f", {n_agree} called by >1 method" if len(params.methods) > 1 else "",
     )
 
     coverage_params = CoverageParams.with_defaults(
@@ -256,6 +281,16 @@ def run_recomb(
     print_regions(regions, major_parent, echo=logger.info)
     print_coverage(coverage_gaps, coverage_threshold, echo=logger.info)
 
+    def _caller_desc(method: str) -> str:
+        if method == "hmm":
+            return f"hmm (jump-rate {params.jump_rate:g}, alpha {params.alpha:g})"
+        if method == "3seq":
+            return f"3seq (triplet max-descent test, alpha {params.alpha:g})"
+        min_region = params.min_region if params.min_region is not None else params.window_size
+        merge_gap = params.merge_gap if params.merge_gap is not None else params.window_size
+        return f"heuristic (min {min_region} / margin {params.margin} / merge {merge_gap})"
+
+    caller_desc = " + ".join(_caller_desc(m) for m in params.methods)
     provenance = {
         "tessera version": __version__,
         "date (UTC)": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S"),
@@ -264,14 +299,7 @@ def run_recomb(
         "datasets": str(len(result.similarities)),
         "window / step": f"{params.window_size} / {params.window_step}",
         "metric": params.metric,
-        "caller": (
-            f"hmm (jump-rate {params.jump_rate:g}, alpha {params.alpha:g})"
-            if params.method == "hmm"
-            else f"3seq (triplet max-descent test, alpha {params.alpha:g})"
-            if params.method == "3seq"
-            else f"heuristic (min {region_params.min_region} / margin "
-                 f"{region_params.margin} / merge {region_params.merge_gap})"
-        ),
+        "caller": f"ensemble: {caller_desc}" if len(params.methods) > 1 else caller_desc,
         "windowing": windowing,
         "major parent": major_parent or "n/a",
         "coverage threshold / gaps": f"{coverage_threshold:.3f} / {len(coverage_gaps)}",
@@ -295,6 +323,7 @@ def run_recomb(
         coverage_gaps=coverage_gaps, coverage_threshold=coverage_threshold,
         extra_sections=extra_sections, lineage_map=lineage_map,
         query_lineage=query_lineage, signal=signal,
+        methods_run=params.methods, method_breakdown=method_breakdown, per_major=per_major,
     )
     logger.info("All done.")
     return windowing

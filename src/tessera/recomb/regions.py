@@ -25,12 +25,38 @@ from dataclasses import dataclass
 from math import isnan
 from statistics import mean
 
+from ..core.errors import UserInputError
 from .analyze import AnalysisResult, rank_datasets
 from .clusters import all_singletons, cluster_references, clustered_view
 from .hmm import DEFAULT_JUMP_RATE, segment_query
 from .siblings import SiblingEvidence, sibling_aware_states
 from .similarity import WindowSimilarity, discordant_counts
 from .stats import benjamini_hochberg, sign_test_pvalue
+
+# The region callers, in canonical (display) order; the single source of truth for the
+# valid ``--method`` set. The default ensemble runs hmm + 3seq; heuristic is legacy.
+CALLERS = ("hmm", "3seq", "heuristic")
+DEFAULT_METHODS = ("hmm", "3seq")
+
+
+def parse_methods(spec: str) -> tuple[str, ...]:
+    """Parse a ``--method`` value into an ordered, de-duplicated tuple of callers.
+
+    Accepts a comma-separated list of :data:`CALLERS` or the keyword ``all``. Order
+    follows :data:`CALLERS` regardless of the input order, so the report is stable.
+    Raises :class:`UserInputError` on an unknown token.
+    """
+    tokens = [t.strip() for t in spec.split(",") if t.strip()]
+    if not tokens:
+        raise UserInputError("No --method given. Choose from: all, " + ", ".join(CALLERS))
+    if "all" in tokens:
+        return CALLERS
+    unknown = [t for t in tokens if t not in CALLERS]
+    if unknown:
+        raise UserInputError(
+            f"Invalid --method {', '.join(unknown)}. Choose from: all, " + ", ".join(CALLERS)
+        )
+    return tuple(c for c in CALLERS if c in tokens)
 
 
 def _signif(x: float) -> float:
@@ -128,6 +154,12 @@ class Region:
     # genome competed; >1 = a pooled lineage), for the report.
     minor_cluster_size: int = 1
     major_cluster_size: int = 1
+    # The caller(s) that produced this region. A single-method run sets one entry; the
+    # ensemble merge (recomb/ensemble.py) sets the set of agreeing callers.
+    methods: tuple[str, ...] = ()
+    # Set by the ensemble merge when the region overlaps a Hudson-Kaplan Rmin interval
+    # (parent-free corroboration from the PHI/Rmin signal).
+    parent_free_support: bool = False
 
 
 @dataclass
@@ -170,12 +202,16 @@ def call_regions(
     the query's whole-genome siblings set aside before segmenting (HMM caller only).
     """
     if params.method == "hmm":
-        return _call_regions_hmm(result, window_size, params)
-    if params.method == "3seq":
+        regions, major, siblings = _call_regions_hmm(result, window_size, params)
+    elif params.method == "3seq":
         from .threeseq import call_regions_3seq
-        return call_regions_3seq(result, analysis, params)
-    regions, major = _call_regions_heuristic(result, analysis, window_size, params)
-    return regions, major, []
+        regions, major, siblings = call_regions_3seq(result, analysis, params)
+    else:
+        regions, major = _call_regions_heuristic(result, analysis, window_size, params)
+        siblings = []
+    for r in regions:  # tag provenance so the ensemble merge knows the source caller
+        r.methods = (params.method,)
+    return regions, major, siblings
 
 
 def _call_regions_hmm(

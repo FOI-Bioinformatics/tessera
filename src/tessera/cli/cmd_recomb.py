@@ -23,10 +23,13 @@ def recomb(
     window_step: int = typer.Option(100, "--window-step", help="Sliding window step (columns)."),
     metric: str = typer.Option("pdist", "--metric", help="Similarity metric: pdist."),
     method: str = typer.Option(
-        "hmm", "--method",
-        help="Region caller: hmm (default, HMM segmentation + a discordant-site "
-        "significance test), 3seq (scan-aware triplet test on discriminating sites, "
-        "an exact p-value; strong at low divergence), or heuristic (legacy margin/merge).",
+        "hmm,3seq", "--method",
+        help="Region caller(s), comma-separated, or 'all'. Several run as an ensemble "
+        "and their regions are merged into a consensus (agreement raises confidence); "
+        "the default is hmm,3seq. Callers: hmm (HMM segmentation + a discordant-site "
+        "significance test), 3seq (scan-aware triplet test on discriminating sites, an "
+        "exact p-value; strong at low divergence), heuristic (legacy margin/merge). Pass "
+        "a single name (e.g. --method hmm) for one caller.",
     ),
     jump_rate: float = typer.Option(
         1e-3, "--jump-rate",
@@ -106,12 +109,13 @@ def recomb(
     ),
 ) -> None:
     """Identify recombination events in a multiple sequence alignment."""
+    from ..recomb.regions import parse_methods
     from ..recomb.run import RecombParams, run_recomb
 
     logger = get_logger()
     with stage_errors(logger):
         _require_choice(plot_format, {"pdf", "png", "svg"}, "--plot-format")
-        _require_choice(method, {"hmm", "3seq", "heuristic"}, "--method")
+        methods = parse_methods(method)
         params = RecombParams(
             msa=msa,
             output=output,
@@ -121,7 +125,7 @@ def recomb(
             metric=metric,
             top_n=top_n,
             plot_format=plot_format,
-            method=method,
+            methods=methods,
             jump_rate=jump_rate,
             alpha=alpha,
             min_region=min_region,

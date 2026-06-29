@@ -23,6 +23,7 @@ from ..core.io import read_fasta, strip_sequence_extension
 from ..msa.build import MsaParams, build_msa
 from ..recomb.coverage import CoverageParams, call_coverage_gaps
 from ..recomb.pango import crosscheck_html, expand_recombinant, load_alias_key
+from ..recomb.regions import DEFAULT_METHODS
 from ..recomb.run import RecombParams, run_recomb
 from ..recomb.similarity import compute_similarity
 from ..recomb.typing import (
@@ -96,6 +97,7 @@ class FillParams:
     af_min: float = 80.0  # ... over at least this % of the query (whole-genome match)
     derep_ani: float = 99.0  # skDER: collapse references >= this ANI to one representative
     report: bool = True  # call recombination detection after building the panel (False = stop)
+    methods: tuple[str, ...] = DEFAULT_METHODS  # region caller(s) for the detection step
     lineage_map: Path | None = None  # user TSV (accession<TAB>genotype) to type references
 
 
@@ -289,7 +291,7 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
                 msa=panel_msa, output=params.output, query=query_label,
                 window_size=params.window_size, window_step=params.window_step,
                 coverage_floor=params.coverage_floor, coverage_rel_drop=params.coverage_rel_drop,
-                lineage_map=lineage_map or None,
+                methods=params.methods, lineage_map=lineage_map or None,
             ),
             logger,
             extra_sections=extra_sections,

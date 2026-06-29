@@ -88,8 +88,13 @@ def print_summary(analysis: AnalysisResult, echo=print) -> None:
 
 REGION_HEADER = [
     "Minor parent", "Major parent", "Query start", "Query end", "Length(bp)",
-    "Sim minor", "Sim major", "Support", "q-value", "Breakpoint",
+    "Sim minor", "Sim major", "Support", "q-value", "Breakpoint", "Method(s)",
 ]
+
+
+def _methods_text(region: Region) -> str:
+    """The caller(s) that found a region, for the console/TSV ('-' for donor-absent)."""
+    return ", ".join(region.methods) if region.methods else "-"
 
 
 def _breakpoint_str(region: Region) -> str:
@@ -108,7 +113,7 @@ def _region_row(region: Region) -> tuple[str, list]:
         [
             region.major_parent, region.query_start, region.query_end,
             region.length_bp, region.mean_sim_minor, region.mean_sim_major,
-            support, qval, _breakpoint_str(region),
+            support, qval, _breakpoint_str(region), _methods_text(region),
         ],
     )
 
@@ -201,7 +206,7 @@ def write_regions_tsv(regions: list[Region], output_dir: Path, logger: logging.L
         "query_start", "query_end", "length_bp", "n_windows",
         "mean_sim_minor", "mean_sim_major", "margin",
         "support", "pvalue", "qvalue", "posterior", "breakpoint_lo", "breakpoint_hi",
-        "donor_undercovered", "donor_absent",
+        "donor_undercovered", "donor_absent", "methods", "parent_free_support",
     ]
     with open(path, "w") as fo:
         fo.write("\t".join(header) + "\n")
@@ -219,8 +224,29 @@ def write_regions_tsv(regions: list[Region], output_dir: Path, logger: logging.L
                     "NA" if r.breakpoint_hi is None else r.breakpoint_hi,
                     "yes" if r.donor_undercovered else "no",
                     "yes" if r.donor_absent else "no",
+                    ",".join(r.methods) if r.methods else "NA",
+                    "yes" if r.parent_free_support else "no",
                 ])) + "\n"
             )
+
+
+def write_methods_tsv(
+    breakdown: list[dict], methods_run: tuple[str, ...], output_dir: Path,
+    logger: logging.Logger,
+) -> None:
+    """Write the per-region x per-method agreement matrix (the ensemble breakdown)."""
+    path = output_dir / "recombination_methods.tsv"
+    logger.info("Writing method comparison: %s", path)
+    with open(path, "w") as fo:
+        fo.write("\t".join(["minor_parent", "query_start", "query_end",
+                            *methods_run, "parent_free_support"]) + "\n")
+        for b in breakdown:
+            called = b["per_method_support"]
+            cells = [("yes" if m in called else "no") for m in methods_run]
+            fo.write("\t".join(map(str, [
+                b["minor_parent"], b["query_start"], b["query_end"], *cells,
+                "yes" if b["parent_free_support"] else "no",
+            ])) + "\n")
 
 
 def write_coverage_tsv(
@@ -580,7 +606,10 @@ def _confidence(present: list[Region], absent: list[Region]) -> str | None:
     min_q = min(qs) if qs else 1.0
     max_sup = max(sups) if sups else 0.0
     undercovered = any(r.donor_undercovered for r in present)
-    if min_q <= 1e-5 and max_sup >= 0.70 and not undercovered:
+    # Agreement is a first-class confidence signal: a region independently called by
+    # more than one method is high-confidence even if no single method is overwhelming.
+    agreement = any(len(r.methods) >= 2 for r in present)
+    if not undercovered and (agreement or (min_q <= 1e-5 and max_sup >= 0.70)):
         return "high"
     if min_q <= 0.05 and not undercovered:
         return "moderate"
@@ -704,7 +733,7 @@ def _regions_html(
     head = (
         "<tr><th>Donor (minor)</th><th>Backbone (major)</th><th>Query span (bp)</th>"
         "<th>Length</th><th>% query</th><th>Sim donor</th><th>Sim backbone</th>"
-        "<th>Support</th><th>q-value</th><th>Breakpoint</th></tr>"
+        "<th>Support</th><th>q-value</th><th>Breakpoint</th><th>Method(s)</th></tr>"
     )
     rows = ""
     for r in regions:
@@ -728,6 +757,15 @@ def _regions_html(
             bp = _fmt_int(r.breakpoint_lo)
         else:
             bp = f"{_fmt_int(r.breakpoint_lo)}&ndash;{_fmt_int(r.breakpoint_hi)}"
+        if not r.methods:
+            methods_cell = "&ndash;"
+        else:
+            label = ", ".join(r.methods)
+            agree = (' <span class="flag" title="called by more than one method">agree</span>'
+                     if len(r.methods) >= 2 else "")
+            phi = (' <span class="flag" title="overlaps a parent-free Rmin interval">'
+                   'PHI</span>' if r.parent_free_support else "")
+            methods_cell = f'{html.escape(label)}{agree}{phi}'
         rows += (
             "<tr>"
             f'<td class="lbl">{swatch}{donor}{flag}</td>'
@@ -740,9 +778,67 @@ def _regions_html(
             f'<td class="num strong">{support}</td>'
             f'<td class="num">{qval}</td>'
             f'<td class="num">{bp}</td>'
+            f'<td class="lbl">{methods_cell}</td>'
             "</tr>"
         )
     return f'<div class="scroll"><table class="table">{head}{rows}</table></div>'
+
+
+def _method_comparison_html(
+    breakdown: list[dict], methods_run: tuple[str, ...], per_major: dict[str, str],
+    lineage_map: LineageMap | None = None,
+) -> str:
+    """A compact region x method agreement matrix; omitted for a single-method run."""
+    if len(methods_run) < 2:
+        return ""
+    majors = ", ".join(
+        f'<span class="mono">{html.escape(m)}</span> &rarr; '
+        f'{html.escape(typed(per_major.get(m, "n/a"), lineage_map))}'
+        for m in methods_run
+    )
+    intro = (
+        f'<p class="cap">Each caller ran independently on the same alignment; a region '
+        f'found by more than one is more trustworthy (and raises the confidence above). '
+        f'Backbone per method &mdash; {majors}.</p>'
+    )
+    if not breakdown:
+        return intro + '<p class="empty">No regions were called by any method.</p>'
+    head = (
+        "<tr><th>Donor (minor)</th><th>Query span (bp)</th>"
+        + "".join(f"<th>{html.escape(m)}</th>" for m in methods_run)
+        + "<th>PHI/Rmin</th></tr>"
+    )
+    rows = ""
+    for b in breakdown:
+        cells = "".join(
+            f'<td class="num">{"&check;" if m in b["per_method_support"] else "&middot;"}</td>'
+            for m in methods_run
+        )
+        phi = "&check;" if b["parent_free_support"] else "&middot;"
+        rows += (
+            "<tr>"
+            f'<td class="lbl">{html.escape(typed(b["minor_parent"], lineage_map))}</td>'
+            f'<td class="num">{_fmt_int(b["query_start"])}&ndash;{_fmt_int(b["query_end"])}</td>'
+            f'{cells}<td class="num">{phi}</td>'
+            "</tr>"
+        )
+    return f'{intro}<div class="scroll"><table class="table">{head}{rows}</table></div>'
+
+
+def _method_section(
+    method_breakdown: list[dict] | None, methods_run: tuple[str, ...],
+    per_major: dict[str, str] | None, lineage_map: LineageMap | None,
+) -> str:
+    """Wrap the method-comparison table in a report section (empty for one method)."""
+    body = _method_comparison_html(
+        method_breakdown or [], methods_run, per_major or {}, lineage_map
+    )
+    if not body:
+        return ""
+    return (
+        '<section class="section"><div class="eyebrow">Method comparison</div>'
+        f"{body}</section>"
+    )
 
 
 def _winners_html(
@@ -803,6 +899,10 @@ _GLOSSARY = [
      "An HMM segments the query against the reference panel (a jump rate penalises "
      "switching reference); a segment is reported as recombinant only when its donor "
      "beats the major parent on the discordant sites by a sign test at level alpha."),
+    ("Method(s) / ensemble",
+     "By default several callers run and their regions are merged into one consensus. "
+     "A region called by more than one method (agree) is more trustworthy and raises "
+     "the confidence; PHI marks regions corroborated by the parent-free Rmin signal."),
 ]
 
 
@@ -820,8 +920,11 @@ def _methods_html(provenance: dict[str, str]) -> str:
         '(jpHMM-style) and reports a region only when its donor beats the major parent on the '
         'sites that distinguish them (a sign test on discordant sites, immune to window '
         'overlap; Benjamini-Hochberg FDR across segments), with a posterior breakpoint '
-        'interval. It remains an indicative screen, not a full phylogenetic test (e.g. 3SEQ, '
-        'GARD) -- confirm strong candidates.</p>'
+        'interval. By default it runs an ensemble of callers (HMM and the 3SEQ triplet '
+        'test) and merges their regions into one consensus, so a region found by more than '
+        'one method is flagged as agreeing and treated as higher confidence (see the '
+        'caller line under Run parameters). It remains an indicative screen, not a full '
+        'phylogenetic test (e.g. GARD) -- confirm strong candidates.</p>'
         f'<dl class="glossary">{glossary}</dl>'
         f'<h3>Run parameters</h3><table class="kv">{params}</table></details>'
     )
@@ -829,9 +932,9 @@ def _methods_html(provenance: dict[str, str]) -> str:
 
 def _footer_html(provenance: dict[str, str]) -> str:
     files = [
-        "recombination_regions.tsv", "coverage_gaps.tsv", "recombination_profile.tsv",
-        "window_winners.tsv", "similarity_stats.tsv", "similarity_windows.tsv",
-        "similarity_top*.pdf", "similarity_pair.pdf",
+        "recombination_regions.tsv", "recombination_methods.tsv", "coverage_gaps.tsv",
+        "recombination_profile.tsv", "window_winners.tsv", "similarity_stats.tsv",
+        "similarity_windows.tsv", "similarity_top*.pdf", "similarity_pair.pdf",
     ]
     flist = ", ".join(f"<code>{f}</code>" for f in files)
     ver = html.escape(provenance.get("tessera version", ""))
@@ -965,6 +1068,9 @@ def write_html_report(
     lineage_map: LineageMap | None = None,
     query_lineage: str | None = None,
     signal: RecombinationSignal | None = None,
+    methods_run: tuple[str, ...] = (),
+    method_breakdown: list[dict] | None = None,
+    per_major: dict[str, str] | None = None,
 ) -> Path:
     """Write a single self-contained ``report.html``."""
     gaps = coverage_gaps or []
@@ -993,6 +1099,7 @@ def write_html_report(
         f"{_mosaic_html(regions, colors, s, gaps, lineage_map)}</section>"
         '<section class="section"><div class="eyebrow">Recombinant regions</div>'
         f'{_regions_html(regions, colors, s["query_len"], lineage_map)}</section>'
+        f"{_method_section(method_breakdown, methods_run, per_major, lineage_map)}"
         '<section class="section"><div class="eyebrow">Reference coverage</div>'
         f"{_coverage_html(gaps, coverage_threshold)}</section>"
         f"{extras}"
@@ -1039,6 +1146,9 @@ def write_reports(
     lineage_map: LineageMap | None = None,
     query_lineage: str | None = None,
     signal: RecombinationSignal | None = None,
+    methods_run: tuple[str, ...] = (),
+    method_breakdown: list[dict] | None = None,
+    per_major: dict[str, str] | None = None,
 ) -> None:
     """Write every table, plot and the HTML report for a completed scan."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1051,6 +1161,8 @@ def write_reports(
     write_coverage_tsv(gaps, coverage_threshold, output_dir, logger)
     if signal is not None:
         write_profile_tsv(signal, output_dir, logger)
+    if len(methods_run) > 1 and method_breakdown is not None:
+        write_methods_tsv(method_breakdown, methods_run, output_dir, logger)
 
     top_datasets = rank_datasets(analysis, top_n)
     logger.info("Top %d nearest datasets: %s", len(top_datasets), ", ".join(top_datasets))
@@ -1064,4 +1176,5 @@ def write_reports(
         coverage_gaps=gaps, coverage_threshold=coverage_threshold,
         extra_sections=extra_sections, lineage_map=lineage_map,
         query_lineage=query_lineage, signal=signal,
+        methods_run=methods_run, method_breakdown=method_breakdown, per_major=per_major,
     )

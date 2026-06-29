@@ -3,10 +3,31 @@
 Tessera computes, in sliding windows across the MSA, the similarity of the query to
 each reference (1 = identical, 0 = no similarity). The reference winning the most
 windows is the **major parent** (the backbone donor). On top of that windowed
-similarity it runs one of two parent-attributed callers, plus a parent-free
+similarity it runs one or more parent-attributed callers, plus a parent-free
 diagnostic that runs for every method.
 
-## HMM caller (`--method hmm`, default)
+## Ensemble (default)
+
+The HMM and 3SEQ callers are complementary: 3SEQ recovers short low-divergence tracts
+the HMM segmentation dilutes (the `cryptic_insert` example), while the HMM localizes
+breakpoints better on divergent parents (the `divergent` example). By default Tessera
+runs **both** (`--method hmm,3seq`) and merges their regions into one consensus,
+sharing the single similarity scan so the second caller is cheap.
+
+The merge is transparent -- no combined score is invented. Two regions are the same
+event when they overlap in query coordinates and name the same minor parent; the
+consensus region records exactly **which** callers found it (the report's *Method(s)*
+column and a *Method comparison* table) and whether the parent-free Hudson-Kaplan Rmin
+signal corroborates it. A region called by more than one method is treated as **higher
+confidence** -- agreement is the point of running an ensemble: the union of the callers
+raises recall, their agreement raises precision.
+
+Select callers with a comma list or `all`: `--method hmm,3seq` (default), `--method
+hmm` (one caller, reproducing the single-method report), `--method all` (adds the legacy
+heuristic). The same `--method` is available on `tessera detect` and `tessera
+fill-references`. The individual callers are described below.
+
+## HMM caller (`--method hmm`)
 
 The default caller segments the query against the reference panel with a hidden
 Markov model (jpHMM-style): each window emits a binomial copying likelihood per
@@ -103,7 +124,8 @@ regions as candidates to confirm.
 | File | Contents |
 |---|---|
 | `report.html` | Self-contained report: run provenance, the region table, the per-dataset stats, and an embedded interactive plot |
-| `recombination_regions.tsv` | Called regions: minor/major parent, start/end in **both MSA columns and query bases**, length, support, mean similarities |
+| `recombination_regions.tsv` | Called regions: minor/major parent, start/end in **both MSA columns and query bases**, length, support, mean similarities, the calling `methods`, and `parent_free_support` |
+| `recombination_methods.tsv` | Ensemble breakdown (only when several methods run): one row per region with a Y/n per method and the parent-free flag |
 | `recombination_profile.tsv` | Parent-free signal: header with the PHI p-value and Rmin, then per-informative-site local incompatibility (the PHI profile) |
 | `similarity_windows.tsv` | Full per-window matrix: `msa_position`, `query_position`, `winner`, and one similarity column per dataset |
 | `similarity_stats.tsv` | Per-dataset similarity statistics (median, windows above identity thresholds) |

@@ -453,12 +453,15 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
     detected = len(present) >= 1
     backbone_ok = clade_match(major_clade, clade_a)
     donor_ok = len(donor_hits) >= 1
+    # The recovered donor region was called by more than one ensemble method.
+    agree = any("," in (r.get("methods") or "") for r in donor_hits)
     return {
         "name": name, "clade_a": clade_a, "clade_b": clade_b,
         "divergence": divergence, "n_refs": len(selected),
         "true_span": (q_start, q_end), "n_regions": len(present),
         "major_clade": major_clade, "detected": detected, "mode": mode,
         "backbone_ok": backbone_ok, "donor_ok": donor_ok, "phi_p": phi_p, "rmin": rmin,
+        "agree": agree,
         "pass": detected and backbone_ok and donor_ok, "runtime": runtime,
     }
 
@@ -481,9 +484,9 @@ def main(argv: list[str]) -> int:
 
     print("\n" + "=" * 80)
     print(f"{'case':16} {'backbone x donor':24} {'div':>5} {'major':>10} "
-          f"{'det':>3} {'bb':>3} {'don':>3} {'mode':>9} {'PHI p':>8} {'Rmin':>4} "
+          f"{'det':>3} {'bb':>3} {'don':>3} {'agr':>3} {'mode':>9} {'PHI p':>8} {'Rmin':>4} "
           f"{'time':>6}  verdict")
-    print("-" * 104)
+    print("-" * 108)
     for r in results:
         if r.get("skip") is not None:
             print(f"{r['name']:16} SKIP: {r['skip'][:54]}")
@@ -495,7 +498,8 @@ def main(argv: list[str]) -> int:
         print(f"{r['name']:16} {r['clade_a']+' x '+r['clade_b']:24.24} "
               f"{r['divergence']:4.1f}% {r['major_clade']:>10.10} "
               f"{'Y' if r['detected'] else 'n':>3} {'Y' if r['backbone_ok'] else 'n':>3} "
-              f"{'Y' if r['donor_ok'] else 'n':>3} {r['mode']:>9} "
+              f"{'Y' if r['donor_ok'] else 'n':>3} {'Y' if r.get('agree') else '.':>3} "
+              f"{r['mode']:>9} "
               f"{r.get('phi_p', '-'):>8.8} {r.get('rmin', '-'):>4} "
               f"{r['runtime']:5.0f}s  {verdict}")
     passed = sum(1 for r in results if r.get("pass"))

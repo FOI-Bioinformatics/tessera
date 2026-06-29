@@ -131,6 +131,11 @@ def fill_references(
         help="Run recombination detection and write the report after building the panel. "
         "Use --no-report to stop at the panel and run 'tessera recomb' separately.",
     ),
+    method: str = typer.Option(
+        "hmm,3seq", "--method",
+        help="Region caller(s) for the detection step: a comma-separated list of "
+        "hmm/3seq/heuristic, or 'all'. Several run as an ensemble (default hmm,3seq).",
+    ),
     lineage_map: Path | None = typer.Option(
         None, "--lineage-map",
         help="TSV of reference genotypes (accession<TAB>genotype) to override the typed "
@@ -147,6 +152,7 @@ def fill_references(
 
     from ..aligners.base import registry as aligner_registry
     from ..discover.iterate import FillParams, fill_references
+    from ..recomb.regions import parse_methods
 
     logger = get_logger()
     with stage_errors(logger):
@@ -168,6 +174,6 @@ def fill_references(
             email=email or os.environ.get("NCBI_EMAIL"),
             exclude=tuple(exclude), keep_self_hits=keep_self_hits, threads=threads,
             curate=curate, sibling_margin=sibling_margin, af_min=af_min, derep_ani=derep_ani,
-            report=report, lineage_map=lineage_map,
+            report=report, methods=parse_methods(method), lineage_map=lineage_map,
         )
         fill_references(params, logger)
