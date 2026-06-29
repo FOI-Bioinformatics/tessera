@@ -27,9 +27,10 @@ def recomb(
         help="Region caller(s), comma-separated, or 'all'. Several run as an ensemble "
         "and their regions are merged into a consensus (agreement raises confidence); "
         "the default is hmm,3seq. Callers: hmm (HMM segmentation + a discordant-site "
-        "significance test), 3seq (scan-aware triplet test on discriminating sites, an "
-        "exact p-value; strong at low divergence), heuristic (legacy margin/merge). Pass "
-        "a single name (e.g. --method hmm) for one caller.",
+        "significance test), 3seq (scan-aware triplet max-drawdown test; strong at low "
+        "divergence), maxchi (chi-square triplet test, complementary to 3seq), bootscan "
+        "(distance + bootstrap support for the closest parent), heuristic (legacy "
+        "margin/merge). Pass a single name (e.g. --method hmm) for one caller.",
     ),
     jump_rate: float = typer.Option(
         1e-3, "--jump-rate",
