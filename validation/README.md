@@ -202,6 +202,13 @@ decide PASS / FAIL / SKIP:
 4. **Junk labels.** `unassigned` / `unclassified` genomes are not a clean parental
    lineage and are excluded from parent selection.
 
+Running the **full five-classifier ensemble** (`HARNESS_METHODS=all python
+validation/run_hybrids.py`, adding MaxChi and Bootscan) gives the **same 16/2/6** verdict
+set -- no regression, no new false positives -- but lifts donor agreement from 12 to
+**17 of the 18 running cases** (every case but `rsv_a`): the two extra independent callers
+corroborate the donor, so more regions clear the >1-method high-confidence bar without
+over-calling. The default stays `hmm,3seq` (cheaper); `--method all` is the thorough run.
+
 The two remaining **FAIL**s are genuine detection-quality limits, kept honest rather than
 skipped: `flu_h3n2_ha` (a ~1.7 kb HA segment with finely-split subclades, where the
 backbone is a near-tie recovered as `G.1.3`) and `rsv_a` (the donor's parent clade `A.D`

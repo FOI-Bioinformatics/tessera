@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import shutil
 import sys
@@ -48,6 +49,7 @@ from tessera.discover.nextclade import (
 )
 from tessera.discover.pool import select_regional
 from tessera.msa.build import MsaParams, build_msa
+from tessera.recomb.regions import parse_methods
 from tessera.recomb.run import RecombParams, run_recomb
 from tessera.recomb.typing import LINEAGES_TSV, lineage_map_from_rows, write_lineage_map
 
@@ -456,9 +458,12 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
     msa = out / "panel.msa.fasta"
     build_msa(MsaParams(query=query, collection=collection, output=msa,
                         aligner=aligner, threads=THREADS), logger)
+    # Region caller(s) for the run: default hmm,3seq, overridable via $HARNESS_METHODS
+    # (e.g. "all") to benchmark the full ensemble on the same datasets.
+    methods = parse_methods(os.environ.get("HARNESS_METHODS", "hmm,3seq"))
     windowing = run_recomb(RecombParams(msa=msa, output=out, query=query_label,
                                         window_size=window, window_step=step,
-                                        lineage_map=lineage_map), logger)
+                                        methods=methods, lineage_map=lineage_map), logger)
     runtime = time.monotonic() - t0
     mode = "info-site" if windowing.startswith("informative") else "bp"
 
