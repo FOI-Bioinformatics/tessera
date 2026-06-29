@@ -171,6 +171,9 @@ def call_regions(
     """
     if params.method == "hmm":
         return _call_regions_hmm(result, window_size, params)
+    if params.method == "3seq":
+        from .threeseq import call_regions_3seq
+        return call_regions_3seq(result, analysis, params)
     regions, major = _call_regions_heuristic(result, analysis, window_size, params)
     return regions, major, []
 

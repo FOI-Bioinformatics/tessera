@@ -247,6 +247,8 @@ def run_recomb(
         "caller": (
             f"hmm (jump-rate {params.jump_rate:g}, alpha {params.alpha:g})"
             if params.method == "hmm"
+            else f"3seq (triplet max-descent test, alpha {params.alpha:g})"
+            if params.method == "3seq"
             else f"heuristic (min {region_params.min_region} / margin "
                  f"{region_params.margin} / merge {region_params.merge_gap})"
         ),

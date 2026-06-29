@@ -25,7 +25,8 @@ def recomb(
     method: str = typer.Option(
         "hmm", "--method",
         help="Region caller: hmm (default, HMM segmentation + a discordant-site "
-        "significance test) or heuristic (legacy margin/merge).",
+        "significance test), 3seq (scan-aware triplet test on discriminating sites, "
+        "an exact p-value; strong at low divergence), or heuristic (legacy margin/merge).",
     ),
     jump_rate: float = typer.Option(
         1e-3, "--jump-rate",
@@ -101,7 +102,7 @@ def recomb(
     logger = get_logger()
     with stage_errors(logger):
         _require_choice(plot_format, {"pdf", "png", "svg"}, "--plot-format")
-        _require_choice(method, {"hmm", "heuristic"}, "--method")
+        _require_choice(method, {"hmm", "3seq", "heuristic"}, "--method")
         params = RecombParams(
             msa=msa,
             output=output,
