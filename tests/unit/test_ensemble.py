@@ -67,6 +67,20 @@ def test_overlapping_same_minor_merges_with_agreement_and_best_support() -> None
     assert set(breakdown[0]["per_method_support"]) == {"hmm", "3seq"}
 
 
+def test_lineage_map_merges_same_lineage_different_genomes() -> None:
+    # Two callers pick different genomes (G1, G2) of one lineage "B" over the same span.
+    g1 = mk("G1", 100, 200, "hmm", qvalue=1e-6)
+    g2 = mk("G2", 110, 190, "3seq", qvalue=1e-9)
+    lmap = {"G1": "B", "G2": "B"}
+    # Without typing, different genome labels -> two separate single-method regions.
+    plain, _ = consensus_regions({"hmm": [g1], "3seq": [g2]}, major="A")
+    assert len(plain) == 2
+    # With the lineage map, they are one event called by both methods (agreement).
+    merged, _ = consensus_regions({"hmm": [g1], "3seq": [g2]}, major="A", lineage_map=lmap)
+    assert len(merged) == 1
+    assert merged[0].methods == ("hmm", "3seq")
+
+
 def test_overlapping_different_minor_stays_separate() -> None:
     a = mk("B", 100, 200, "hmm", qvalue=1e-9)
     b = mk("C", 150, 250, "3seq", qvalue=1e-9)

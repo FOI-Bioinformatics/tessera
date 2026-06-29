@@ -15,10 +15,12 @@ runs **both** (`--method hmm,3seq`) and merges their regions into one consensus,
 sharing the single similarity scan so the second caller is cheap.
 
 The merge is transparent -- no combined score is invented. Two regions are the same
-event when they overlap in query coordinates and name the same minor parent; the
-consensus region records exactly **which** callers found it (the report's *Method(s)*
-column and a *Method comparison* table) and whether the parent-free Hudson-Kaplan Rmin
-signal corroborates it. A region called by more than one method is treated as **higher
+event when they overlap in query coordinates and name the same donor -- the same minor
+parent genome, or, when the references are typed (a lineage map), the same **lineage**,
+so two callers that pick different representative genomes of one lineage still count as
+the same event and as agreement. The consensus region records exactly **which** callers
+found it (the report's *Method(s)* column and a *Method comparison* table) and whether
+the parent-free Hudson-Kaplan Rmin signal corroborates it. A region called by more than one method is treated as **higher
 confidence** -- agreement is the point of running an ensemble: the union of the callers
 raises recall, their agreement raises precision.
 

@@ -17,6 +17,7 @@ are a genuine disagreement and stay separate.
 from __future__ import annotations
 
 from .regions import CALLERS, Region
+from .typing import LineageMap, lineage_of
 
 
 def _rank(method: str) -> int:
@@ -26,6 +27,18 @@ def _rank(method: str) -> int:
 def _overlap(a: Region, b: Region) -> bool:
     """Do two regions overlap in query coordinates?"""
     return a.query_start < b.query_end and b.query_start < a.query_end
+
+
+def _same_donor(a: Region, b: Region, lineage_map: LineageMap | None) -> bool:
+    """Do two regions name the same donor? Equal genome labels, or -- when references
+    are typed -- the same lineage, so two callers that pick different representative
+    genomes of one lineage still count as the same event (and as agreement)."""
+    if a.minor_parent == b.minor_parent:
+        return True
+    if lineage_map:
+        la = lineage_of(a.minor_parent, lineage_map)
+        return la is not None and la == lineage_of(b.minor_parent, lineage_map)
+    return False
 
 
 def reconcile_major(
@@ -92,13 +105,14 @@ def _merge_group(group: list[Region], major: str | None) -> Region:
     )
 
 
-def _group(regions: list[Region]) -> list[list[Region]]:
-    """Group regions that overlap (transitively) and share a minor parent."""
+def _group(regions: list[Region], lineage_map: LineageMap | None) -> list[list[Region]]:
+    """Group regions that overlap (transitively) and name the same donor (genome or,
+    when typed, lineage)."""
     groups: list[list[Region]] = []
     for region in sorted(regions, key=lambda r: (r.minor_parent, r.query_start)):
         placed = False
         for group in groups:
-            if group[0].minor_parent == region.minor_parent and any(
+            if _same_donor(group[0], region, lineage_map) and any(
                 _overlap(region, member) for member in group
             ):
                 group.append(region)
@@ -114,19 +128,23 @@ def consensus_regions(
     *,
     major: str | None,
     rmin_intervals: list[tuple[int, int]] | None = None,
+    lineage_map: LineageMap | None = None,
 ) -> tuple[list[Region], list[dict]]:
     """Merge per-method regions into one consensus list plus a per-region breakdown.
 
     ``rmin_intervals`` are the Hudson-Kaplan recombination intervals in query
     coordinates; a consensus region overlapping one is flagged ``parent_free_support``.
-    The breakdown lists, per consensus region, which callers found it and their support,
-    for the report's "method comparison" section.
+    When ``lineage_map`` is given, two callers' regions over the same span merge if they
+    name the same *lineage* (not only the same genome), so picking different
+    representative genomes of one lineage still counts as agreement. The breakdown lists,
+    per consensus region, which callers found it and their support, for the report's
+    "method comparison" section.
     """
     all_regions = [r for regions in per_method.values() for r in regions]
     intervals = rmin_intervals or []
     consensus: list[Region] = []
     breakdown: list[dict] = []
-    for group in _group(all_regions):
+    for group in _group(all_regions, lineage_map):
         region = _merge_group(group, major)
         region.parent_free_support = any(
             region.query_start < hi and lo < region.query_end for lo, hi in intervals

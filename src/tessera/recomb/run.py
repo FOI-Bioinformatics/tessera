@@ -233,6 +233,7 @@ def run_recomb(
     regions, method_breakdown = consensus_regions(
         per_method, major=major_parent,
         rmin_intervals=signal.rmin_intervals if signal else None,
+        lineage_map=lineage_map,
     )
     if excluded_siblings:
         logger.info(
