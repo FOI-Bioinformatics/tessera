@@ -196,8 +196,10 @@ sub-lineage.
 *B. Genuinely hard short / single-segment data (3).*
 - `flu_h3n2_ha` (~1.7 kb HA) -- 3SEQ calls a region, but among near-tied HA subclades
   the backbone winner is `J.2`, not the spliced `K`.
-- `iav_h5_ha` (~1.7 kb HA) -- no caller region at all (only coverage gaps); the donor
-  never beats the major significantly on the short segment.
+- `iav_h5_ha` (~1.7 kb HA) -- no caller region: the backbone clade (Am-nonGsGD) has no
+  representative left in the panel once the source genome is removed, so the query reads
+  as a coverage gap (correctly flagged) rather than a recombination -- a panel gap, not a
+  caller miss.
 - `prrsv2` (~0.6 kb ORF5) -- two short, conflicting micro-regions over a ~200 bp tract.
 
 So the weak spots are **lineage attribution among near-identical / deeply-nested
