@@ -170,8 +170,10 @@ at least three genomes -- including datasets with no clade attribute at all
 | `cchfv` | -- | -- | SKIP -- < 2 clades with >= 3 genomes |
 
 **13 PASS, 7 FAIL, 4 SKIP** (0 errors); of the 20 cases that run, **19 call a
-recombinant region** (only the H5 HA segment calls none) and **10 recover the donor by
-both callers** (the `agr` column). Tessera recovers the recombinant cleanly across the
+recombinant region** (only the H5 HA segment calls none) and **11 recover the donor by
+both callers** (the `agr` column; agreement is lineage-aware, so two callers that pick
+different representative genomes of one lineage still count). Tessera recovers the
+recombinant cleanly across the
 full divergence range that has both parents represented -- from dengue serotypes (33 %)
 down to measles and mumps genotypes (~7 %). The 7 FAILs are not detection misses but
 labelling / hard-case edges (see the audit below).
@@ -222,9 +224,12 @@ SARS-CoV-2 stays SKIP (< 4 % and the dataset offers no more-divergent pair); thr
 segmented viruses carry no usable clade attribute.
 
 The PASS/FAIL set is unchanged from the single-HMM baseline (13/20), so the ensemble
-adds recall without cost: 10 of the 20 cases that run recover their donor by **both**
+adds recall without cost: 11 of the 20 cases that run recover their donor by **both**
 callers (the `agr` column), and on `flu_h3n2_ha` and `vzv` 3SEQ now calls a region the
 HMM alone missed -- those remain FAIL on fine clade labelling, not on detection.
+Agreement is **lineage-aware**: when references are typed, two callers that recover one
+donor lineage via different representative genomes count as agreeing (this lifts e.g.
+`mumps` from one-method to both-method agreement).
 
 The moderate-divergence cases (measles, mumps, and the earlier hepatitis-A
 inversion) were not a caller limitation but a **panel-recruitment artifact**: for a
