@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from recomfi.core.errors import UserInputError
-from recomfi.recomb.similarity import (
+from tessera.core.errors import UserInputError
+from tessera.recomb.similarity import (
     _informative_column_mask,
     _read_alignment,
     compute_similarity,
@@ -149,7 +149,7 @@ def test_informative_windowing_recovers_low_divergence_recombinant(tmp_path: Pat
     assert result.numerators["parentA"][0] > result.numerators["parentB"][0]   # A early
     assert result.numerators["parentB"][-1] > result.numerators["parentA"][-1]  # B late
 
-    from recomfi.recomb.hmm import segment_query
+    from tessera.recomb.hmm import segment_query
     segments, major = segment_query(result, jump_rate=1e-3)
     states = [s.state for s in segments]
     assert states[0] == "parentA" and "parentB" in states

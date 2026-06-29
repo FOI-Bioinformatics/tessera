@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from recomfi.recomb.hmm import segment_query
-from recomfi.recomb.similarity import WindowSimilarity
+from tessera.recomb.hmm import segment_query
+from tessera.recomb.similarity import WindowSimilarity
 
 
 def _two_state_result(n=20, window=50):

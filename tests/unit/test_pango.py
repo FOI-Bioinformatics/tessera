@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from recomfi.core.cache import pango_alias_path
-from recomfi.recomb.pango import crosscheck_html, expand_recombinant, load_alias_key
+from tessera.core.cache import pango_alias_path
+from tessera.recomb.pango import crosscheck_html, expand_recombinant, load_alias_key
 
 # A trimmed alias_key.json: recombinants map to a list of parents, aliases to a string.
 ALIAS = {

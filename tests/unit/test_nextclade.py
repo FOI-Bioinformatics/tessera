@@ -7,8 +7,8 @@ import logging
 
 import pytest
 
-from recomfi.core.errors import UserInputError
-from recomfi.discover import nextclade as nc
+from tessera.core.errors import UserInputError
+from tessera.discover import nextclade as nc
 
 
 def test_reconstruct_applies_subs_and_deletions_and_strips_gaps():

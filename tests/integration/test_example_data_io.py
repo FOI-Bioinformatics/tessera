@@ -11,10 +11,10 @@ from pathlib import Path
 
 import pytest
 
-from recomfi.aligners.sibeliaz import _build_seqid_map
-from recomfi.core.io import select_reference, stage_genomes
+from tessera.aligners.sibeliaz import _build_seqid_map
+from tessera.core.io import select_reference, stage_genomes
 
-_LOG = logging.getLogger("recomfi.test")
+_LOG = logging.getLogger("tessera.test")
 
 EXAMPLE = Path(__file__).resolve().parents[2] / "example_data"
 COLLECTION = EXAMPLE / "collection"

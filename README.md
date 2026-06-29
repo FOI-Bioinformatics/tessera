@@ -1,22 +1,22 @@
-# RecomFi
-RecomFi (Recombination Finder) identifies recombination events in a query sequence, contigs or genome, against a collection of reference sequences.
+# Tessera
+Tessera (Recombination Finder) identifies recombination events in a query sequence, contigs or genome, against a collection of reference sequences.
 
 # Description
-RecomFi is developed to identify recombination in relatively similar datasets, such as between (sub)species of a genus or family. It generates a reference-anchored "pseudo-MSA (multiple sequence alignment)" by using one sequence as a backbone. This makes RecomFi fast but limits the resolution. With the pseudo-MSA strategy the query may be a fragmented genome, for example a set of contigs, which RecomFi organizes relative to the backbone.
+Tessera is developed to identify recombination in relatively similar datasets, such as between (sub)species of a genus or family. It generates a reference-anchored "pseudo-MSA (multiple sequence alignment)" by using one sequence as a backbone. This makes Tessera fast but limits the resolution. With the pseudo-MSA strategy the query may be a fragmented genome, for example a set of contigs, which Tessera organizes relative to the backbone.
 
 Recombination events are detected by sliding a window over the MSA and computing, in each window, the similarity between the query and each reference. A recombination event is indicated where the query is near reference A across most of its length but is near another reference B over a region.
 
-RecomFi is organized as a small, modular Python package:
+Tessera is organized as a small, modular Python package:
 - Alignment is delegated to a pluggable **aligner backend** (`progressivemauve`, `sibeliaz`, or `cactus`), discovered through entry points so additional backends can be added without changing the core.
 - The recombination scan uses a built-in sliding-window distance engine (no external alignment-analysis dependency).
 
 # Installation
-RecomFi needs Python (>= 3.11) and at least one aligner backend. The aligner binaries are most easily installed with conda.
+Tessera needs Python (>= 3.11) and at least one aligner backend. The aligner binaries are most easily installed with conda.
 
 ```
-# create an environment with an aligner backend, then install RecomFi
-conda create -n recomfi -c conda-forge -c bioconda python">=3.11" mauve "boost-cpp=1.74.0"
-conda activate recomfi
+# create an environment with an aligner backend, then install Tessera
+conda create -n tessera -c conda-forge -c bioconda python">=3.11" mauve "boost-cpp=1.74.0"
+conda activate tessera
 pip install .
 ```
 
@@ -25,10 +25,10 @@ Optional aligner backends can be added to the same environment:
 conda install -c bioconda sibeliaz   # or: cactus
 ```
 
-An `environment.yml` is provided that installs Python, all three backends, and RecomFi in one step:
+An `environment.yml` is provided that installs Python, all three backends, and Tessera in one step:
 ```
 conda env create -f environment.yml
-conda activate recomfi
+conda activate tessera
 ```
 
 # Aligner backends
@@ -44,7 +44,7 @@ All backends produce a reference-anchored alignment, which is what the recombina
 
 `sibeliaz` is the default: it installs cleanly across platforms and, on the example data, reproduces `progressivemauve`'s recombination coordinates. For very similar, collinear genomes `mafft` gives the most faithful base-level signal and `minimap2` the fastest run (and the best fit for a fragmented query); `progressivemauve` remains an option for genomes with large rearrangements. Reference-anchored backends drop material inserted relative to the backbone; `mafft` keeps it as a true alignment.
 
-Example: `recomfi msa ... --aligner minimap2 --aligner-arg preset=asm10` or `recomfi msa ... --aligner mafft --aligner-arg maxiterate=1000`.
+Example: `tessera msa ... --aligner minimap2 --aligner-arg preset=asm10` or `tessera msa ... --aligner mafft --aligner-arg maxiterate=1000`.
 
 # Example dataset
 Find an example dataset of orthopoxvirus in `example_data/`. The query is a short-read assembly (8 contigs) of a synthetic cowpox sample with a variola segment. The collection are reference-labelled orthopoxvirus sequences from `BV-BRC.org`.
@@ -66,10 +66,10 @@ Example folder structure (query is `cowpox_with_variolaInsert.fasta.gz`):
 # Usage
 
 ## One-shot detection (no genomes needed)
-Give RecomFi only a query and it detects the taxon, recruits a diverse reference
+Give Tessera only a query and it detects the taxon, recruits a diverse reference
 panel from NCBI, aligns, and calls recombination:
 ```
-recomfi detect --query CRF01_AE.fasta --output out/ --email you@example.org
+tessera detect --query CRF01_AE.fasta --output out/ --email you@example.org
 ```
 It recruits the parental lineages organism-agnostically -- a negative-lineage BLAST
 (exclude the query's own over-represented lineage so the divergent parents surface)
@@ -87,13 +87,13 @@ To recruit the donor panel without running detection -- so you can inspect the p
 or re-run detection with different window/HMM settings without re-fetching or
 re-aligning -- use `build-panel`, then `recomb`:
 ```
-recomfi build-panel --query CRF01_AE.fasta --output panel/ --email you@example.org
-recomfi recomb --msa panel/panel.msa.fasta --query CRF01_AE --output panel/
+tessera build-panel --query CRF01_AE.fasta --output panel/ --email you@example.org
+tessera recomb --msa panel/panel.msa.fasta --query CRF01_AE --output panel/
 ```
 `build-panel` uses the same parent-recruiting, sibling-dropping recruitment as
 `detect` but stops at the panel, writing `panel/collection/` (the donor genomes), a
 stable `panel/panel.msa.fasta` alignment, and `panel/panel_lineages.tsv`. The exact
-`recomfi recomb` follow-up command is logged on completion. The panel is recruited
+`tessera recomb` follow-up command is logged on completion. The panel is recruited
 for this query (donors are its regional best matches), so it is not a reusable
 organism-wide reference set. Pass `--collection` to grow an existing collection
 instead of recruiting from scratch. The full-featured `fill-references` command takes
@@ -106,7 +106,7 @@ typed with a genotype mined from its genome header -- the NCBI lineage note
 title (e.g. `GII.P16-GII.4`, `CRF01_AE`, `B.1.1.7`). The mapping is written to
 `<output>/lineages.tsv`, and the report then names parents by lineage, e.g.
 "GII.P16-GII.4 (MK573073)" instead of the bare accession. A standalone
-`recomfi recomb` picks up a `lineages.tsv` sitting beside the output or the MSA, so the
+`tessera recomb` picks up a `lineages.tsv` sitting beside the output or the MSA, so the
 two-step workflow above carries the typed names through. To override or supply names
 (for schemes that titles do not carry well, such as HIV pure subtypes or a curated CRF
 reference set), pass `--lineage-map accession_to_genotype.tsv` (a `accession<TAB>genotype`
@@ -115,40 +115,40 @@ With no source, references fall back to bare accessions and the report is unchan
 
 The query is also typed from its own header; when its lineage differs from the file
 name the verdict states it ("The query is typed as GII.P16-GII.4"). For a SARS-CoV-2
-query whose lineage is a Pango recombinant (an `X` lineage such as `XBB.1.5`), RecomFi
+query whose lineage is a Pango recombinant (an `X` lineage such as `XBB.1.5`), Tessera
 looks up the designated parents in the Pango `alias_key.json` (fetched once into the
 cache) and adds a cross-check block, so the recruited parents can be compared with the
 designated ones. The lookup is best-effort: a network failure simply skips it.
 
 Generate a multiple sequence alignment:
 ```
-recomfi msa --query cowpox_with_variolaInsert.fasta.gz --collection collection/ --output msa.fasta
+tessera msa --query cowpox_with_variolaInsert.fasta.gz --collection collection/ --output msa.fasta
 
 # Choose an aligner backend (default: sibeliaz) and pass tuning options:
-#   recomfi msa ... --aligner sibeliaz --aligner-arg kmer=15
-#   recomfi msa ... --aligner progressivemauve --aligner-arg seed_weight=11
+#   tessera msa ... --aligner sibeliaz --aligner-arg kmer=15
+#   tessera msa ... --aligner progressivemauve --aligner-arg seed_weight=11
 #
 # If you have a single-contig query you can use it as the backbone instead of a
 # reference from the collection:
-#   recomfi msa ... --query-as-backbone
+#   tessera msa ... --query-as-backbone
 ```
 
 Identify recombination events (state the query label as it appears in the MSA, i.e. the query file name without extension):
 ```
-recomfi recomb --msa msa.fasta --query cowpox_with_variolaInsert --output recomfi_out
+tessera recomb --msa msa.fasta --query cowpox_with_variolaInsert --output tessera_out
 
 # The window, step, metric, number of plotted datasets and plot format are
 # configurable:
-#   recomfi recomb ... --window-size 1000 --window-step 100 --top-n 5 --plot-format png
+#   tessera recomb ... --window-size 1000 --window-step 100 --top-n 5 --plot-format png
 #
 # Region calling can be tuned (defaults derive from the window size):
-#   recomfi recomb ... --min-region 1000 --margin 0.0 --merge-gap 1000
+#   tessera recomb ... --min-region 1000 --margin 0.0 --merge-gap 1000
 ```
 
-Run `recomfi --help`, `recomfi msa --help` or `recomfi recomb --help` for the full set of options.
+Run `tessera --help`, `tessera msa --help` or `tessera recomb --help` for the full set of options.
 
 # Output
-RecomFi computes, in sliding windows across the MSA, the similarity of the query to each reference (1 = identical, 0 = no similarity). The reference winning the most windows is the **major parent** (the backbone donor).
+Tessera computes, in sliding windows across the MSA, the similarity of the query to each reference (1 = identical, 0 = no similarity). The reference winning the most windows is the **major parent** (the backbone donor).
 
 To call recombinant regions, the default caller (`--method hmm`) segments the query against the reference panel with a hidden Markov model (jpHMM-style): each window emits a binomial copying likelihood per reference, and a single jump rate (`--jump-rate`) penalises switching reference, so near-identical references do not flip and thin windows cannot drive a call. A segment is reported as recombinant only when its donor beats the major parent on the **discordant sites** — positions where the query matches one candidate parent but not the other — by a sign test at level `--alpha`. This is far more discriminating than an all-sites margin (it recovers subtle breakpoints between near-identical parents) and does not invent regions from noise. Each region carries a **support** (the share of distinguishing sites favouring the donor), a sign-test **p-value** with a Benjamini-Hochberg **q-value** (false-discovery-rate across the segments tested), and a **breakpoint uncertainty interval**. The legacy `--method heuristic` (margin / merge-gap / min-region) is kept for comparison.
 
@@ -160,11 +160,11 @@ Recombination regions (major parent: cowpox_KC813504):
 ```
 A high support with a small q-value is a confident call; a region with strong directional support but a large q-value (few distinguishing sites, e.g. a recombination between near-identical lineages) is flagged as marginal rather than dropped.
 
-**Low-divergence panels (intra-species sets, DNA viruses).** When the references are nearly identical — e.g. mpox clades (~0.5 %), VZV (~0.2 %), within-species ebola — a fixed base-pair window holds only a handful of discriminating columns diluted by hundreds of identical ones, so the per-reference emission contrast collapses and the segmentation loses power. The signal is still there (low *percentage* divergence over a large genome is still hundreds of variable sites), just buried. RecomFi therefore switches to **informative-site windowing**: windows span a fixed number of polymorphic columns rather than a fixed base-pair width, concentrating the signal so the HMM regains contrast. This is automatic when the references differ at less than ~8 % of columns, and controllable with `--informative-sites` / `--no-informative-sites` (and `--informative-window` / `--informative-step`). Breakpoint intervals are necessarily coarser at low divergence — you cannot localise a switch more finely than the spacing of the discriminating sites.
+**Low-divergence panels (intra-species sets, DNA viruses).** When the references are nearly identical — e.g. mpox clades (~0.5 %), VZV (~0.2 %), within-species ebola — a fixed base-pair window holds only a handful of discriminating columns diluted by hundreds of identical ones, so the per-reference emission contrast collapses and the segmentation loses power. The signal is still there (low *percentage* divergence over a large genome is still hundreds of variable sites), just buried. Tessera therefore switches to **informative-site windowing**: windows span a fixed number of polymorphic columns rather than a fixed base-pair width, concentrating the signal so the HMM regains contrast. This is automatic when the references differ at less than ~8 % of columns, and controllable with `--informative-sites` / `--no-informative-sites` (and `--informative-window` / `--informative-step`). Breakpoint intervals are necessarily coarser at low divergence — you cannot localise a switch more finely than the spacing of the discriminating sites.
 
-**`--method 3seq` (scan-aware triplet test).** A second caller, complementary to the HMM, after Boni, Posada & Feldman (2007). For the query against the major parent and each candidate donor it looks only at the **discriminating sites** (where the two parents differ and the query matches one of them) and measures the **maximum drawdown** of the resulting +1/−1 walk — a sustained run of donor matches inside the backbone, i.e. a mosaic. Its p-value is the *exact* probability that a random arrangement of the same matches reaches that drawdown (a dynamic program over the walk depth, no dependency; a vectorised permutation falls back for very large inputs), Benjamini-Hochberg-corrected across the donors tested. Because it is purely informative-site based it keeps full power on near-identical panels — it detects the mpox clade-I/II recombination where base-pair windowing finds nothing — and because the null accounts for scanning every breakpoint it does not over-call. Run it with `recomfi recomb ... --method 3seq`.
+**`--method 3seq` (scan-aware triplet test).** A second caller, complementary to the HMM, after Boni, Posada & Feldman (2007). For the query against the major parent and each candidate donor it looks only at the **discriminating sites** (where the two parents differ and the query matches one of them) and measures the **maximum drawdown** of the resulting +1/−1 walk — a sustained run of donor matches inside the backbone, i.e. a mosaic. Its p-value is the *exact* probability that a random arrangement of the same matches reaches that drawdown (a dynamic program over the walk depth, no dependency; a vectorised permutation falls back for very large inputs), Benjamini-Hochberg-corrected across the donors tested. Because it is purely informative-site based it keeps full power on near-identical panels — it detects the mpox clade-I/II recombination where base-pair windowing finds nothing — and because the null accounts for scanning every breakpoint it does not over-call. Run it with `tessera recomb ... --method 3seq`.
 
-**Parent-free recombination signal (PHI + Rmin).** Alongside the parent-attributed regions, every run reports a parent-agnostic diagnostic that asks only whether the alignment carries recombination at all, with no candidate parents required — the regime where the HMM and 3SEQ callers have least to work with (low divergence, or the true donor absent from the panel). It is built from the alignment's biallelic informative columns and the four-gamete test (two columns are incompatible when all four gametes are present, which implies a recombination between them). The **PHI test** (Pairwise Homoplasy Index; Bruen, Philippe & Bryant 2006) is significant when columns near each other on the genome are more compatible than a random reordering — the signature of shared local genealogy under recombination — with a one-sided permutation p-value. **Rmin** (Hudson & Kaplan 1985) is the minimum number of recombination events the incompatibilities force, with the intervals as breakpoint candidates. Both are dependency-free. On the synthetic-hybrid harness, Rmin is non-zero for every recombinant across the full divergence range (dengue serotypes at 33% down to the mpox clade-I/II recombination at 0.5%), and the PHI test reaches the permutation floor in most cases. PHI's genome-wide p-value is conservative in recomfi's typical setup, though: when the panel is clean parental clades around a single hybrid query, the many clade-defining sites are mutually compatible and dilute the few incompatibilities the one query introduces, so PHI can stay non-significant even where detection succeeds (e.g. yellow fever). In that regime Rmin and the per-site PHI **profile** -- which localizes the signal rather than averaging it away -- are the more informative parent-free outputs. The diagnostic runs for every `--method`; disable with `--no-phi`, or widen its window with `--phi-window`.
+**Parent-free recombination signal (PHI + Rmin).** Alongside the parent-attributed regions, every run reports a parent-agnostic diagnostic that asks only whether the alignment carries recombination at all, with no candidate parents required — the regime where the HMM and 3SEQ callers have least to work with (low divergence, or the true donor absent from the panel). It is built from the alignment's biallelic informative columns and the four-gamete test (two columns are incompatible when all four gametes are present, which implies a recombination between them). The **PHI test** (Pairwise Homoplasy Index; Bruen, Philippe & Bryant 2006) is significant when columns near each other on the genome are more compatible than a random reordering — the signature of shared local genealogy under recombination — with a one-sided permutation p-value. **Rmin** (Hudson & Kaplan 1985) is the minimum number of recombination events the incompatibilities force, with the intervals as breakpoint candidates. Both are dependency-free. On the synthetic-hybrid harness, Rmin is non-zero for every recombinant across the full divergence range (dengue serotypes at 33% down to the mpox clade-I/II recombination at 0.5%), and the PHI test reaches the permutation floor in most cases. PHI's genome-wide p-value is conservative in tessera's typical setup, though: when the panel is clean parental clades around a single hybrid query, the many clade-defining sites are mutually compatible and dilute the few incompatibilities the one query introduces, so PHI can stay non-significant even where detection succeeds (e.g. yellow fever). In that regime Rmin and the per-site PHI **profile** -- which localizes the signal rather than averaging it away -- are the more informative parent-free outputs. The diagnostic runs for every `--method`; disable with `--no-phi`, or widen its window with `--phi-window`.
 
 It remains an **indicative screen**: the built-in HMM and 3SEQ tests are fast triplet/segmentation screens, not a full tree-based analysis (such as GARD). Treat regions as candidates to confirm.
 
@@ -195,7 +195,7 @@ The pairwise plot shows the major parent against the leading minor parent:
 **The two sequences most likely involved in the recombination, with the called region shaded.**
 
 # Is a reference missing?
-RecomFi always reports the *closest* reference, even when every reference is far
+Tessera always reports the *closest* reference, even when every reference is far
 from the query — so a recombinant whose true donor is not in the collection is
 still assigned to the least-bad reference. To catch this, the scan also reports
 **reference coverage**: stretches where even the closest reference is below a
@@ -205,13 +205,13 @@ caveat banner; a region labelled `divergent` (ample comparable bases, yet a poor
 match) is the signature of an absent reference, as opposed to `low_information`
 (too few comparable bases to judge).
 
-When a gap is found, `recomfi find-references` searches NCBI for the missing
+When a gap is found, `tessera find-references` searches NCBI for the missing
 genome: it BLASTs the under-covered query subsequence against `nt`, reports
 candidate references (accession, identity, whether already in your collection),
 and — with `--download` — fetches the best new one into a collection directory to
 re-run with.
 ```
-recomfi find-references --msa msa.fasta --query cowpox_with_variolaInsert \
+tessera find-references --msa msa.fasta --query cowpox_with_variolaInsert \
     --collection collection/ --email you@example.org --download collection/
 ```
 This contacts NCBI over the network; `--download` needs Entrez Direct
@@ -231,11 +231,11 @@ averages it away), and `--subtile` controls whether its donor is *found* once
 detected. Set `--subtile 0` to disable; very short intervals (< ~150 bp) lose BLAST
 specificity.
 
-To do this repeatedly until coverage stops improving, `recomfi fill-references`
+To do this repeatedly until coverage stops improving, `tessera fill-references`
 runs the whole cycle — build MSA, scan, BLAST, download — for several rounds,
 growing a copy of the collection each time:
 ```
-recomfi fill-references --query cowpox_with_variolaInsert.fasta.gz \
+tessera fill-references --query cowpox_with_variolaInsert.fasta.gz \
     --collection collection/ --output filled/ --aligner mafft --email you@example.org
 ```
 It stops when the gaps close, when no new reference can be found, or when a round
@@ -248,7 +248,7 @@ Omit `--collection` to **start fresh** with no suggested references: the first
 round seeds the collection from an NCBI search, then the loop fills the remaining
 gaps as usual.
 ```
-recomfi fill-references --query CRF01_AE.fasta --output filled/ --aligner mafft \
+tessera fill-references --query CRF01_AE.fasta --output filled/ --aligner mafft \
     --seed-mode parents --curate --email you@example.org
 ```
 How the seed is chosen (`--seed-mode`) matters for a recombinant query. A whole-query
@@ -287,7 +287,7 @@ seed from a **finite pool** instead (`--seed-source`):
   `--source-complete` for all complete genomes, which are then dereplicated.
 - `nextclade` — a pool reconstructed from a Nextclade dataset
   (https://docs.nextstrain.org/projects/nextclade/en/stable/user/datasets.html).
-  recomfi auto-detects the dataset from the query (`nextclade sort` when the CLI is
+  tessera auto-detects the dataset from the query (`nextclade sort` when the CLI is
   installed, otherwise BLAST taxon detection mapped to a dataset), or you pass it
   explicitly with `--nextclade-dataset <path>` (e.g. `nextstrain/sars-cov-2/XBB`,
   `community/neherlab/hiv-1/hxb2`). Every reference-tree tip is reconstructed from
@@ -295,13 +295,13 @@ seed from a **finite pool** instead (`--seed-source`):
   names parents by clade. Fetched pools are cached per dataset version.
 
 ```
-recomfi fill-references --query CRF01_AE.fasta --output filled/ --aligner mafft \
+tessera fill-references --query CRF01_AE.fasta --output filled/ --aligner mafft \
     --seed-source local --candidate-pool subtype_refs/ --curate
 ```
 
 ```
-recomfi detect --query CRF01_AE.fasta --output out/ --nextclade
-recomfi fill-references --query q.fasta --output out/ --seed-source nextclade \
+tessera detect --query CRF01_AE.fasta --output out/ --nextclade
+tessera fill-references --query q.fasta --output out/ --seed-source nextclade \
     --nextclade-dataset nextstrain/sars-cov-2/XBB
 ```
 A Nextclade dataset is a clade-typing reference tree, so the pool spans clade
@@ -324,7 +324,7 @@ heavily sequenced taxon the capped sample may miss lineages, so a curated
 panel actually contains the parents depends on the taxon: it works when they are
 genotype/lineage representatives, less so for fine genotype-specific recombinants.
 Disable with `--no-auto-diversify`. This complements the caller-side defence:
-`recomfi recomb` excludes whole-genome siblings from the competition
+`tessera recomb` excludes whole-genome siblings from the competition
 (`--exclude-siblings`, on by default), so a sibling that still slips into the panel
 cannot win every window and mask the event.
 
@@ -336,13 +336,13 @@ query recruited CRF01_AE relatives that hid the underlying subtype-A/E mosaic.)
 Detection needs *diversity*: distinct parental lineages, and none of the query's
 siblings.
 
-`recomfi curate-panel` curates a collection for detection. It uses
+`tessera curate-panel` curates a collection for detection. It uses
 [skani](https://github.com/bluenote-1577/skani) to measure each reference's
 genome-wide identity (ANI) and how much of the query it covers, then drops the
 query's siblings and dereplicates near-duplicates with
 [skDER](https://github.com/raufs/skDER):
 ```
-recomfi curate-panel --query CRF01_AE.fasta --collection collection/ --output curated/
+tessera curate-panel --query CRF01_AE.fasta --collection collection/ --output curated/
 ```
 A *sibling* is a reference whose ANI to the query exceeds the backbone's by a
 margin **and** that covers most of the query — a whole-genome relative. A regional
@@ -351,7 +351,7 @@ kept. The rule is relative to the backbone (the query's closest whole-genome
 match), so it needs no per-organism identity cutoff: it flags HIV subtype
 relatives (~12 % apart) and SARS-CoV-2 sublineages (<1 % apart) alike. The curated
 `curated/collection/` and a `panel_lineages.tsv` (each reference's role and
-ANI/coverage) are written; rebuild with `recomfi msa` then `recomfi recomb`.
+ANI/coverage) are written; rebuild with `tessera msa` then `tessera recomb`.
 
 The same curation runs inside the fill loop with `fill-references --curate`, which
 keeps the growing panel diverse and sibling-free each round and adds a "Reference
@@ -361,7 +361,7 @@ panel" section to the report. Both need skani (and skDER for dereplication):
 # Known limitations
 The HMM caller's segmentation and the discordant-site sign test address the main
 weaknesses of the old heuristic (window autocorrelation, the `--margin 0.0`
-over-calling), but RecomFi is still an indicative screen, not a full phylogenetic
+over-calling), but Tessera is still an indicative screen, not a full phylogenetic
 recombination test. It compares the query to a fixed reference panel rather than
 inferring trees (so it cannot resolve which lineage is ancestral), uses a single
 substitution model, and applies no genome-wide multiple-testing correction across

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from recomfi.core.cache import nextclade_cache
+from tessera.core.cache import nextclade_cache
 
 
 def test_nextclade_cache_path_is_under_override_and_stable(tmp_path: Path):

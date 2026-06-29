@@ -8,10 +8,10 @@ from pathlib import Path
 
 import numpy as np
 
-from recomfi.recomb.analyze import analyze
-from recomfi.recomb.regions import RegionParams, call_regions
-from recomfi.recomb.similarity import compute_similarity
-from recomfi.recomb.threeseq import (
+from tessera.recomb.analyze import analyze
+from tessera.recomb.regions import RegionParams, call_regions
+from tessera.recomb.similarity import compute_similarity
+from tessera.recomb.threeseq import (
     descent_pvalue_exact,
     max_descent,
     triplet_steps,
@@ -65,7 +65,7 @@ def test_triplet_steps_keeps_only_discriminating_sites(tmp_path: Path) -> None:
         "major": "ACAA",
         "minor": "ATGC",
     })
-    from recomfi.recomb.similarity import _read_alignment
+    from tessera.recomb.similarity import _read_alignment
     rows = _read_alignment(str(msa))
     steps, cols = triplet_steps(rows, "query", "major", "minor")
     assert cols.tolist() == [1, 2]

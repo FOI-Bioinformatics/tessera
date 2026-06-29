@@ -1,4 +1,4 @@
-# Nextclade as a recomfi seed-source
+# Nextclade as a tessera seed-source
 
 Date: 2026-06-28
 Status: approved design, ready for implementation
@@ -6,10 +6,10 @@ Branch: typed-lineages
 
 ## Goal
 
-Make it possible to run recomfi recombination detection against a reference pool
+Make it possible to run tessera recombination detection against a reference pool
 derived from any Nextclade dataset, with the dataset auto-detected from the query.
 This generalises the one-off HIV-1 pool experiment (`reports/hiv_nextclade_pool/`)
-into a first-class `--seed-source nextclade` inside recomfi, usable across the
+into a first-class `--seed-source nextclade` inside tessera, usable across the
 ~79 official `nextstrain/*` datasets and the community datasets (SARS-CoV-2, flu
 A/B segments, RSV, mpox, measles, dengue, mumps, rubella, ebola, hantavirus, WNV,
 yellow fever, hMPV, VZV, HIV-1, …).
@@ -41,7 +41,7 @@ query ──► resolve_dataset ──► build_pool ──► select_regional �
           (nextclade.py)      (nextclade.py)  (pool.py, reused)    (iterate.py)
 ```
 
-### New module: `src/recomfi/discover/nextclade.py`
+### New module: `src/tessera/discover/nextclade.py`
 
 Self-contained; `iterate.py` only calls its two public functions. No concrete
 Nextclade logic leaks into the rest of the package.
@@ -122,7 +122,7 @@ NEXTCLADE = ToolCapabilities(
 `nextclade` is checked with `shutil.which`, never required; absence simply routes
 detection to the BLAST fallback.
 
-### Cache: `src/recomfi/core/cache.py`
+### Cache: `src/tessera/core/cache.py`
 
 Add, mirroring `ncbi_virus_cache`:
 
@@ -132,7 +132,7 @@ def nextclade_cache(path: str, tag: str, *, override=None) -> Path:
     return cache_root(override) / "nextclade" / f"{_slug(path)}_{key}"
 ```
 
-### Wiring: `src/recomfi/discover/iterate.py`
+### Wiring: `src/tessera/discover/iterate.py`
 
 - `FillParams` gains `nextclade_dataset: str | None = None` (override; `None` =
   auto-detect).
@@ -169,9 +169,9 @@ def nextclade_cache(path: str, tag: str, *, override=None) -> Path:
 Headline usage:
 
 ```
-recomfi detect --query CRF01_AE.fasta --output out/ --nextclade
-recomfi detect --query q.fasta --output out/ --nextclade-dataset nextstrain/sars-cov-2/XBB
-recomfi fill-references --query q.fasta --output out/ --seed-source nextclade
+tessera detect --query CRF01_AE.fasta --output out/ --nextclade
+tessera detect --query q.fasta --output out/ --nextclade-dataset nextstrain/sars-cov-2/XBB
+tessera fill-references --query q.fasta --output out/ --seed-source nextclade
 ```
 
 ## Data flow

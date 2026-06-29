@@ -1,6 +1,6 @@
 {
   "_comment": [
-    "Validation datasets for RecomFi. 'orthopox_example' uses the bundled",
+    "Validation datasets for Tessera. 'orthopox_example' uses the bundled",
     "example_data and runs out of the box. The fetch-based datasets are",
     "downloaded by validation/fetch.py from the listed NCBI accessions.",
     "Accessions marked TODO must be confirmed before enabling the dataset",

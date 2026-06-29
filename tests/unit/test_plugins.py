@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from recomfi.aligners.base import Aligner
-from recomfi.aligners.base import registry as aligner_registry
-from recomfi.core.errors import PluginError
+from tessera.aligners.base import Aligner
+from tessera.aligners.base import registry as aligner_registry
+from tessera.core.errors import PluginError
 
 ALL_ALIGNERS = ("progressivemauve", "mafft", "minimap2", "sibeliaz", "cactus")
 

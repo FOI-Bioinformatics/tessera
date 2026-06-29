@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from recomfi.converters.maf_to_fasta import maf_to_fasta
+from tessera.converters.maf_to_fasta import maf_to_fasta
 
 
 def _read_fasta(path: Path) -> dict[str, str]:

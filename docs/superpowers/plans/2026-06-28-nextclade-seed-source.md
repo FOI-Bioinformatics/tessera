@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a `--seed-source nextclade` to recomfi that auto-detects a Nextclade dataset from the query, reconstructs its reference-tree tips into a candidate genome pool, and feeds that pool through the existing regional-selection path.
+**Goal:** Add a `--seed-source nextclade` to tessera that auto-detects a Nextclade dataset from the query, reconstructs its reference-tree tips into a candidate genome pool, and feeds that pool through the existing regional-selection path.
 
 **Architecture:** A new self-contained module `discover/nextclade.py` resolves a dataset (override / `nextclade sort` / BLAST+alias) and reconstructs its tree tips + examples into clade-labeled genomes. `iterate.py` gains a thin `nextclade` branch that reuses the existing `select_regional` -> collection -> MSA -> HMM flow unchanged. A per-`path@tag` on-disk cache avoids re-fetching.
 
-**Tech Stack:** Python 3.11+, stdlib `urllib`/`json`/`re`, recomfi's existing `core`/`discover`/`recomb` packages, Typer CLI, pytest with mocked `urlopen`/`run_tool`.
+**Tech Stack:** Python 3.11+, stdlib `urllib`/`json`/`re`, tessera's existing `core`/`discover`/`recomb` packages, Typer CLI, pytest with mocked `urlopen`/`run_tool`.
 
 ## Global Constraints
 
@@ -15,7 +15,7 @@
 - The `nextclade` CLI is OPTIONAL: probed with `shutil.which`, never required.
 - No Unicode in any file (user rule); modest scientific language in code/docs.
 - Nextclade v3 file URL pattern: `https://data.clades.nextstrain.org/v3/{path}/{tag}/{filename}`; index at `https://data.clades.nextstrain.org/v3/index.json`.
-- Errors raise `recomfi.core.errors.UserInputError` (never `sys.exit`).
+- Errors raise `tessera.core.errors.UserInputError` (never `sys.exit`).
 - Tests are binary-free: mock `urlopen`/`run_tool`/`detect_taxon`; never require `nextclade`.
 - Detection precedence: explicit `--candidate-pool` (local) > nextclade > blast.
 - Dataset detection precedence: `--nextclade-dataset` override > `nextclade sort` > BLAST+alias.
@@ -25,7 +25,7 @@
 ### Task 1: `nextclade_cache` cache key
 
 **Files:**
-- Modify: `src/recomfi/core/cache.py` (add function after `ncbi_virus_cache`)
+- Modify: `src/tessera/core/cache.py` (add function after `ncbi_virus_cache`)
 - Test: `tests/unit/test_cache.py` (new file)
 
 **Interfaces:**
@@ -43,7 +43,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from recomfi.core.cache import nextclade_cache
+from tessera.core.cache import nextclade_cache
 
 
 def test_nextclade_cache_path_is_under_override_and_stable(tmp_path: Path):
@@ -67,7 +67,7 @@ Expected: FAIL with `ImportError: cannot import name 'nextclade_cache'`
 
 - [ ] **Step 3: Write minimal implementation**
 
-In `src/recomfi/core/cache.py`, after the `ncbi_virus_cache` function, add:
+In `src/tessera/core/cache.py`, after the `ncbi_virus_cache` function, add:
 
 ```python
 def nextclade_cache(path: str, tag: str, *, override: str | Path | None = None) -> Path:
@@ -84,7 +84,7 @@ Expected: PASS (2 passed)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/recomfi/core/cache.py tests/unit/test_cache.py
+git add src/tessera/core/cache.py tests/unit/test_cache.py
 git commit -m "feat: add nextclade_cache key helper"
 ```
 
@@ -93,7 +93,7 @@ git commit -m "feat: add nextclade_cache key helper"
 ### Task 2: Reconstruction and labeling helpers
 
 **Files:**
-- Create: `src/recomfi/discover/nextclade.py`
+- Create: `src/tessera/discover/nextclade.py`
 - Test: `tests/unit/test_nextclade.py` (new file)
 
 **Interfaces:**
@@ -112,7 +112,7 @@ Create `tests/unit/test_nextclade.py`:
 
 from __future__ import annotations
 
-from recomfi.discover import nextclade as nc
+from tessera.discover import nextclade as nc
 
 
 def test_reconstruct_applies_subs_and_deletions_and_strips_gaps():
@@ -144,13 +144,13 @@ Expected: FAIL with `ModuleNotFoundError` or `AttributeError` (module/functions 
 
 - [ ] **Step 3: Write minimal implementation**
 
-Create `src/recomfi/discover/nextclade.py`:
+Create `src/tessera/discover/nextclade.py`:
 
 ```python
 """Build a candidate genome pool from a Nextclade dataset.
 
 Resolves a dataset from the query (an explicit override, else ``nextclade sort``
-when the binary is present, else recomfi's BLAST taxon detection mapped to a
+when the binary is present, else tessera's BLAST taxon detection mapped to a
 dataset by keyword), then reconstructs every reference-tree tip by applying its
 root-to-tip nucleotide mutations to the dataset reference. The reconstructed tips
 (plus the dataset's example sequences) form a diverse, clade-labeled pool that the
@@ -236,7 +236,7 @@ Expected: PASS (4 passed)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/recomfi/discover/nextclade.py tests/unit/test_nextclade.py
+git add src/tessera/discover/nextclade.py tests/unit/test_nextclade.py
 git commit -m "feat: nextclade tip reconstruction and clade labeling helpers"
 ```
 
@@ -245,7 +245,7 @@ git commit -m "feat: nextclade tip reconstruction and clade labeling helpers"
 ### Task 3: Index fetch and dataset resolution
 
 **Files:**
-- Modify: `src/recomfi/discover/nextclade.py`
+- Modify: `src/tessera/discover/nextclade.py`
 - Test: `tests/unit/test_nextclade.py`
 
 **Interfaces:**
@@ -267,7 +267,7 @@ from pathlib import Path
 
 import pytest
 
-from recomfi.core.errors import UserInputError
+from tessera.core.errors import UserInputError
 
 _FAKE_INDEX = {
     "collections": [{
@@ -350,7 +350,7 @@ Expected: FAIL (`fetch_index` / `resolve_dataset` undefined)
 
 - [ ] **Step 3: Write minimal implementation**
 
-Append to `src/recomfi/discover/nextclade.py`:
+Append to `src/tessera/discover/nextclade.py`:
 
 ```python
 from .pool import detect_taxon  # placed with the other imports at the top of the file
@@ -482,7 +482,7 @@ Expected: PASS (all reconstruction + index + resolve tests pass)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/recomfi/discover/nextclade.py tests/unit/test_nextclade.py
+git add src/tessera/discover/nextclade.py tests/unit/test_nextclade.py
 git commit -m "feat: resolve a Nextclade dataset from the query (override/sort/blast)"
 ```
 
@@ -491,7 +491,7 @@ git commit -m "feat: resolve a Nextclade dataset from the query (override/sort/b
 ### Task 4: `build_pool` (reconstruct + cache)
 
 **Files:**
-- Modify: `src/recomfi/discover/nextclade.py`
+- Modify: `src/tessera/discover/nextclade.py`
 - Test: `tests/unit/test_nextclade.py`
 
 **Interfaces:**
@@ -581,7 +581,7 @@ Expected: FAIL (`build_pool` undefined)
 
 - [ ] **Step 3: Write minimal implementation**
 
-Append to `src/recomfi/discover/nextclade.py`:
+Append to `src/tessera/discover/nextclade.py`:
 
 ```python
 from ..core.cache import cached_genomes  # add to the top import block
@@ -716,13 +716,13 @@ Expected: PASS (all nextclade tests)
 
 - [ ] **Step 5: Verify lint and full module**
 
-Run: `ruff check src/recomfi/discover/nextclade.py && pytest tests/unit/test_nextclade.py -q`
+Run: `ruff check src/tessera/discover/nextclade.py && pytest tests/unit/test_nextclade.py -q`
 Expected: no lint errors; all tests pass
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/recomfi/discover/nextclade.py tests/unit/test_nextclade.py
+git add src/tessera/discover/nextclade.py tests/unit/test_nextclade.py
 git commit -m "feat: build a cached Nextclade genome pool from tree tips and examples"
 ```
 
@@ -731,7 +731,7 @@ git commit -m "feat: build a cached Nextclade genome pool from tree tips and exa
 ### Task 5: Wire the nextclade source into the fill loop
 
 **Files:**
-- Modify: `src/recomfi/discover/iterate.py`
+- Modify: `src/tessera/discover/iterate.py`
 - Test: `tests/unit/test_iterate.py`
 
 **Interfaces:**
@@ -761,7 +761,7 @@ def test_seed_source_nextclade_routes_through_pool_selection(monkeypatch, tmp_pa
         return [pool_dir / "REF1.fasta"]
 
     def fake_select(params, genomes, logger):
-        from recomfi.discover.pool import PoolSelection
+        from tessera.discover.pool import PoolSelection
         return PoolSelection(selected=list(genomes))
 
     monkeypatch.setattr(iterate, "_fetch_nextclade", fake_fetch)
@@ -783,7 +783,7 @@ Expected: FAIL (`FillParams` has no `nextclade_dataset`, or `_fetch_nextclade` u
 
 - [ ] **Step 3: Write minimal implementation**
 
-In `src/recomfi/discover/iterate.py`:
+In `src/tessera/discover/iterate.py`:
 
 (a) Add the field to `FillParams` (next to `candidate_pool` / `taxon`):
 
@@ -841,7 +841,7 @@ Expected: all pass
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/recomfi/discover/iterate.py tests/unit/test_iterate.py
+git add src/tessera/discover/iterate.py tests/unit/test_iterate.py
 git commit -m "feat: route seed-source nextclade through regional pool selection"
 ```
 
@@ -850,9 +850,9 @@ git commit -m "feat: route seed-source nextclade through regional pool selection
 ### Task 6: CLI options
 
 **Files:**
-- Modify: `src/recomfi/cli/cmd_fill_references.py`
-- Modify: `src/recomfi/cli/cmd_detect.py`
-- Modify: `src/recomfi/cli/cmd_build_panel.py`
+- Modify: `src/tessera/cli/cmd_fill_references.py`
+- Modify: `src/tessera/cli/cmd_detect.py`
+- Modify: `src/tessera/cli/cmd_build_panel.py`
 - Test: `tests/unit/test_cli_nextclade.py` (new file)
 
 **Interfaces:**
@@ -870,15 +870,15 @@ from __future__ import annotations
 
 from typer.testing import CliRunner
 
-from recomfi.cli import cmd_build_panel, cmd_detect, cmd_fill_references  # noqa: F401
-from recomfi.cli.main import app
+from tessera.cli import cmd_build_panel, cmd_detect, cmd_fill_references  # noqa: F401
+from tessera.cli.main import app
 
 runner = CliRunner()
 
 
 def _capture(monkeypatch):
     captured = {}
-    import recomfi.discover.iterate as iterate
+    import tessera.discover.iterate as iterate
 
     def fake_fill(params, logger):
         captured["params"] = params
@@ -924,7 +924,7 @@ Expected: FAIL (unknown options / seed-source choice rejected)
 
 - [ ] **Step 3: Implement the CLI changes**
 
-In `src/recomfi/cli/cmd_fill_references.py`:
+In `src/tessera/cli/cmd_fill_references.py`:
 - In the `_require_choice(seed_source, {...}, "--seed-source")` call, add `"nextclade"`:
 
 ```python
@@ -947,7 +947,7 @@ In `src/recomfi/cli/cmd_fill_references.py`:
             taxon=taxon, nextclade_dataset=nextclade_dataset,
 ```
 
-In `src/recomfi/cli/cmd_detect.py` and `src/recomfi/cli/cmd_build_panel.py`, add two options (next to `candidate_pool`):
+In `src/tessera/cli/cmd_detect.py` and `src/tessera/cli/cmd_build_panel.py`, add two options (next to `candidate_pool`):
 
 ```python
     nextclade: bool = typer.Option(
@@ -992,14 +992,14 @@ Expected: PASS (3 passed)
 
 - [ ] **Step 5: Lint and full CLI regression**
 
-Run: `ruff check src/recomfi/cli && pytest tests/unit/test_cli_nextclade.py -q`
+Run: `ruff check src/tessera/cli && pytest tests/unit/test_cli_nextclade.py -q`
 Expected: no lint errors; tests pass
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/recomfi/cli/cmd_fill_references.py src/recomfi/cli/cmd_detect.py \
-        src/recomfi/cli/cmd_build_panel.py tests/unit/test_cli_nextclade.py
+git add src/tessera/cli/cmd_fill_references.py src/tessera/cli/cmd_detect.py \
+        src/tessera/cli/cmd_build_panel.py tests/unit/test_cli_nextclade.py
 git commit -m "feat: expose --nextclade / --nextclade-dataset on detect, build-panel, fill-references"
 ```
 
@@ -1019,7 +1019,7 @@ In `README.md`, after the `- `ncbi-virus` —` bullet in the "finite pool" `--se
 ```markdown
 - `nextclade` — a pool reconstructed from a Nextclade dataset
   (https://docs.nextstrain.org/projects/nextclade/en/stable/user/datasets.html).
-  recomfi auto-detects the dataset from the query (`nextclade sort` when the CLI is
+  tessera auto-detects the dataset from the query (`nextclade sort` when the CLI is
   installed, otherwise BLAST taxon detection mapped to a dataset), or you pass it
   explicitly with `--nextclade-dataset <path>` (e.g. `nextstrain/sars-cov-2/XBB`,
   `community/neherlab/hiv-1/hxb2`). Every reference-tree tip is reconstructed from
@@ -1031,8 +1031,8 @@ Then add a short usage block after the existing `--seed-source local` example:
 
 ```markdown
 ```
-recomfi detect --query CRF01_AE.fasta --output out/ --nextclade
-recomfi fill-references --query q.fasta --output out/ --seed-source nextclade \
+tessera detect --query CRF01_AE.fasta --output out/ --nextclade
+tessera fill-references --query q.fasta --output out/ --seed-source nextclade \
     --nextclade-dataset nextstrain/sars-cov-2/XBB
 ```
 A Nextclade dataset is a clade-typing reference tree, so the pool spans clade
@@ -1072,7 +1072,7 @@ Expected: no errors
 
 - [ ] **Step 3: Smoke-check the CLI help surfaces the new options**
 
-Run: `python -m recomfi.cli.main detect --help | grep -i nextclade`
+Run: `python -m tessera.cli.main detect --help | grep -i nextclade`
 Expected: `--nextclade` and `--nextclade-dataset` appear
 
 - [ ] **Step 4: Commit any lint fixes**

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from recomfi.recomb.stats import (
+from tessera.recomb.stats import (
     benjamini_hochberg,
     emission_loglik,
     proportion_diff_significant,

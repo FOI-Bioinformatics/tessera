@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from recomfi.aligners import mafft as mafft_mod
-from recomfi.aligners import minimap2 as mm_mod
-from recomfi.aligners import progressivemauve as pm_mod
-from recomfi.aligners.base import AlignParams
-from recomfi.converters.mafft_merge import merge_added_fragments
-from recomfi.converters.sam_to_fasta import project_sam_to_row
+from tessera.aligners import mafft as mafft_mod
+from tessera.aligners import minimap2 as mm_mod
+from tessera.aligners import progressivemauve as pm_mod
+from tessera.aligners.base import AlignParams
+from tessera.converters.mafft_merge import merge_added_fragments
+from tessera.converters.sam_to_fasta import project_sam_to_row
 
-_LOG = logging.getLogger("recomfi.test")
+_LOG = logging.getLogger("tessera.test")
 
 
 # --- MAFFT keeplength merge ------------------------------------------------

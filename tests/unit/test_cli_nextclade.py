@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from typer.testing import CliRunner
 
-from recomfi.cli import cmd_build_panel, cmd_detect, cmd_fill_references  # noqa: F401
-from recomfi.cli.main import app
+from tessera.cli import cmd_build_panel, cmd_detect, cmd_fill_references  # noqa: F401
+from tessera.cli.main import app
 
 runner = CliRunner()
 
 
 def _capture(monkeypatch):
     captured = {}
-    import recomfi.discover.iterate as iterate
+    import tessera.discover.iterate as iterate
 
     def fake_fill(params, logger):
         captured["params"] = params

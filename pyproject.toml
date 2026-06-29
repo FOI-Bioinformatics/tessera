@@ -3,14 +3,14 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "recomfi"
+name = "tessera"
 version = "2.0.0"
-description = "RecomFi: identify recombination events in a query sequence against a collection of reference sequences"
+description = "Tessera: identify recombination events in a query sequence against a collection of reference sequences"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "jaclew" }, { name = "FOI-Bioinformatics" }]
-# Upper caps to the next major: RecomFi is an application (a pinned CLI, not a
+# Upper caps to the next major: Tessera is an application (a pinned CLI, not a
 # library others resolve against), so capping guards a fresh install from a
 # surprise breaking major (e.g. numpy 3, biopython 2). For fully reproducible
 # runs, pin via the conda lock (see environment.yml), which also covers the
@@ -33,16 +33,16 @@ dev = [
 ]
 
 [project.scripts]
-recomfi = "recomfi.cli.main:app"
+tessera = "tessera.cli.main:app"
 
 # In-tree aligner adapters are discovered via the same entry-point mechanism a
 # third party would use, so core never imports a specific adapter directly.
-[project.entry-points."recomfi.aligners"]
-progressivemauve = "recomfi.aligners.progressivemauve:ProgressiveMauveAligner"
-mafft = "recomfi.aligners.mafft:MafftAligner"
-minimap2 = "recomfi.aligners.minimap2:Minimap2Aligner"
-sibeliaz = "recomfi.aligners.sibeliaz:SibeliazAligner"
-cactus = "recomfi.aligners.cactus:CactusAligner"
+[project.entry-points."tessera.aligners"]
+progressivemauve = "tessera.aligners.progressivemauve:ProgressiveMauveAligner"
+mafft = "tessera.aligners.mafft:MafftAligner"
+minimap2 = "tessera.aligners.minimap2:Minimap2Aligner"
+sibeliaz = "tessera.aligners.sibeliaz:SibeliazAligner"
+cactus = "tessera.aligners.cactus:CactusAligner"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -65,7 +65,7 @@ ignore = ["B008"]
 [tool.ruff.lint.per-file-ignores]
 # Subcommands are registered by importing the cmd_* modules for their side
 # effects, after the Typer app is defined -- hence the late import.
-"src/recomfi/cli/main.py" = ["E402", "I001"]
+"src/tessera/cli/main.py" = ["E402", "I001"]
 # The HTML report embeds a compact inline stylesheet; keeping CSS rules one per
 # line (rather than wrapped) is more readable than honouring the line limit.
-"src/recomfi/recomb/report.py" = ["E501"]
+"src/tessera/recomb/report.py" = ["E501"]

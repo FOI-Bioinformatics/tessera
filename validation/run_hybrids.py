@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """Generate synthetic recombinant (hybrid) genomes from Nextclade datasets and
-test RecomFi's detection performance on them.
+test Tessera's detection performance on them.
 
 For each configured dataset the harness:
 
@@ -9,7 +9,7 @@ For each configured dataset the harness:
    or an explicit pair) and each clade's central genome, in reference coordinates.
 3. Splices an A-backbone / B-insert hybrid (B donates the middle of the genome),
    recording the true donor span in query coordinates.
-4. Runs RecomFi pool-only against the dataset's pool with the two exact source
+4. Runs Tessera pool-only against the dataset's pool with the two exact source
    genomes removed (their clades remain represented by other genomes), so the
    query is not a trivial self-match.
 5. Checks the call: was recombination detected, is the backbone (major parent)
@@ -35,10 +35,10 @@ import sys
 import time
 from pathlib import Path
 
-from recomfi.core.cache import nextclade_cache
-from recomfi.core.errors import ToolExecutionError
-from recomfi.core.io import strip_sequence_extension, write_fasta_record
-from recomfi.discover.nextclade import (
+from tessera.core.cache import nextclade_cache
+from tessera.core.errors import ToolExecutionError
+from tessera.core.io import strip_sequence_extension, write_fasta_record
+from tessera.discover.nextclade import (
     _MUT,
     _accession_of,
     _clade_of,
@@ -46,10 +46,10 @@ from recomfi.discover.nextclade import (
     build_pool,
     resolve_dataset,
 )
-from recomfi.discover.pool import select_regional
-from recomfi.msa.build import MsaParams, build_msa
-from recomfi.recomb.run import RecombParams, run_recomb
-from recomfi.recomb.typing import LINEAGES_TSV, lineage_map_from_rows, write_lineage_map
+from tessera.discover.pool import select_regional
+from tessera.msa.build import MsaParams, build_msa
+from tessera.recomb.run import RecombParams, run_recomb
+from tessera.recomb.typing import LINEAGES_TSV, lineage_map_from_rows, write_lineage_map
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data" / "hybrids"
@@ -465,9 +465,9 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
 
 def main(argv: list[str]) -> int:
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
-    logger = logging.getLogger("recomfi")
+    logger = logging.getLogger("tessera")
     cases = [c for c in HYBRIDS if not argv or c["name"] in argv]
-    print(f"\nRecomFi hybrid detection -- {len(cases)} case(s)\n" + "=" * 72)
+    print(f"\nTessera hybrid detection -- {len(cases)} case(s)\n" + "=" * 72)
     results: list[dict] = []
     for case in cases:
         try:

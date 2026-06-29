@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from recomfi.msa.build import MsaParams, build_msa
-from recomfi.recomb.run import RecombParams, run_recomb
+from tessera.msa.build import MsaParams, build_msa
+from tessera.recomb.run import RecombParams, run_recomb
 
-_LOG = logging.getLogger("recomfi.test")
+_LOG = logging.getLogger("tessera.test")
 
 pytestmark = pytest.mark.requires_binary
 

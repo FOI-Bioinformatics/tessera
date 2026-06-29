@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from recomfi.discover import iterate
-from recomfi.discover.blast import Hit
-from recomfi.discover.iterate import FillParams, fill_references
-from recomfi.discover.run import Candidate
-from recomfi.recomb.coverage import CoverageGap
+from tessera.discover import iterate
+from tessera.discover.blast import Hit
+from tessera.discover.iterate import FillParams, fill_references
+from tessera.discover.run import Candidate
+from tessera.recomb.coverage import CoverageGap
 
 
 class _StubResult:
@@ -172,7 +172,7 @@ def test_saturation_auto_switches_to_ncbi_virus_diversity(monkeypatch, tmp_path,
         iterate, "blast_subsequence",
         lambda seq, **k: [Hit("SIB", "sibling", 98.0, 99.0, 0.0)],
     )
-    from recomfi.discover import pool as pool_mod
+    from tessera.discover import pool as pool_mod
     monkeypatch.setattr(pool_mod, "datasets_available", lambda: True)
 
     called = {}
@@ -225,7 +225,7 @@ def test_parents_mode_falls_back_when_only_siblings(monkeypatch, tmp_path, logge
 
 def test_fetch_diverse_broadens_downloads_all_and_caches(monkeypatch, tmp_path, logger):
     # RefSeq too thin -> broaden to the FULL complete set (no pre-cap; dereplicated later).
-    from recomfi.discover import pool as pool_mod
+    from tessera.discover import pool as pool_mod
 
     calls = {"fetch": 0, "limit": "unset"}
 
@@ -261,7 +261,7 @@ def test_fetch_diverse_broadens_downloads_all_and_caches(monkeypatch, tmp_path, 
 
 
 def test_dominant_lineage_token_extracted_from_titles():
-    from recomfi.discover.iterate import _dominant_lineage_token
+    from tessera.discover.iterate import _dominant_lineage_token
 
     hits = [
         Hit("A", "Norovirus GII isolate Hu/GII.P16-GII.1/RUS/NS18", 98.0, 99.0, 0.0),
@@ -277,7 +277,7 @@ def test_dominant_lineage_token_extracted_from_titles():
 
 
 def test_negative_lineage_seeding_recruits_parents(monkeypatch, tmp_path, logger):
-    from recomfi.discover import iterate as it
+    from tessera.discover import iterate as it
 
     query = tmp_path / "q.fasta"
     query.write_text(">q\n" + "ACGT" * 200 + "\n")
@@ -414,7 +414,7 @@ def test_seed_source_nextclade_routes_through_pool_selection(monkeypatch, tmp_pa
         return [pool_dir / "REF1.fasta"]
 
     def fake_select(params, genomes, logger):
-        from recomfi.discover.pool import PoolSelection
+        from tessera.discover.pool import PoolSelection
         return PoolSelection(selected=list(genomes))
 
     monkeypatch.setattr(iterate, "_fetch_nextclade", fake_fetch)

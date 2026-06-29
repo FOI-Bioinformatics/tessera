@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from recomfi.recomb.analyze import analyze
-from recomfi.recomb.regions import RegionParams, call_regions
-from recomfi.recomb.similarity import compute_similarity
+from tessera.recomb.analyze import analyze
+from tessera.recomb.regions import RegionParams, call_regions
+from tessera.recomb.similarity import compute_similarity
 
 from ..conftest import write_fasta
 

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from recomfi.recomb.analyze import analyze, rank_datasets, winner_label, winners_per_window
-from recomfi.recomb.similarity import WindowSimilarity
+from tessera.recomb.analyze import analyze, rank_datasets, winner_label, winners_per_window
+from tessera.recomb.similarity import WindowSimilarity
 
 
 def _result(similarities: dict[str, list[float]]) -> WindowSimilarity:

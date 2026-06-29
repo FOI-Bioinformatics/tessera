@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from recomfi.discover import panel
+from tessera.discover import panel
 
 
 def _genomes(tmp_path: Path, names: list[str]) -> list[Path]:

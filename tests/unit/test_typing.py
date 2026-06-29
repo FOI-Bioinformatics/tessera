@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from recomfi.recomb.typing import (
+from tessera.recomb.typing import (
     build_lineage_map,
     dominant_lineage_token,
     genotype_from_title,

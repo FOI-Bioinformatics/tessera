@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from recomfi.core.errors import UserInputError
-from recomfi.core.io import select_reference, stage_genomes, strip_sequence_extension
+from tessera.core.errors import UserInputError
+from tessera.core.io import select_reference, stage_genomes, strip_sequence_extension
 
-_LOG = logging.getLogger("recomfi.test")
+_LOG = logging.getLogger("tessera.test")
 
 
 def test_strip_sequence_extension() -> None:

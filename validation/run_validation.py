@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Run RecomFi end-to-end on published recombination datasets and check the result.
+"""Run Tessera end-to-end on published recombination datasets and check the result.
 
 This is an opt-in validation harness, separate from the pytest suite. It reads
 ``datasets.json``, builds an MSA and runs the recombination scan for each enabled
@@ -22,9 +22,9 @@ import shutil
 import sys
 from pathlib import Path
 
-from recomfi.core.io import strip_sequence_extension
-from recomfi.msa.build import MsaParams, build_msa
-from recomfi.recomb.run import RecombParams, run_recomb
+from tessera.core.io import strip_sequence_extension
+from tessera.msa.build import MsaParams, build_msa
+from tessera.recomb.run import RecombParams, run_recomb
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
@@ -162,12 +162,12 @@ def _run_one(ds: dict, logger: logging.Logger) -> tuple[str, list[str]]:
 
 def main() -> int:
     logging.basicConfig(level=logging.WARNING, format="%(message)s")
-    logger = logging.getLogger("recomfi.validation")
+    logger = logging.getLogger("tessera.validation")
 
     datasets = [d for d in _load_datasets() if d.get("enabled", True)]
     have_aligner = shutil.which("sibeliaz") is not None
 
-    print(f"\nRecomFi validation -- {len(datasets)} enabled dataset(s)\n" + "=" * 60)
+    print(f"\nTessera validation -- {len(datasets)} enabled dataset(s)\n" + "=" * 60)
     results: list[tuple[str, str]] = []
     for ds in datasets:
         if not have_aligner:

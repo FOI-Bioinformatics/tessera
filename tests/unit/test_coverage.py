@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import numpy as np
 
-from recomfi.recomb.coverage import (
+from tessera.recomb.coverage import (
     CoverageGap,
     CoverageParams,
     call_coverage_gaps,
     flag_undercovered_regions,
     gaps_as_regions,
 )
-from recomfi.recomb.regions import Region
-from recomfi.recomb.similarity import WindowSimilarity
+from tessera.recomb.regions import Region
+from tessera.recomb.similarity import WindowSimilarity
 
 
 def _result(best_sim, best_label, informative, *, window=100):

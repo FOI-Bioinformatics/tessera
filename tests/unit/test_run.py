@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from recomfi.recomb.run import _discover_lineage_tsv
+from tessera.recomb.run import _discover_lineage_tsv
 
 
 def test_discover_lineage_tsv_in_output_dir(tmp_path: Path):

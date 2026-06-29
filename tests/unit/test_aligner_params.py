@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from recomfi.aligners import progressivemauve as pm
-from recomfi.aligners import sibeliaz as sz
-from recomfi.aligners.base import AlignParams
-from recomfi.core.errors import UserInputError
+from tessera.aligners import progressivemauve as pm
+from tessera.aligners import sibeliaz as sz
+from tessera.aligners.base import AlignParams
+from tessera.core.errors import UserInputError
 
-_LOG = logging.getLogger("recomfi.test")
+_LOG = logging.getLogger("tessera.test")
 
 
 def _genomes(tmp_path: Path, n: int) -> list[Path]:

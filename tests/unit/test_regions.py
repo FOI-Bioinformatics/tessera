@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from recomfi.recomb.analyze import analyze
-from recomfi.recomb.regions import RegionParams, call_regions
-from recomfi.recomb.similarity import WindowSimilarity
+from tessera.recomb.analyze import analyze
+from tessera.recomb.regions import RegionParams, call_regions
+from tessera.recomb.similarity import WindowSimilarity
 
 
 def _result(similarities: dict[str, list[float]], step: int = 1) -> WindowSimilarity:

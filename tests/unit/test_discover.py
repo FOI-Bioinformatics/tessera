@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from recomfi.discover import run as discover_run
-from recomfi.discover.blast import Hit, _organism
-from recomfi.discover.run import FindRefParams, find_references
+from tessera.discover import run as discover_run
+from tessera.discover.blast import Hit, _organism
+from tessera.discover.run import FindRefParams, find_references
 
 from ..conftest import write_fasta
 
@@ -152,7 +152,7 @@ def test_download_writes_a_manifest_of_added_references(monkeypatch, tmp_path, l
 
 def test_download_without_efetch_is_a_clear_error(monkeypatch, tmp_path, logger):
     monkeypatch.setattr(discover_run, "efetch_available", lambda: False)
-    from recomfi.core.errors import UserInputError
+    from tessera.core.errors import UserInputError
 
     params = FindRefParams(
         msa=_msa(tmp_path), query="q", output=tmp_path / "out",
@@ -168,7 +168,7 @@ def test_organism_extraction():
 
 
 def test_tiles_geometry():
-    from recomfi.discover.run import _tiles
+    from tessera.discover.run import _tiles
 
     assert _tiles(300, 400) == [(0, 300)]  # shorter than a tile -> one search
     tiles = _tiles(800, 400)  # overlapping, half-step, last aligned to the end
@@ -176,8 +176,8 @@ def test_tiles_geometry():
 
 
 def test_collect_candidates_subtiling_surfaces_per_region_donors(monkeypatch, logger):
-    from recomfi.discover.run import collect_candidates
-    from recomfi.recomb.coverage import CoverageGap
+    from tessera.discover.run import collect_candidates
+    from tessera.recomb.coverage import CoverageGap
 
     # An 800 bp gap: an 'A' flank, a 'C' flank, and (in the middle tile) a mix.
     query_row = "A" * 400 + "C" * 400

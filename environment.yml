@@ -1,4 +1,4 @@
-name: recomfi
+name: tessera
 channels:
   - conda-forge
   - bioconda
@@ -16,7 +16,7 @@ dependencies:
   - bioconda::cactus
   - bioconda::mauve
   - conda-forge::boost-cpp=1.74.0
-  # Optional: only needed by `recomfi find-references --download` to fetch
+  # Optional: only needed by `tessera find-references --download` to fetch
   # candidate reference genomes from NCBI.
   - bioconda::entrez-direct
   # Optional: panel curation (`curate-panel` and `--curate`). skani provides the

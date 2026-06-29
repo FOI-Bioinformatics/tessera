@@ -1,6 +1,6 @@
-# RecomFi validation on published data
+# Tessera validation on published data
 
-An opt-in harness that runs the full RecomFi pipeline (`build_msa` then
+An opt-in harness that runs the full Tessera pipeline (`build_msa` then
 `run_recomb`) on real recombination datasets and checks the result against a
 documented expectation. It is intentionally **separate from the pytest suite**:
 CI stays fast and binary-free, while this exercises the real aligner path on
@@ -88,7 +88,7 @@ enterovirus D68 and PRRSV. For each dataset it:
    can be pinned per case (`clade_key`, e.g. SARS-CoV-2 `clade_nextstrain`);
 3. splices an A-backbone genome with a B insert over the middle 35-65 % of the
    genome, recording the true donor span in query coordinates;
-4. runs RecomFi pool-only with the two exact source genomes removed (their clades
+4. runs Tessera pool-only with the two exact source genomes removed (their clades
    stay represented), so the query is not a trivial self-match; window sizes adapt
    to the genome length and the aligner is per-case (minimap2 for ~200 kb mpox/VZV).
    Sibling-dropping is **off**: the synthetic pool has no recombinant twin of the
@@ -97,7 +97,7 @@ enterovirus D68 and PRRSV. For each dataset it:
    discarded as a masking twin -- the documented `--seed-keep-siblings` case. On a
    near-identical panel (mpox/VZV ~0.5 %) dereplication collapses the parent clades
    into one representative, so the panel is rebuilt from one central genome per
-   clade; RecomFi then auto-switches to informative-site windowing (the `mode`
+   clade; Tessera then auto-switches to informative-site windowing (the `mode`
    column);
 5. checks the call: recombination detected, backbone (major parent) clade == A,
    and a donor region recovered for clade B overlapping the true span. Clade labels
@@ -125,7 +125,7 @@ python validation/run_hybrids.py hiv1 dengue   # only named cases
 ```
 
 Needs MAFFT/minimap2/skani/skDER on PATH and contacts the Nextclade dataset server
-on the first run (pools are cached afterwards under `~/.cache/recomfi/nextclade`).
+on the first run (pools are cached afterwards under `~/.cache/tessera/nextclade`).
 For a short gene/segment dataset that skani rejects the panel falls back to one
 central genome per clade.
 
@@ -164,7 +164,7 @@ at least three genomes -- including datasets with no clade attribute at all
 | `oropouche` | -- | -- | SKIP -- no clade attribute in the tree |
 | `cchfv` | -- | -- | SKIP -- < 2 clades with >= 3 genomes |
 
-**13 PASS, 7 FAIL, 4 SKIP** (0 errors). RecomFi recovers the recombinant cleanly
+**13 PASS, 7 FAIL, 4 SKIP** (0 errors). Tessera recovers the recombinant cleanly
 across the full divergence range that has both parents represented -- from dengue
 serotypes (33 %) down to measles and mumps genotypes (~7 %).
 

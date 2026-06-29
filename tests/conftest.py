@@ -12,7 +12,7 @@ EXAMPLE_DATA = Path(__file__).resolve().parents[1] / "example_data"
 
 @pytest.fixture
 def logger() -> logging.Logger:
-    log = logging.getLogger("recomfi.test")
+    log = logging.getLogger("tessera.test")
     log.addHandler(logging.NullHandler())
     return log
 

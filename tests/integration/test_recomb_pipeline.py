@@ -6,9 +6,9 @@ import logging
 import random
 from pathlib import Path
 
-from recomfi.recomb.run import RecombParams, run_recomb
+from tessera.recomb.run import RecombParams, run_recomb
 
-_LOG = logging.getLogger("recomfi.test")
+_LOG = logging.getLogger("tessera.test")
 
 
 def _synthetic_msa(path: Path) -> None:

@@ -5,10 +5,10 @@ from __future__ import annotations
 import random
 from pathlib import Path
 
-from recomfi.recomb.analyze import analyze
-from recomfi.recomb.clusters import all_singletons, cluster_references, clustered_view
-from recomfi.recomb.regions import RegionParams, call_regions
-from recomfi.recomb.similarity import compute_similarity
+from tessera.recomb.analyze import analyze
+from tessera.recomb.clusters import all_singletons, cluster_references, clustered_view
+from tessera.recomb.regions import RegionParams, call_regions
+from tessera.recomb.similarity import compute_similarity
 
 from ..conftest import write_fasta
 from ..factories import _mutate
