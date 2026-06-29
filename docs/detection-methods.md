@@ -154,3 +154,23 @@ parents the HMM caller localizes the event confidently (q ~1e-29); 3SEQ agrees.*
 ~10 discriminating sites). The dip is shallow and narrow, so the HMM segmentation
 finds nothing across a base-pair window; `--method 3seq` pools the discriminating
 sites and recovers the shaded region (q ~1e-12).*
+
+## References
+
+The callers and statistics reimplemented here (dependency-free numpy) follow these
+sources:
+
+- **HMM segmentation (jpHMM-style).** Schultz A-K, Zhang M, Bulla I, et al. (2006). A
+  jumping profile hidden Markov model and applications to recombination sites in HIV and
+  HCV genomes. *BMC Bioinformatics* 7:265.
+- **3SEQ triplet test.** Boni MF, Posada D, Feldman MW (2007). An exact nonparametric
+  method for inferring mosaic structure in sequence triplets. *Genetics* 176(2):1035-1047.
+- **PHI test (Pairwise Homoplasy Index).** Bruen TC, Philippe H, Bryant D (2006). A
+  simple and robust statistical test for detecting the presence of recombination.
+  *Genetics* 172(4):2665-2681.
+- **Four-gamete test and Rmin.** Hudson RR, Kaplan NL (1985). Statistical properties of
+  the number of recombination events in the history of a sample of DNA sequences.
+  *Genetics* 111(1):147-164.
+- **Benjamini-Hochberg false-discovery-rate control.** Benjamini Y, Hochberg Y (1995).
+  Controlling the false discovery rate: a practical and powerful approach to multiple
+  testing. *Journal of the Royal Statistical Society B* 57(1):289-300.

@@ -535,6 +535,8 @@ details.methods[open]{padding-bottom:18px}
 .glossary{display:grid;grid-template-columns:max-content 1fr;gap:7px 20px;margin:4px 0 20px}
 .glossary dt{font-weight:600;font-size:13px}
 .glossary dd{margin:0;color:var(--muted);font-size:13px}
+.refs{margin:4px 0 20px;padding-left:18px}
+.refs li{color:var(--muted);font-size:13px;margin:4px 0}
 details.methods h3{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin:10px 0 6px}
 table.kv{border-collapse:collapse}
 table.kv th{text-align:left;font-weight:500;color:var(--muted);padding:3px 18px 3px 0;vertical-align:top;font-size:13px;white-space:nowrap}
@@ -906,9 +908,34 @@ _GLOSSARY = [
 ]
 
 
+# Sources for the reimplemented callers and statistics (dependency-free numpy).
+_REFERENCES = [
+    ("HMM segmentation (jpHMM-style)",
+     "Schultz A-K, Zhang M, Bulla I, et al. (2006). A jumping profile hidden Markov "
+     "model and applications to recombination sites in HIV and HCV genomes. BMC "
+     "Bioinformatics 7:265."),
+    ("3SEQ triplet test",
+     "Boni MF, Posada D, Feldman MW (2007). An exact nonparametric method for inferring "
+     "mosaic structure in sequence triplets. Genetics 176(2):1035-1047."),
+    ("PHI test",
+     "Bruen TC, Philippe H, Bryant D (2006). A simple and robust statistical test for "
+     "detecting the presence of recombination. Genetics 172(4):2665-2681."),
+    ("Four-gamete test and Rmin",
+     "Hudson RR, Kaplan NL (1985). Statistical properties of the number of recombination "
+     "events in the history of a sample of DNA sequences. Genetics 111(1):147-164."),
+    ("Benjamini-Hochberg FDR",
+     "Benjamini Y, Hochberg Y (1995). Controlling the false discovery rate: a practical "
+     "and powerful approach to multiple testing. J R Stat Soc B 57(1):289-300."),
+]
+
+
 def _methods_html(provenance: dict[str, str]) -> str:
     glossary = "".join(
         f"<dt>{html.escape(t)}</dt><dd>{html.escape(d)}</dd>" for t, d in _GLOSSARY
+    )
+    references = "".join(
+        f"<li><strong>{html.escape(t)}.</strong> {html.escape(c)}</li>"
+        for t, c in _REFERENCES
     )
     params = "".join(
         f'<tr><th>{html.escape(str(k))}</th><td class="mono">{html.escape(str(v))}</td></tr>'
@@ -926,6 +953,7 @@ def _methods_html(provenance: dict[str, str]) -> str:
         'caller line under Run parameters). It remains an indicative screen, not a full '
         'phylogenetic test (e.g. GARD) -- confirm strong candidates.</p>'
         f'<dl class="glossary">{glossary}</dl>'
+        f'<h3>References</h3><ul class="refs">{references}</ul>'
         f'<h3>Run parameters</h3><table class="kv">{params}</table></details>'
     )
 
