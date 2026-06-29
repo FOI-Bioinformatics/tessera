@@ -108,11 +108,15 @@ enterovirus D68 and PRRSV. For each dataset it:
    recorded per case.
 
 The summary table also carries the **parent-free** recombination signal per case
-(`PHI p` and `Rmin`), read from `recombination_profile.tsv`. This is independent of the
-backbone/donor verdict: it confirms the dependency-free PHI test and Hudson-Kaplan Rmin
-fire on the recombinant hybrids across the whole divergence range -- including the
-low-divergence mpox (0.5%) and ebola (3.7%) cases where the parent-attributed callers
-have least to work with (PHI p at the permutation floor, Rmin well above zero).
+(`PHI p` and `Rmin`), read from `recombination_profile.tsv`, independent of the
+backbone/donor verdict. Hudson-Kaplan **Rmin** is non-zero for every recombinant that
+runs (23-785 events), across the whole divergence range -- including the low-divergence
+mpox (0.5%) and ebola (3.7%) cases where the parent-attributed callers have least to
+work with. The **PHI** p-value reaches the permutation floor in most cases but is
+conservative when the panel is clean parental clades around a single hybrid (the
+clade-defining sites are mutually compatible and dilute the genome-wide average), so it
+can stay non-significant even where detection succeeds (e.g. yellow fever); there the
+Rmin count and the per-site PHI profile carry the parent-free signal.
 
 ```
 export PATH="$HOME/miniforge3/envs/recomfi-aln/bin:$PATH"
