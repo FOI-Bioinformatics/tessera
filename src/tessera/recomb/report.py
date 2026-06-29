@@ -480,7 +480,8 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
 .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;flex:none}
 .sw.hatch{background:repeating-linear-gradient(45deg,#64748b 0 3px,#cbd5e1 3px 6px)}
 header{border-bottom:1px solid var(--line);padding-bottom:26px;margin-bottom:30px}
-header h1{font-size:30px;font-weight:600;margin:.35em 0 .55em;letter-spacing:-.01em;word-break:break-word}
+header h1{font-size:30px;font-weight:600;margin:.35em 0 .15em;letter-spacing:-.01em;word-break:break-word}
+.organism{font-size:16px;font-weight:600;color:var(--muted);margin:0 0 .55em}
 .verdict{font-size:19px;line-height:1.5;margin:0;max-width:76ch}
 .verdict strong{font-weight:650}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:40px}
@@ -1096,6 +1097,7 @@ def write_html_report(
     lineage_map: LineageMap | None = None,
     query_lineage: str | None = None,
     signal: RecombinationSignal | None = None,
+    organism: str | None = None,
     methods_run: tuple[str, ...] = (),
     method_breakdown: list[dict] | None = None,
     per_major: dict[str, str] | None = None,
@@ -1107,6 +1109,9 @@ def write_html_report(
 
     colors = _color_map(datasets)
     s = _summary(result, regions, datasets)
+    organism_html = (
+        f'<div class="organism">{html.escape(organism)}</div>' if organism else ""
+    )
     extras = "".join(
         f'<section class="section"><div class="eyebrow">{html.escape(title)}</div>{body}</section>'
         for title, body in (extra_sections or [])
@@ -1120,6 +1125,7 @@ def write_html_report(
         f"<style>{_CSS}</style></head><body><div class=\"wrap\">"
         '<header><div class="eyebrow">Tessera &middot; recombination report</div>'
         f'<h1 class="mono">{html.escape(result.query)}</h1>'
+        f"{organism_html}"
         f"{_verdict_html(s, result.query, colors, lineage_map, query_lineage)}"
         f"{_caveat_html(gaps, coverage_threshold)}</header>"
         f"{_cards_html(s, colors, lineage_map)}"
@@ -1174,6 +1180,7 @@ def write_reports(
     lineage_map: LineageMap | None = None,
     query_lineage: str | None = None,
     signal: RecombinationSignal | None = None,
+    organism: str | None = None,
     methods_run: tuple[str, ...] = (),
     method_breakdown: list[dict] | None = None,
     per_major: dict[str, str] | None = None,
@@ -1203,6 +1210,6 @@ def write_reports(
         result, analysis, regions, top_datasets, provenance, output_dir, logger,
         coverage_gaps=gaps, coverage_threshold=coverage_threshold,
         extra_sections=extra_sections, lineage_map=lineage_map,
-        query_lineage=query_lineage, signal=signal,
+        query_lineage=query_lineage, signal=signal, organism=organism,
         methods_run=methods_run, method_breakdown=method_breakdown, per_major=per_major,
     )

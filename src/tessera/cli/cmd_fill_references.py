@@ -142,6 +142,10 @@ def fill_references(
         help="With a Nextclade pool (--seed-source nextclade), use one denoised consensus "
         "genome per clade (a stable per-lineage reference) instead of every tree tip.",
     ),
+    organism: str | None = typer.Option(
+        None, "--organism",
+        help="Organism / species name for the report header; defaults to the taxon.",
+    ),
     lineage_map: Path | None = typer.Option(
         None, "--lineage-map",
         help="TSV of reference genotypes (accession<TAB>genotype) to override the typed "
@@ -181,6 +185,6 @@ def fill_references(
             exclude=tuple(exclude), keep_self_hits=keep_self_hits, threads=threads,
             curate=curate, sibling_margin=sibling_margin, af_min=af_min, derep_ani=derep_ani,
             report=report, methods=parse_methods(method), pool_consensus=pool_consensus,
-            lineage_map=lineage_map,
+            organism=organism, lineage_map=lineage_map,
         )
         fill_references(params, logger)

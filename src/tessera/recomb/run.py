@@ -76,6 +76,9 @@ class RecombParams:
     # The query's own typed lineage (shown in the verdict). Defaults to the query's
     # entry in the lineage map when present.
     query_lineage: str | None = None
+    # The organism / species name, shown in the report header (e.g. "Monkeypox virus").
+    # Populated by detect / fill-references from --organism or the detected taxon.
+    organism: str | None = None
 
 
 def _select_windowing(bp_result, params: RecombParams, query_label: str, logger):
@@ -296,6 +299,7 @@ def run_recomb(
     provenance = {
         "tessera version": __version__,
         "date (UTC)": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S"),
+        **({"organism": params.organism} if params.organism else {}),
         "query": query_label,
         "MSA": str(params.msa),
         "datasets": str(len(result.similarities)),
@@ -324,7 +328,7 @@ def run_recomb(
         top_n=params.top_n, plot_format=params.plot_format, logger=logger,
         coverage_gaps=coverage_gaps, coverage_threshold=coverage_threshold,
         extra_sections=extra_sections, lineage_map=lineage_map,
-        query_lineage=query_lineage, signal=signal,
+        query_lineage=query_lineage, signal=signal, organism=params.organism,
         methods_run=params.methods, method_breakdown=method_breakdown, per_major=per_major,
     )
     logger.info("All done.")

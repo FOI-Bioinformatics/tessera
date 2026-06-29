@@ -86,6 +86,10 @@ def recomb(
         help="TSV of reference genotypes (accession<TAB>genotype) to name parents by "
         "lineage in the report. Defaults to a 'lineages.tsv' beside the output or MSA.",
     ),
+    organism: str | None = typer.Option(
+        None, "--organism",
+        help="Organism / species name to show in the report header (e.g. 'Monkeypox virus').",
+    ),
     informative_sites: bool | None = typer.Option(
         None, "--informative-sites/--no-informative-sites",
         help="Window over polymorphic (informative) sites instead of fixed base-pair "
@@ -144,5 +148,6 @@ def recomb(
             phi=phi,
             phi_window=phi_window,
             lineage_map_path=lineage_map,
+            organism=organism,
         )
         run_recomb(params, logger)

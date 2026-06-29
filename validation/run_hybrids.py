@@ -462,7 +462,7 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
     # (e.g. "hmm" or "all") to benchmark a different caller set on the same datasets.
     methods = parse_methods(os.environ.get("HARNESS_METHODS", ",".join(DEFAULT_METHODS)))
     windowing = run_recomb(RecombParams(msa=msa, output=out, query=query_label,
-                                        window_size=window, window_step=step,
+                                        window_size=window, window_step=step, organism=name,
                                         methods=methods, lineage_map=lineage_map), logger)
     runtime = time.monotonic() - t0
     mode = "info-site" if windowing.startswith("informative") else "bp"

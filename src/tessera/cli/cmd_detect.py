@@ -72,6 +72,10 @@ def detect(
         help="With a Nextclade pool, use one denoised consensus genome per clade (a "
         "stable per-lineage reference) instead of every tree tip.",
     ),
+    organism: str | None = typer.Option(
+        None, "--organism",
+        help="Organism / species name for the report header; defaults to the taxon.",
+    ),
     threads: int = typer.Option(4, "-t", "--threads", help="Aligner worker threads."),
 ) -> None:
     """Detect recombination in a query with no reference genomes supplied.
@@ -104,6 +108,6 @@ def detect(
             seed_mode="parents", curate=True,
             auto_diversify=True, negative_lineage=True,
             methods=parse_methods(method), pool_consensus=pool_consensus,
-            lineage_map=lineage_map,
+            organism=organism, lineage_map=lineage_map,
         )
         fill_references(params, logger)

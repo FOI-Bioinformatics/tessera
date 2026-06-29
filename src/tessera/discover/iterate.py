@@ -70,6 +70,7 @@ class FillParams:
     seed_window: int = 1500  # window width (bp) for windowed/parents/pool seeding
     candidate_pool: Path | None = None  # local genome pool (seed_source="local")
     taxon: str | None = None  # taxon for NCBI Virus ("ncbi-virus"); auto-detected when None
+    organism: str | None = None  # species name for the report header; falls back to taxon
     nextclade_dataset: str | None = None  # Nextclade dataset path; None = auto-detect
     source_refseq: bool = True  # NCBI Virus: fetch the RefSeq set (else all complete genomes)
     seed_keep_siblings: bool = False  # keep the query's siblings when selecting from a pool
@@ -295,6 +296,7 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
                 window_size=params.window_size, window_step=params.window_step,
                 coverage_floor=params.coverage_floor, coverage_rel_drop=params.coverage_rel_drop,
                 methods=params.methods, lineage_map=lineage_map or None,
+                organism=params.organism or params.taxon,
             ),
             logger,
             extra_sections=extra_sections,
