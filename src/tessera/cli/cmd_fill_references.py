@@ -132,10 +132,10 @@ def fill_references(
         "Use --no-report to stop at the panel and run 'tessera recomb' separately.",
     ),
     method: str = typer.Option(
-        "hmm,3seq", "--method",
+        "hmm,3seq,maxchi,bootscan", "--method",
         help="Region caller(s) for the detection step: a comma-separated list of "
         "hmm/3seq/maxchi/bootscan/heuristic, or 'all'. Several run as an ensemble "
-        "(default hmm,3seq).",
+        "(default hmm,3seq,maxchi,bootscan).",
     ),
     pool_consensus: bool = typer.Option(
         False, "--pool-consensus/--no-pool-consensus",

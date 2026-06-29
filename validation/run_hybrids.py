@@ -49,7 +49,7 @@ from tessera.discover.nextclade import (
 )
 from tessera.discover.pool import select_regional
 from tessera.msa.build import MsaParams, build_msa
-from tessera.recomb.regions import parse_methods
+from tessera.recomb.regions import DEFAULT_METHODS, parse_methods
 from tessera.recomb.run import RecombParams, run_recomb
 from tessera.recomb.typing import LINEAGES_TSV, lineage_map_from_rows, write_lineage_map
 
@@ -458,9 +458,9 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
     msa = out / "panel.msa.fasta"
     build_msa(MsaParams(query=query, collection=collection, output=msa,
                         aligner=aligner, threads=THREADS), logger)
-    # Region caller(s) for the run: default hmm,3seq, overridable via $HARNESS_METHODS
-    # (e.g. "all") to benchmark the full ensemble on the same datasets.
-    methods = parse_methods(os.environ.get("HARNESS_METHODS", "hmm,3seq"))
+    # Region caller(s) for the run: the default ensemble, overridable via $HARNESS_METHODS
+    # (e.g. "hmm" or "all") to benchmark a different caller set on the same datasets.
+    methods = parse_methods(os.environ.get("HARNESS_METHODS", ",".join(DEFAULT_METHODS)))
     windowing = run_recomb(RecombParams(msa=msa, output=out, query=query_label,
                                         window_size=window, window_step=step,
                                         methods=methods, lineage_map=lineage_map), logger)

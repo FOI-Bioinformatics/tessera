@@ -34,9 +34,10 @@ from .similarity import WindowSimilarity, discordant_counts
 from .stats import benjamini_hochberg, sign_test_pvalue
 
 # The region callers, in canonical (display) order; the single source of truth for the
-# valid ``--method`` set. The default ensemble runs hmm + 3seq; heuristic is legacy.
+# valid ``--method`` set. The default ensemble runs the four statistical callers and
+# merges them; heuristic is legacy and opt-in (or via ``all``).
 CALLERS = ("hmm", "3seq", "maxchi", "bootscan", "heuristic")
-DEFAULT_METHODS = ("hmm", "3seq")
+DEFAULT_METHODS = ("hmm", "3seq", "maxchi", "bootscan")
 
 
 def parse_methods(spec: str) -> tuple[str, ...]:

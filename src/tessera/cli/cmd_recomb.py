@@ -23,10 +23,11 @@ def recomb(
     window_step: int = typer.Option(100, "--window-step", help="Sliding window step (columns)."),
     metric: str = typer.Option("pdist", "--metric", help="Similarity metric: pdist."),
     method: str = typer.Option(
-        "hmm,3seq", "--method",
+        "hmm,3seq,maxchi,bootscan", "--method",
         help="Region caller(s), comma-separated, or 'all'. Several run as an ensemble "
         "and their regions are merged into a consensus (agreement raises confidence); "
-        "the default is hmm,3seq. Callers: hmm (HMM segmentation + a discordant-site "
+        "the default is hmm,3seq,maxchi,bootscan (all but the legacy heuristic). Callers: "
+        "hmm (HMM segmentation + a discordant-site "
         "significance test), 3seq (scan-aware triplet max-drawdown test; strong at low "
         "divergence), maxchi (chi-square triplet test, complementary to 3seq), bootscan "
         "(distance + bootstrap support for the closest parent), heuristic (legacy "

@@ -96,11 +96,11 @@ commands; regenerate with `python example_data/make_example.py`.
 ## How detection works
 
 The reference winning the most windows is the **major parent** (the backbone donor).
-By default Tessera runs an **ensemble** of callers -- the HMM segmentation and the 3SEQ
-triplet test (`--method hmm,3seq`) -- and merges their regions into one consensus: the
-union raises recall (3SEQ recovers short low-divergence tracts the HMM dilutes), and a
-region called by more than one method is flagged as agreeing and treated as higher
-confidence. The HMM reports a segment only when a donor beats the major parent on the
+By default Tessera runs an **ensemble** of four callers -- HMM segmentation, the 3SEQ
+triplet test, MaxChi, and Bootscan (`--method hmm,3seq,maxchi,bootscan`) -- and merges
+their regions into one consensus: the union raises recall (3SEQ recovers short
+low-divergence tracts the HMM dilutes), and a region called by more than one method is
+flagged as agreeing and treated as higher confidence. The HMM reports a segment only when a donor beats the major parent on the
 **discordant sites** by a sign test, and on near-identical panels Tessera automatically
 switches to **informative-site windowing** to keep the signal from being diluted. Every
 run also reports the parent-free PHI test and Hudson-Kaplan Rmin, which flag

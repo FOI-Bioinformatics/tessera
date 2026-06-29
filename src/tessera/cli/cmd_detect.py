@@ -62,10 +62,10 @@ def detect(
         "names mined from genome headers; the report names parents by lineage.",
     ),
     method: str = typer.Option(
-        "hmm,3seq", "--method",
+        "hmm,3seq,maxchi,bootscan", "--method",
         help="Region caller(s): a comma-separated list of hmm/3seq/maxchi/bootscan/"
         "heuristic, or 'all'. Several run as an ensemble and their regions are merged "
-        "(default hmm,3seq).",
+        "(default hmm,3seq,maxchi,bootscan).",
     ),
     pool_consensus: bool = typer.Option(
         False, "--pool-consensus/--no-pool-consensus",

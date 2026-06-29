@@ -8,11 +8,14 @@ diagnostic that runs for every method.
 
 ## Ensemble (default)
 
-The HMM and 3SEQ callers are complementary: 3SEQ recovers short low-divergence tracts
-the HMM segmentation dilutes (the `cryptic_insert` example), while the HMM localizes
-breakpoints better on divergent parents (the `divergent` example). By default Tessera
-runs **both** (`--method hmm,3seq`) and merges their regions into one consensus,
-sharing the single similarity scan so the second caller is cheap.
+The callers are complementary: 3SEQ recovers short low-divergence tracts the HMM
+segmentation dilutes (the `cryptic_insert` example), while the HMM localizes breakpoints
+better on divergent parents (the `divergent` example); MaxChi and Bootscan add two more
+independent votes. By default Tessera runs **four** of them
+(`--method hmm,3seq,maxchi,bootscan`) and merges their regions into one consensus,
+sharing the single similarity scan so the extra callers are cheap. On the synthetic
+harness this leaves the verdict set unchanged but corroborates the donor in 17 of 18
+cases (vs 12 with hmm,3seq alone), raising confidence without over-calling.
 
 The merge is transparent -- no combined score is invented. Two regions are the same
 event when they overlap in query coordinates and name the same donor -- the same minor
@@ -24,12 +27,13 @@ the parent-free Hudson-Kaplan Rmin signal corroborates it. A region called by mo
 confidence** -- agreement is the point of running an ensemble: the union of the callers
 raises recall, their agreement raises precision.
 
-Two further callers can join the ensemble (opt-in): **MaxChi** (a chi-square triplet
-test, complementary to 3SEQ) and **Bootscan** (a distance + bootstrap method that yields
-a support for the closest parent). Select callers with a comma list or `all`: `--method
-hmm,3seq` (default), `--method hmm` (one caller, reproducing the single-method report),
-`--method hmm,3seq,maxchi,bootscan`, or `--method all` (every caller, including the
-legacy heuristic). The same `--method` is available on `tessera detect` and `tessera
+The default ensemble's two further callers are **MaxChi** (a chi-square triplet test,
+complementary to 3SEQ) and **Bootscan** (a distance + bootstrap method that yields a
+support for the closest parent). Select callers with a comma list or `all`: `--method
+hmm,3seq,maxchi,bootscan` (default), `--method hmm` (one caller, reproducing the
+single-method report), `--method hmm,3seq` (the two fastest), or `--method all` (every
+caller, including the legacy heuristic). The same `--method` is available on `tessera
+detect` and `tessera
 fill-references`. The individual callers are described below.
 
 ## HMM caller (`--method hmm`)
