@@ -170,11 +170,12 @@ at least three genomes -- including datasets with no clade attribute at all
 | `cchfv` | -- | -- | SKIP -- < 2 clades with >= 3 genomes |
 
 **16 PASS, 2 FAIL, 6 SKIP** (0 errors). All 18 cases that run detect a recombinant
-region; **12 recover the donor by both ensemble callers** (the `agr` column; agreement
-is lineage-aware -- two callers that pick different representative genomes of one
-lineage still count, which lifts e.g. `mumps`). Tessera recovers the recombinant across
-the full divergence range that has both parents represented, from dengue serotypes
-(33 %) down to the mpox clade-I/II recombination at 0.5 %.
+region; under the default four-caller ensemble (hmm, 3seq, MaxChi, Bootscan) **17 of the
+18 recover the donor by more than one caller** (the `agr` column; only `rsv_a`, whose
+donor is mis-attributed, does not). Agreement is lineage-aware -- two callers that pick
+different representative genomes of one lineage still count. Tessera recovers the
+recombinant across the full divergence range that has both parents represented, from
+dengue serotypes (33 %) down to the mpox clade-I/II recombination at 0.5 %.
 
 #### Scoring rules
 
@@ -202,12 +203,13 @@ decide PASS / FAIL / SKIP:
 4. **Junk labels.** `unassigned` / `unclassified` genomes are not a clean parental
    lineage and are excluded from parent selection.
 
-Running the **full five-classifier ensemble** (`HARNESS_METHODS=all python
-validation/run_hybrids.py`, adding MaxChi and Bootscan) gives the **same 16/2/6** verdict
-set -- no regression, no new false positives -- but lifts donor agreement from 12 to
-**17 of the 18 running cases** (every case but `rsv_a`): the two extra independent callers
-corroborate the donor, so more regions clear the >1-method high-confidence bar without
-over-calling. The default stays `hmm,3seq` (cheaper); `--method all` is the thorough run.
+MaxChi and Bootscan are part of the default ensemble because they raise confidence at no
+cost: restricting to `hmm,3seq` (`HARNESS_METHODS=hmm,3seq`) gives the same 16/2/6 verdict
+set but corroborates the donor in only 12 of 18 cases, whereas the four-caller default
+reaches 17 -- the two extra independent callers add agreement with no regression and no
+new false positives. Adding the legacy heuristic (`HARNESS_METHODS=all`) does not change
+either number. `--method hmm,3seq` is the lighter option for large genomes (Bootscan's
+bootstrap is the main added cost).
 
 The two remaining **FAIL**s are genuine detection-quality limits, kept honest rather than
 skipped: `flu_h3n2_ha` (a ~1.7 kb HA segment with finely-split subclades, where the
