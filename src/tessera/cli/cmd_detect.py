@@ -63,8 +63,14 @@ def detect(
     ),
     method: str = typer.Option(
         "hmm,3seq", "--method",
-        help="Region caller(s): a comma-separated list of hmm/3seq/heuristic, or 'all'. "
-        "Several run as an ensemble and their regions are merged (default hmm,3seq).",
+        help="Region caller(s): a comma-separated list of hmm/3seq/maxchi/bootscan/"
+        "heuristic, or 'all'. Several run as an ensemble and their regions are merged "
+        "(default hmm,3seq).",
+    ),
+    pool_consensus: bool = typer.Option(
+        False, "--pool-consensus/--no-pool-consensus",
+        help="With a Nextclade pool, use one denoised consensus genome per clade (a "
+        "stable per-lineage reference) instead of every tree tip.",
     ),
     threads: int = typer.Option(4, "-t", "--threads", help="Aligner worker threads."),
 ) -> None:
@@ -97,6 +103,7 @@ def detect(
             candidate_pool=candidate_pool, taxon=taxon,
             seed_mode="parents", curate=True,
             auto_diversify=True, negative_lineage=True,
-            methods=parse_methods(method), lineage_map=lineage_map,
+            methods=parse_methods(method), pool_consensus=pool_consensus,
+            lineage_map=lineage_map,
         )
         fill_references(params, logger)

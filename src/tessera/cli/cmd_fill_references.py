@@ -134,7 +134,13 @@ def fill_references(
     method: str = typer.Option(
         "hmm,3seq", "--method",
         help="Region caller(s) for the detection step: a comma-separated list of "
-        "hmm/3seq/heuristic, or 'all'. Several run as an ensemble (default hmm,3seq).",
+        "hmm/3seq/maxchi/bootscan/heuristic, or 'all'. Several run as an ensemble "
+        "(default hmm,3seq).",
+    ),
+    pool_consensus: bool = typer.Option(
+        False, "--pool-consensus/--no-pool-consensus",
+        help="With a Nextclade pool (--seed-source nextclade), use one denoised consensus "
+        "genome per clade (a stable per-lineage reference) instead of every tree tip.",
     ),
     lineage_map: Path | None = typer.Option(
         None, "--lineage-map",
@@ -174,6 +180,7 @@ def fill_references(
             email=email or os.environ.get("NCBI_EMAIL"),
             exclude=tuple(exclude), keep_self_hits=keep_self_hits, threads=threads,
             curate=curate, sibling_margin=sibling_margin, af_min=af_min, derep_ani=derep_ani,
-            report=report, methods=parse_methods(method), lineage_map=lineage_map,
+            report=report, methods=parse_methods(method), pool_consensus=pool_consensus,
+            lineage_map=lineage_map,
         )
         fill_references(params, logger)
