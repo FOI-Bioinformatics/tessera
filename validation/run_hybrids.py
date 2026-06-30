@@ -34,6 +34,7 @@ import re
 import shutil
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from tessera.core.cache import nextclade_cache
@@ -49,6 +50,7 @@ from tessera.discover.nextclade import (
 )
 from tessera.discover.pool import select_regional
 from tessera.msa.build import MsaParams, build_msa
+from tessera.recomb.consensus import consensus_sequence
 from tessera.recomb.regions import DEFAULT_METHODS, parse_methods
 from tessera.recomb.run import RecombParams, run_recomb
 from tessera.recomb.typing import LINEAGES_TSV, lineage_map_from_rows, write_lineage_map
@@ -223,6 +225,86 @@ def donor_match(observed: str, donor: str, backbone: str) -> bool:
             and observed.split(".")[0] == donor.split(".")[0])
 
 
+def shared_clade_depth(observed: str, expected: str) -> int:
+    """How close two clade labels are: the number of leading dot-separated components
+    they share after :func:`base_clade` normalisation.
+
+    A granular attribution-distance that shows improvement even when it does not flip
+    the PASS verdict, e.g. ``A.D.1`` vs ``A.D.1.8`` -> 3; ``A.3`` vs ``A.D.1.8`` -> 1;
+    ``B`` vs ``A.1`` -> 0. ``?``/``NA``/empty observed scores 0.
+    """
+    if observed in ("?", "NA", ""):
+        return 0
+    o = base_clade(observed).split(".")
+    e = base_clade(expected).split(".")
+    depth = 0
+    for a, b in zip(o, e, strict=False):
+        if a != b:
+            break
+        depth += 1
+    return depth
+
+
+def attribution_tier(observed: str, expected: str) -> str:
+    """Classify an attribution as ``exact``, ``sibling`` or ``mismatch``.
+
+    ``exact`` -- :func:`clade_match` (same lineage, allowing hierarchy); ``sibling`` --
+    a different sub-clade under the same top-level clade (e.g. the intra-``A`` RSV case
+    ``A.3`` for an ``A.D.1.8`` donor, which ``donor_match`` deliberately rejects for the
+    PASS rule); ``mismatch`` -- otherwise. Reported alongside the verdict, never folded
+    into PASS.
+    """
+    if observed in ("?", "NA", ""):
+        return "mismatch"
+    if clade_match(observed, expected):
+        return "exact"
+    if base_clade(observed).split(".")[0] == base_clade(expected).split(".")[0]:
+        return "sibling"
+    return "mismatch"
+
+
+def consensus_label(clade: str) -> str:
+    """The per-clade consensus genome's label, e.g. ``A.1`` -> ``A.1_consensus``.
+
+    Matches the production ``build_pool(per_clade_consensus=True)`` naming so the two
+    consensus paths read the same.
+    """
+    return re.sub(r"[^\w.]", "_", clade) + "_consensus"
+
+
+def consensus_panel(
+    members_by_clade: dict[str, list[str]],
+    reference: str,
+    tips: dict[str, tuple[str, list[str]]],
+    out_dir: Path,
+    logger: logging.Logger,
+) -> tuple[list[Path], dict[str, str]]:
+    """One denoised majority-consensus genome per clade (source genomes already removed).
+
+    Each clade member is reconstructed in reference coordinates from its mutation path,
+    the column-wise majority base is taken (:func:`consensus_sequence`), gaps are
+    stripped, and one ``{clade}_consensus`` genome is written. Because ``members_by_clade``
+    is built from the source-removed pool, the consensus excludes the two spliced source
+    genomes -- it keeps the harness's "source removed" honesty while giving the stable
+    per-clade stand-in that ``--pool-consensus`` provides. Returns the written paths and a
+    ``label -> clade`` map.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    paths: list[Path] = []
+    label_to_clade: dict[str, str] = {}
+    for clade, members in members_by_clade.items():
+        seqs = [reconstruct_gapped(reference, tips[acc][1]) for acc in members]
+        cons = consensus_sequence(seqs).replace("-", "").upper()
+        label = consensus_label(clade)
+        path = out_dir / f"{label}.fasta"
+        with open(path, "w") as fo:
+            write_fasta_record(fo, label, cons)
+        paths.append(path)
+        label_to_clade[label] = clade
+    logger.info("Built a %d-clade consensus panel (source-removed).", len(paths))
+    return paths, label_to_clade
+
+
 class CaseSkipped(Exception):
     """A dataset is unsuitable for a hybrid test (reported as SKIP, not ERROR)."""
 
@@ -364,7 +446,34 @@ def representative_panel(
     return chosen
 
 
-def run_case(case: dict, logger: logging.Logger) -> dict:
+@dataclass
+class CaseSetup:
+    """The config-independent setup for one hybrid case (built once, scored under many
+    method/panel configurations)."""
+
+    name: str
+    out: Path
+    clade_a: str
+    clade_b: str
+    divergence: float
+    query: Path
+    query_label: str
+    q_start: int
+    q_end: int
+    window: int
+    step: int
+    sel_window: int
+    aligner: str
+    reference: str
+    tips: dict[str, tuple[str, list[str]]]
+    pool: list[Path]  # source-removed, clade-labelled tree tips
+    members_by_clade: dict[str, list[str]]  # source-removed clade -> tip accessions
+
+
+def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
+    """Download, pick the parent clades, splice the hybrid query, and build the
+    source-removed pool -- everything that does not depend on the caller set or panel
+    mode. Raises ``CaseSkipped`` for an unsuitable dataset (too similar, too short)."""
     name, path = case["name"], case["dataset"]
     out = DATA / name
     out.mkdir(parents=True, exist_ok=True)
@@ -400,109 +509,224 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
     # carry no clade and would otherwise win the backbone unlabelled), minus the two
     # exact source genomes (their clades remain represented by other tips).
     drop = {src_a.split(".")[0], src_b.split(".")[0]}
-    tip_bases = {acc.split(".")[0] for acc in tips}
+    base_to_tip = {acc.split(".")[0]: acc for acc in tips}
     pool = [
         g for g in genomes
-        if strip_sequence_extension(g.name).split(".")[0] in tip_bases
+        if strip_sequence_extension(g.name).split(".")[0] in base_to_tip
         and strip_sequence_extension(g.name).split(".")[0] not in drop
     ]
+    # Source-removed clade -> tip accessions, for the per-clade consensus panel.
+    members_by_clade: dict[str, list[str]] = {}
+    for g in pool:
+        tipkey = base_to_tip.get(strip_sequence_extension(g.name).split(".")[0])
+        if tipkey is None:
+            continue
+        clade = tips[tipkey][0]
+        if (not clade or clade in ("?", "NA")
+                or clade.strip().lower() in ("na", "unassigned", "unclassified", "unknown")
+                or is_recombinant_clade(clade)):
+            continue
+        members_by_clade.setdefault(clade, []).append(tipkey)
 
+    return CaseSetup(
+        name=name, out=out, clade_a=clade_a, clade_b=clade_b, divergence=divergence,
+        query=query, query_label=query_label, q_start=q_start, q_end=q_end,
+        window=window, step=step, sel_window=sel_window, aligner=aligner,
+        reference=reference, tips=tips, pool=pool, members_by_clade=members_by_clade,
+    )
+
+
+def _build_and_score(
+    setup: CaseSetup, panel_mode: str, methods: tuple[str, ...], out_dir: Path,
+    logger: logging.Logger,
+) -> dict:
+    """Build the panel for ``panel_mode`` ('tip' or 'consensus'), align, run detection
+    with ``methods``, and score the call. Raises ``CaseSkipped`` when a parent clade has
+    no representative in the panel (the harness's representation invariant)."""
+    out_dir.mkdir(parents=True, exist_ok=True)
     t0 = time.monotonic()
-    try:
-        # Keep "siblings": for a hybrid of close parents the backbone parent is
-        # >95% genome-wide ANI to the query (its 70% backbone dominates the
-        # average) and would be dropped as a masking twin -- but the synthetic
-        # pool contains no actual recombinant twin, so this is the documented
-        # close-parent / --seed-keep-siblings setting, and dropping it would
-        # remove the backbone parent itself.
-        selected = select_regional(query, pool, window=sel_window, per_window=2,
-                                   drop_siblings=False, logger=logger).selected
-    except ToolExecutionError:  # skani rejects very short gene/segment datasets
-        selected = representative_panel(pool, tips, logger)
-    # On a near-identical panel (mpox/VZV ~0.5%) dereplication collapses the parent
-    # clades into one representative, leaving nothing to compete; rebuild from one
-    # central genome per clade so both parents are present for the detector to test.
-    sel_clades = {clade_of_label(g.name, tips) for g in selected}
-    if len([c for c in sel_clades if c not in ("?", "NA")]) < 2:
-        logger.info("[%s] regional selection collapsed to %d clade(s); using clade "
-                    "representatives instead.", name, len(sel_clades))
-        selected = representative_panel(pool, tips, logger)
-    if not selected:
-        raise CaseSkipped("no reference panel could be built")
-    # The harness removes the two source genomes; a fair test needs each parent clade
-    # to remain credit-able from the panel (its design invariant). If removing the
-    # source leaves a parent with no stand-in the pass criterion could ever credit --
-    # the backbone by clade_match, the donor by donor_match (which allows a sibling
-    # sub-clade) -- attribution cannot be tested regardless of detection quality, so the
-    # case is ill-posed and SKIPped rather than scored a detection FAIL.
-    panel_clades = {clade_of_label(g.name, tips) for g in selected}
-    if not any(clade_match(c, clade_a) for c in panel_clades):
-        raise CaseSkipped(f"backbone clade {clade_a!r} has no representative in the panel "
-                          f"after the source genome was removed")
-    if not any(donor_match(c, clade_b, clade_a) for c in panel_clades):
-        raise CaseSkipped(f"donor clade {clade_b!r} has no representative in the panel "
-                          f"after the source genome was removed")
-    collection = out / "collection"
+    if panel_mode == "consensus":
+        # One denoised consensus genome per clade (source genomes already removed).
+        selected, cons_map = consensus_panel(
+            setup.members_by_clade, setup.reference, setup.tips, out_dir / "consensus", logger
+        )
+        avail = set(setup.members_by_clade)
+        if not any(clade_match(c, setup.clade_a) for c in avail):
+            raise CaseSkipped(
+                f"backbone clade {setup.clade_a!r} has no panel representative "
+                "after the source genome was removed")
+        if not any(donor_match(c, setup.clade_b, setup.clade_a) for c in avail):
+            raise CaseSkipped(
+                f"donor clade {setup.clade_b!r} has no panel representative "
+                "after the source genome was removed")
+
+        def clade_of(label: str) -> str:
+            return cons_map.get(strip_sequence_extension(label), "?")
+
+        rows = [(strip_sequence_extension(p.name),
+                 cons_map[strip_sequence_extension(p.name)], "consensus") for p in selected]
+    else:
+        try:
+            # Keep "siblings": for a hybrid of close parents the backbone parent is
+            # >95% genome-wide ANI to the query (its 70% backbone dominates the
+            # average) and would be dropped as a masking twin -- but the synthetic
+            # pool contains no actual recombinant twin, so this is the documented
+            # close-parent / --seed-keep-siblings setting, and dropping it would
+            # remove the backbone parent itself.
+            selected = select_regional(setup.query, setup.pool, window=setup.sel_window,
+                                       per_window=2, drop_siblings=False, logger=logger).selected
+        except ToolExecutionError:  # skani rejects very short gene/segment datasets
+            selected = representative_panel(setup.pool, setup.tips, logger)
+        # On a near-identical panel (mpox/VZV ~0.5%) dereplication collapses the parent
+        # clades into one representative, leaving nothing to compete; rebuild from one
+        # central genome per clade so both parents are present for the detector to test.
+        sel_clades = {clade_of_label(g.name, setup.tips) for g in selected}
+        if len([c for c in sel_clades if c not in ("?", "NA")]) < 2:
+            logger.info("[%s] regional selection collapsed to %d clade(s); using clade "
+                        "representatives instead.", setup.name, len(sel_clades))
+            selected = representative_panel(setup.pool, setup.tips, logger)
+        if not selected:
+            raise CaseSkipped("no reference panel could be built")
+        # The harness removes the two source genomes; a fair test needs each parent clade
+        # to remain credit-able from the panel (its design invariant).
+        panel_clades = {clade_of_label(g.name, setup.tips) for g in selected}
+        if not any(clade_match(c, setup.clade_a) for c in panel_clades):
+            raise CaseSkipped(
+                f"backbone clade {setup.clade_a!r} has no panel representative "
+                "after the source genome was removed")
+        if not any(donor_match(c, setup.clade_b, setup.clade_a) for c in panel_clades):
+            raise CaseSkipped(
+                f"donor clade {setup.clade_b!r} has no panel representative "
+                "after the source genome was removed")
+
+        def clade_of(label: str) -> str:
+            return clade_of_label(label, setup.tips)
+
+        rows = [(strip_sequence_extension(g.name), clade_of_label(g.name, setup.tips), "nextclade")
+                for g in selected]
+
+    collection = out_dir / "collection"
     if collection.exists():
         shutil.rmtree(collection)
     collection.mkdir(parents=True)
     for g in selected:
         shutil.copy(g, collection / g.name)
 
-    rows = [(strip_sequence_extension(g.name), clade_of_label(g.name, tips), "nextclade")
-            for g in selected]
-    rows.append((query_label, f"hybrid({clade_a}+{clade_b})", "query"))
-    write_lineage_map(out / LINEAGES_TSV, rows)
+    rows.append((setup.query_label, f"hybrid({setup.clade_a}+{setup.clade_b})", "query"))
+    write_lineage_map(out_dir / LINEAGES_TSV, rows)
     lineage_map = lineage_map_from_rows(rows)
 
-    msa = out / "panel.msa.fasta"
-    build_msa(MsaParams(query=query, collection=collection, output=msa,
-                        aligner=aligner, threads=THREADS), logger)
-    # Region caller(s) for the run: the default ensemble, overridable via $HARNESS_METHODS
-    # (e.g. "hmm" or "all") to benchmark a different caller set on the same datasets.
-    methods = parse_methods(os.environ.get("HARNESS_METHODS", ",".join(DEFAULT_METHODS)))
-    windowing = run_recomb(RecombParams(msa=msa, output=out, query=query_label,
-                                        window_size=window, window_step=step, organism=name,
-                                        methods=methods, lineage_map=lineage_map), logger)
+    msa = out_dir / "panel.msa.fasta"
+    build_msa(MsaParams(query=setup.query, collection=collection, output=msa,
+                        aligner=setup.aligner, threads=THREADS), logger)
+    windowing = run_recomb(RecombParams(msa=msa, output=out_dir, query=setup.query_label,
+                                        window_size=setup.window, window_step=setup.step,
+                                        organism=setup.name, methods=methods,
+                                        lineage_map=lineage_map), logger)
     runtime = time.monotonic() - t0
     mode = "info-site" if windowing.startswith("informative") else "bp"
+    return _score_regions(out_dir, clade_of, setup, len(selected), mode, runtime)
 
-    regions = parse_regions(out / "recombination_regions.tsv")
-    phi_p, rmin = parse_signal(out / "recombination_profile.tsv")
+
+def _score_regions(
+    out_dir: Path, clade_of, setup: CaseSetup, n_refs: int, mode: str, runtime: float,
+) -> dict:
+    """Score a completed detection run: detection, backbone/donor attribution, ensemble
+    agreement, and the finer attribution-quality tiers/depths (reported, never folded
+    into PASS). ``clade_of`` maps a region's parent label to its clade."""
+    regions = parse_regions(out_dir / "recombination_regions.tsv")
+    phi_p, rmin = parse_signal(out_dir / "recombination_profile.tsv")
     present = [r for r in regions if r.get("donor_absent") != "yes"]
-    major_clade = clade_of_label(regions[0]["major_parent"], tips) if regions else "?"
-    donor_hits = [
-        r for r in present
-        if donor_match(clade_of_label(r["minor_parent"], tips), clade_b, clade_a)
-        and int(r["query_start"]) <= q_end and int(r["query_end"]) >= q_start
-    ]
+    major_clade = clade_of(regions[0]["major_parent"]) if regions else "?"
+    span = [r for r in present
+            if int(r["query_start"]) <= setup.q_end and int(r["query_end"]) >= setup.q_start]
+    donor_hits = [r for r in span if donor_match(clade_of(r["minor_parent"]),
+                                                 setup.clade_b, setup.clade_a)]
     detected = len(present) >= 1
-    backbone_ok = clade_match(major_clade, clade_a)
+    backbone_ok = clade_match(major_clade, setup.clade_a)
     donor_ok = len(donor_hits) >= 1
     # Below the 4% attribution floor (the harness's own meaningfulness threshold) the
     # exact backbone clade is statistical noise -- near-identical genomes from adjacent
     # clades win windows by chance. There the meaningful, testable result is detection
     # plus donor-region recovery (which still requires the donor clade and span); the
     # backbone-label match is dropped. Above the floor it is still required.
-    low_divergence = divergence < MIN_DIVERGENCE
+    low_divergence = setup.divergence < MIN_DIVERGENCE
     passed = detected and donor_ok and (backbone_ok or low_divergence)
     # The recovered donor region was called by more than one ensemble method.
     agree = any("," in (r.get("methods") or "") for r in donor_hits)
+    # Finer attribution quality: the best donor attribution among the span-overlapping
+    # regions (closest to the true donor clade), reported alongside the verdict.
+    donor_obs = max((clade_of(r["minor_parent"]) for r in span),
+                    key=lambda c: shared_clade_depth(c, setup.clade_b), default="?")
     return {
-        "name": name, "clade_a": clade_a, "clade_b": clade_b,
-        "divergence": divergence, "n_refs": len(selected),
-        "true_span": (q_start, q_end), "n_regions": len(present),
+        "name": setup.name, "clade_a": setup.clade_a, "clade_b": setup.clade_b,
+        "divergence": setup.divergence, "n_refs": n_refs,
+        "true_span": (setup.q_start, setup.q_end), "n_regions": len(present),
         "major_clade": major_clade, "detected": detected, "mode": mode,
         "backbone_ok": backbone_ok, "donor_ok": donor_ok, "phi_p": phi_p, "rmin": rmin,
         "agree": agree, "low_divergence": low_divergence,
         "pass": passed, "runtime": runtime,
+        "donor_obs": donor_obs,
+        "donor_tier": attribution_tier(donor_obs, setup.clade_b),
+        "donor_depth": shared_clade_depth(donor_obs, setup.clade_b),
+        "backbone_tier": attribution_tier(major_clade, setup.clade_a),
+        "backbone_depth": shared_clade_depth(major_clade, setup.clade_a),
+    }
+
+
+def run_case(case: dict, logger: logging.Logger) -> dict:
+    """One hybrid case under the default (or ``$HARNESS_METHODS``) caller set, tip panel."""
+    setup = _prepare_case(case, logger)
+    # Region caller(s): the default ensemble, overridable via $HARNESS_METHODS
+    # (e.g. "hmm" or "all") to benchmark a different caller set on the same datasets.
+    methods = parse_methods(os.environ.get("HARNESS_METHODS", ",".join(DEFAULT_METHODS)))
+    return _build_and_score(setup, "tip", methods, setup.out, logger)
+
+
+# The 2x2 attribution-comparison grid: tip vs source-removed consensus panel, default
+# ensemble vs +barcode. The baseline (tip, default) reproduces the headline harness.
+COMPARE_CONFIGS = [
+    ("baseline", "tip", ("hmm", "3seq", "maxchi", "bootscan")),
+    ("+barcode", "tip", ("hmm", "3seq", "maxchi", "bootscan", "barcode")),
+    ("consensus", "consensus", ("hmm", "3seq", "maxchi", "bootscan")),
+    ("consensus+barcode", "consensus", ("hmm", "3seq", "maxchi", "bootscan", "barcode")),
+]
+
+
+def compare_case(case: dict, logger: logging.Logger) -> dict:
+    """Run one case under every :data:`COMPARE_CONFIGS` configuration, reusing the
+    expensive setup once. A SKIP from the baseline (tip, default) means the case itself
+    is ill-posed and propagates; a SKIP from a later config is recorded per config."""
+    setup = _prepare_case(case, logger)
+    records: dict[str, dict] = {}
+    for label, mode, names in COMPARE_CONFIGS:
+        methods = parse_methods(",".join(names))
+        sub = setup.out / ("cmp_" + re.sub(r"[^\w]+", "_", label))
+        try:
+            records[label] = _build_and_score(setup, mode, methods, sub, logger)
+        except CaseSkipped:
+            if label == "baseline":
+                raise
+            logger.info("[%s] %s: SKIP (panel representation)", setup.name, label)
+            records[label] = {"skip": True}
+    return {
+        "name": setup.name, "clade_a": setup.clade_a, "clade_b": setup.clade_b,
+        "divergence": setup.divergence, "configs": records,
     }
 
 
 def main(argv: list[str]) -> int:
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
     logger = logging.getLogger("tessera")
-    cases = [c for c in HYBRIDS if not argv or c["name"] in argv]
+    compare = "--compare" in argv
+    names = [a for a in argv if not a.startswith("-")]
+    cases = [c for c in HYBRIDS if not names or c["name"] in names]
+    if compare:
+        return _run_compare(cases, logger)
+    return _run_default(cases, logger)
+
+
+def _run_default(cases: list[dict], logger: logging.Logger) -> int:
     print(f"\nTessera hybrid detection -- {len(cases)} case(s)\n" + "=" * 72)
     results: list[dict] = []
     for case in cases:
@@ -541,6 +765,67 @@ def main(argv: list[str]) -> int:
     errored = sum(1 for r in results if r.get("pass") is None and r.get("skip") is None)
     print(f"\n{passed}/{ran} passed  ({skipped} skipped, {errored} error)")
     return 1 if errored else 0
+
+
+def _run_compare(cases: list[dict], logger: logging.Logger) -> int:
+    """Run the 2x2 attribution grid per case (G1 measurement); print a per-config table
+    and write ``data/attribution_compare.tsv``. The baseline column reproduces the
+    headline harness; the other columns measure barcode and the consensus panel."""
+    print(f"\nTessera attribution comparison -- {len(cases)} case(s), "
+          f"{len(COMPARE_CONFIGS)} configs each\n" + "=" * 72)
+    tsv = [["case", "divergence", "config", "detected", "backbone_tier", "backbone_depth",
+            "donor_tier", "donor_depth", "donor_obs", "expected_donor", "agree", "pass"]]
+    pass_count = {label: 0 for label, _, _ in COMPARE_CONFIGS}
+    improved = {label: 0 for label, _, _ in COMPARE_CONFIGS}
+    ran = 0
+    for case in cases:
+        try:
+            res = compare_case(case, logger)
+        except CaseSkipped as exc:
+            print(f"\n{case['name']:18} SKIP: {exc}")
+            continue
+        except Exception as exc:  # noqa: BLE001 - report and continue the batch
+            logger.exception("[%s] ERROR", case["name"])
+            print(f"\n{case['name']:18} ERROR: {exc}")
+            continue
+        ran += 1
+        base = res["configs"].get("baseline", {})
+        base_depth = base.get("donor_depth", -1) if not base.get("skip") else -1
+        print(f"\n{res['name']}  ({res['clade_a']} x {res['clade_b']}, {res['divergence']:.1f}%)")
+        for label, _, _ in COMPARE_CONFIGS:
+            rec = res["configs"][label]
+            if rec.get("skip"):
+                print(f"  {label:18} SKIP")
+                tsv.append([res["name"], f"{res['divergence']:.1f}", label,
+                            "", "", "", "", "", "", res["clade_b"], "", ""])
+                continue
+            verdict = "PASS" if rec["pass"] else "FAIL"
+            print(f"  {label:18} det {'Y' if rec['detected'] else 'n'}  "
+                  f"bb {rec['backbone_tier']:8} don {rec['donor_tier']:8} "
+                  f"depth {rec['donor_depth']}  agr {'Y' if rec['agree'] else '.'}  {verdict}")
+            if rec["pass"]:
+                pass_count[label] += 1
+            if label != "baseline" and rec["donor_depth"] > base_depth:
+                improved[label] += 1
+            tsv.append([res["name"], f"{res['divergence']:.1f}", label,
+                        "Y" if rec["detected"] else "n", rec["backbone_tier"],
+                        rec["backbone_depth"], rec["donor_tier"], rec["donor_depth"],
+                        rec["donor_obs"], res["clade_b"], "Y" if rec["agree"] else "n",
+                        "PASS" if rec["pass"] else "FAIL"])
+
+    out_tsv = HERE / "data" / "attribution_compare.tsv"
+    out_tsv.parent.mkdir(parents=True, exist_ok=True)
+    out_tsv.write_text("\n".join("\t".join(map(str, row)) for row in tsv) + "\n")
+
+    print("\n" + "=" * 72 + f"\nsummary (of {ran} cases that ran)")
+    for label, _, _ in COMPARE_CONFIGS:
+        extra = ("" if label == "baseline"
+                 else f"; donor attribution improved vs baseline in {improved[label]}")
+        print(f"  {label:18} PASS {pass_count[label]}/{ran}{extra}")
+    print(f"\nMachine-readable comparison: {out_tsv}")
+    print("Note: 'baseline' reproduces the headline harness; the other columns are the "
+          "G1 measurement, not the headline numbers.")
+    return 0
 
 
 if __name__ == "__main__":
