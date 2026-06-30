@@ -103,6 +103,7 @@ class FillParams:
     # per-lineage reference) instead of every tree tip. See discover/nextclade.build_pool.
     pool_consensus: bool = False
     lineage_map: Path | None = None  # user TSV (accession<TAB>genotype) to type references
+    reattribute_donors: bool = False  # opt-in donor re-attribution in the detection step
 
     @classmethod
     def for_detection(
@@ -125,6 +126,7 @@ class FillParams:
         pool_consensus: bool = False,
         organism: str | None = None,
         lineage_map: Path | None = None,
+        reattribute_donors: bool = False,
     ) -> FillParams:
         """Build the detection-tuned preset over fill-references.
 
@@ -152,6 +154,7 @@ class FillParams:
             auto_diversify=True, negative_lineage=True,
             methods=methods, pool_consensus=pool_consensus,
             organism=organism, lineage_map=lineage_map,
+            reattribute_donors=reattribute_donors,
         )
 
 
@@ -234,6 +237,7 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
                 coverage_floor=params.coverage_floor, coverage_rel_drop=params.coverage_rel_drop,
                 methods=params.methods, lineage_map=lineage_map or None,
                 organism=params.organism or params.taxon,
+                reattribute_donors=params.reattribute_donors,
             ),
             logger,
             extra_sections=extra_sections,
