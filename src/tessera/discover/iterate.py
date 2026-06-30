@@ -104,6 +104,56 @@ class FillParams:
     pool_consensus: bool = False
     lineage_map: Path | None = None  # user TSV (accession<TAB>genotype) to type references
 
+    @classmethod
+    def for_detection(
+        cls,
+        *,
+        query: Path,
+        output: Path,
+        aligner: str = "mafft",
+        max_rounds: int = 2,
+        window_size: int = 1000,
+        window_step: int = 100,
+        email: str | None = None,
+        threads: int = 4,
+        cache_dir: Path | None = None,
+        taxon: str | None = None,
+        candidate_pool: Path | None = None,
+        nextclade: bool = False,
+        nextclade_dataset: str | None = None,
+        methods: tuple[str, ...] = DEFAULT_METHODS,
+        pool_consensus: bool = False,
+        organism: str | None = None,
+        lineage_map: Path | None = None,
+    ) -> FillParams:
+        """Build the detection-tuned preset over fill-references.
+
+        Recruit the parental lineages (drop the query's siblings, curate the
+        panel) so a recombinant query whose own lineage is common in NCBI is
+        not masked. The seed source follows the supplied input: a local pool
+        wins, then a Nextclade dataset, then the default BLAST recruitment.
+        This is the single home for the preset so ``tessera detect`` does not
+        duplicate (and drift from) the field list.
+        """
+        if candidate_pool:
+            seed_source = "local"
+        elif nextclade or nextclade_dataset:
+            seed_source = "nextclade"
+        else:
+            seed_source = "blast"
+        return cls(
+            query=query, collection=None, output=output,
+            aligner=aligner, max_rounds=max_rounds,
+            window_size=window_size, window_step=window_step,
+            email=email, threads=threads, cache_dir=cache_dir,
+            seed_source=seed_source, nextclade_dataset=nextclade_dataset,
+            candidate_pool=candidate_pool, taxon=taxon,
+            seed_mode="parents", curate=True,
+            auto_diversify=True, negative_lineage=True,
+            methods=methods, pool_consensus=pool_consensus,
+            organism=organism, lineage_map=lineage_map,
+        )
+
 
 @dataclass
 class RoundResult:

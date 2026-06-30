@@ -25,5 +25,6 @@ jobs:
         run: ruff check src tests validation
       - name: Unit and integration tests
         # Binary-dependent tests are marked requires_binary and are deselected
-        # here; the external aligners are not installed in CI.
-        run: pytest -q -m "not requires_binary"
+        # here; the external aligners are not installed in CI. The coverage
+        # floor guards the current level (about 85 percent) against erosion.
+        run: pytest -q -m "not requires_binary" --cov=tessera --cov-report=term --cov-fail-under=80

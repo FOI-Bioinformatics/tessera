@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import random
 from pathlib import Path
 
 import numpy as np
@@ -12,7 +11,7 @@ from tessera.recomb.bootscan import bootstrap_support
 from tessera.recomb.regions import RegionParams, call_regions
 from tessera.recomb.similarity import compute_similarity
 
-from ..conftest import write_fasta
+from ..conftest import recombinant_msa
 
 
 def test_bootstrap_support_favours_the_closer_reference() -> None:
@@ -29,27 +28,8 @@ def test_bootstrap_support_favours_the_closer_reference() -> None:
                           bootstrap_support(match, comparable, seed=3))
 
 
-def _recombinant_msa(tmp_path: Path, *, recombinant: bool) -> Path:
-    rng = random.Random(7)
-    base = "".join(rng.choice("ACGT") for _ in range(6000))
-
-    def mut(seq: str, frac: float) -> str:
-        chars = list(seq)
-        for i in range(len(chars)):
-            if rng.random() < frac:
-                chars[i] = rng.choice("ACGT")
-        return "".join(chars)
-
-    a, b, other = mut(base, 0.03), mut(base, 0.03), mut(base, 0.10)
-    query = list(a)
-    if recombinant:
-        query[2000:4000] = list(b[2000:4000])
-    return write_fasta(tmp_path / "m.fasta",
-                       {"query": "".join(query), "A": a, "B": b, "other": other})
-
-
 def test_call_regions_bootscan_finds_the_recombinant(tmp_path: Path) -> None:
-    result = compute_similarity(str(_recombinant_msa(tmp_path, recombinant=True)),
+    result = compute_similarity(str(recombinant_msa(tmp_path, recombinant=True)),
                                 "query", window_size=500, window_step=50)
     regions, major, _ = call_regions(
         result, analyze(result), 500, RegionParams.with_defaults(500, method="bootscan")
@@ -64,7 +44,7 @@ def test_call_regions_bootscan_finds_the_recombinant(tmp_path: Path) -> None:
 
 
 def test_call_regions_bootscan_no_false_positive(tmp_path: Path) -> None:
-    result = compute_similarity(str(_recombinant_msa(tmp_path, recombinant=False)),
+    result = compute_similarity(str(recombinant_msa(tmp_path, recombinant=False)),
                                 "query", window_size=500, window_step=50)
     regions, major, _ = call_regions(
         result, analyze(result), 500, RegionParams.with_defaults(500, method="bootscan")
