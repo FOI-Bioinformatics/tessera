@@ -684,8 +684,9 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
     return _build_and_score(setup, "tip", methods, setup.out, logger)
 
 
-# The 2x2 attribution-comparison grid: tip vs source-removed consensus panel, default
-# ensemble vs +barcode. The baseline (tip, default) reproduces the headline harness.
+# Five-config attribution-comparison grid: tip vs source-removed consensus panel,
+# default ensemble vs +barcode, plus post-hoc reattribute on the tip panel.
+# The baseline (tip, default) reproduces the headline harness.
 COMPARE_CONFIGS = [
     ("baseline", "tip", ("hmm", "3seq", "maxchi", "bootscan"), False),
     ("+barcode", "tip", ("hmm", "3seq", "maxchi", "bootscan", "barcode"), False),
@@ -772,9 +773,10 @@ def _run_default(cases: list[dict], logger: logging.Logger) -> int:
 
 
 def _run_compare(cases: list[dict], logger: logging.Logger) -> int:
-    """Run the 2x2 attribution grid per case (G1 measurement); print a per-config table
-    and write ``data/attribution_compare.tsv``. The baseline column reproduces the
-    headline harness; the other columns measure barcode and the consensus panel."""
+    """Run the five-config attribution grid per case (G1 measurement); print a per-config
+    table and write ``data/attribution_compare.tsv``. The baseline column reproduces the
+    headline harness; the other columns measure barcode, the consensus panel, and
+    post-hoc donor re-attribution (``reattribute`` column)."""
     print(f"\nTessera attribution comparison -- {len(cases)} case(s), "
           f"{len(COMPARE_CONFIGS)} configs each\n" + "=" * 72)
     tsv = [["case", "divergence", "config", "detected", "backbone_tier", "backbone_depth",

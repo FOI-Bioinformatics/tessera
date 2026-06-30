@@ -74,8 +74,10 @@ def test_noop_without_lineage_map():
 
 def test_noop_with_fewer_than_two_clades():
     rows = {"q": _enc(_QUERY), "a1": _enc(_A)}
-    out = reattribute_donors([_region("a1", "a1", 5, 15)], _Result(rows, "q"),
+    regions = [_region("a1", "a1", 5, 15)]
+    out = reattribute_donors(regions, _Result(rows, "q"),
                              {"a1": "A"}, "A", margin=0.1, min_sites=4)
+    assert out is regions
     assert out[0].minor_parent == "a1"
 
 

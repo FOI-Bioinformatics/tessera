@@ -252,8 +252,9 @@ def run_recomb(
         lineage_map=lineage_map,
     )
     if params.reattribute_donors and lineage_map:
+        # reattribute_donors excludes by clade name, so map the backbone genome to its clade
         regions = reattribute_donors(
-            regions, result, lineage_map, major_parent,
+            regions, result, lineage_map, lineage_of(major_parent, lineage_map),
             margin=params.reattribute_margin, logger=logger,
         )
     if excluded_siblings:

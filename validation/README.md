@@ -244,8 +244,8 @@ promoted to a product default is a separate, data-gated decision -- no PASS rule
 here to manufacture a win.
 
 A fifth column, `reattribute`, runs the tip panel with `--reattribute-donors` enabled: after
-detection, the minor-parent label is re-evaluated by searching all panel sequences for a
-closer match to the recombinant insert, with the backbone unchanged. This is expected to
+detection, the minor-parent label is re-evaluated by scoring per-clade consensus sequences
+against the query over the recombinant insert, with the backbone unchanged. This is expected to
 recover `rsv_a`'s donor (the insert is a closer match to `A.D.1.8` than the initially-called
 neighbouring sublineage) in cases where the consensus panel alone could not, because it
 operates on the alignment already produced rather than replacing the panel itself.
