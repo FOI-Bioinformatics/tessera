@@ -208,6 +208,61 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
                 "Could not seed any reference from NCBI; provide a starting --collection."
             )
 
+    trace, panel_rows, last_msa = _grow_collection(
+        params, collection, query_label, exclude, logger
+    )
+
+    _write_trace(params.output, trace, logger)
+    final_size = sum(1 for _ in collection.iterdir())
+
+    lineage_map, query_lineage = _type_panel(params, collection, query_label, logger)
+    extra_sections = _report_sections(
+        params, trace, final_size, panel_rows, lineage_map, query_lineage, logger
+    )
+
+    # Publish the final alignment under a stable name so a separate detection step
+    # (tessera recomb) can consume the panel without guessing the last round number.
+    panel_msa = params.output / "panel.msa.fasta"
+    if last_msa is not None:
+        shutil.copyfile(last_msa, panel_msa)
+    if last_msa is not None and params.report:
+        logger.info("Writing the final report for the expanded collection...")
+        run_recomb(
+            RecombParams(
+                msa=panel_msa, output=params.output, query=query_label,
+                window_size=params.window_size, window_step=params.window_step,
+                coverage_floor=params.coverage_floor, coverage_rel_drop=params.coverage_rel_drop,
+                methods=params.methods, lineage_map=lineage_map or None,
+                organism=params.organism or params.taxon,
+            ),
+            logger,
+            extra_sections=extra_sections,
+        )
+    elif last_msa is not None:
+        logger.info(
+            "Panel built (no detection run). To call recombination, run:\n"
+            "  tessera recomb -i %s -q %s -o %s",
+            panel_msa, query_label, params.output,
+        )
+    logger.info("Final collection (%d references): %s", final_size, collection)
+    return trace
+
+
+def _grow_collection(
+    params: FillParams,
+    collection: Path,
+    query_label: str,
+    exclude: set[str],
+    logger: logging.Logger,
+) -> tuple[list[RoundResult], dict[str, dict], Path | None]:
+    """Run the build -> scan -> find -> download (-> curate) loop.
+
+    Each round rebuilds the MSA from the (growing) collection, scans for coverage
+    gaps, downloads the best new reference per gap, and (when ``--curate``)
+    dereplicates. Stops when the gaps close, when coverage stops improving, when
+    no new reference is found, or at ``max_rounds``. Mutates ``collection``;
+    returns the per-round trace, the curated panel-role table, and the last MSA.
+    """
     cov = CoverageParams.with_defaults(
         params.window_size, floor=params.coverage_floor, rel_drop=params.coverage_rel_drop,
     )
@@ -293,13 +348,19 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
     else:
         logger.info("Reached the maximum of %d round(s).", params.max_rounds)
 
-    _write_trace(params.output, trace, logger)
-    final_size = sum(1 for _ in collection.iterdir())
+    return trace, panel_rows, last_msa
 
-    # Type the recruited references: mine a genotype from each genome's header (NCBI
-    # lineage note or GenBank title), overlaid by a user-supplied --lineage-map, and
-    # persist it next to the panel so the report -- and a later standalone recomb --
-    # can name parents by lineage instead of by bare accession.
+
+def _type_panel(
+    params: FillParams, collection: Path, query_label: str, logger: logging.Logger,
+) -> tuple[dict[str, str], str | None]:
+    """Type the recruited references and the query, and persist ``lineages.tsv``.
+
+    Mine a genotype from each genome's header (NCBI lineage note or GenBank
+    title), overlaid by a user-supplied ``--lineage-map``, so the report and a
+    later standalone recomb can name parents by lineage instead of bare
+    accession. Returns the resolved lineage map and the query's own lineage.
+    """
     coll_files = [p for p in collection.iterdir() if p.is_file()]
     lineage_rows = build_lineage_map(
         user_tsv=params.lineage_map,
@@ -315,7 +376,19 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
     lineage_map = lineage_map_from_rows(lineage_rows)
     if lineage_map:
         logger.info("Typed %d reference(s) with a lineage/genotype name.", len(lineage_map))
+    return lineage_map, query_lineage
 
+
+def _report_sections(
+    params: FillParams,
+    trace: list[RoundResult],
+    final_size: int,
+    panel_rows: dict[str, dict],
+    lineage_map: dict[str, str],
+    query_lineage: str | None,
+    logger: logging.Logger,
+) -> list[tuple[str, str]]:
+    """Assemble the extra HTML report sections (recovery, panel, Pango cross-check)."""
     extra_sections = [("Reference recovery", _progress_section(trace, final_size))]
     if params.curate and panel_rows:
         table = list(panel_rows.values())
@@ -333,32 +406,7 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
             extra_sections.append(
                 ("Pango cross-check", crosscheck_html(query_lineage, parents))
             )
-    # Publish the final alignment under a stable name so a separate detection step
-    # (tessera recomb) can consume the panel without guessing the last round number.
-    panel_msa = params.output / "panel.msa.fasta"
-    if last_msa is not None:
-        shutil.copyfile(last_msa, panel_msa)
-    if last_msa is not None and params.report:
-        logger.info("Writing the final report for the expanded collection...")
-        run_recomb(
-            RecombParams(
-                msa=panel_msa, output=params.output, query=query_label,
-                window_size=params.window_size, window_step=params.window_step,
-                coverage_floor=params.coverage_floor, coverage_rel_drop=params.coverage_rel_drop,
-                methods=params.methods, lineage_map=lineage_map or None,
-                organism=params.organism or params.taxon,
-            ),
-            logger,
-            extra_sections=extra_sections,
-        )
-    elif last_msa is not None:
-        logger.info(
-            "Panel built (no detection run). To call recombination, run:\n"
-            "  tessera recomb -i %s -q %s -o %s",
-            panel_msa, query_label, params.output,
-        )
-    logger.info("Final collection (%d references): %s", final_size, collection)
-    return trace
+    return extra_sections
 
 
 # Fresh-start seeding. A whole-query search returns the query's closest *whole-genome*
