@@ -536,74 +536,77 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
     )
 
 
+def _tip_select(setup: CaseSetup, logger: logging.Logger) -> list[Path]:
+    """The tip panel: regional dereplication of the source-removed pool, with the
+    representative-panel fallback (skani rejects short segments; near-identical panels
+    collapse to one clade)."""
+    try:
+        # Keep "siblings": for a hybrid of close parents the backbone parent is
+        # >95% genome-wide ANI to the query (its 70% backbone dominates the average) and
+        # would be dropped as a masking twin -- but the synthetic pool contains no actual
+        # recombinant twin, so this is the documented close-parent / --seed-keep-siblings
+        # setting, and dropping it would remove the backbone parent itself.
+        selected = select_regional(setup.query, setup.pool, window=setup.sel_window,
+                                   per_window=2, drop_siblings=False, logger=logger).selected
+    except ToolExecutionError:  # skani rejects very short gene/segment datasets
+        selected = representative_panel(setup.pool, setup.tips, logger)
+    # On a near-identical panel (mpox/VZV ~0.5%) dereplication collapses the parent clades
+    # into one representative, leaving nothing to compete; rebuild from one central genome
+    # per clade so both parents are present for the detector to test.
+    sel_clades = {clade_of_label(g.name, setup.tips) for g in selected}
+    if len([c for c in sel_clades if c not in ("?", "NA")]) < 2:
+        logger.info("[%s] regional selection collapsed to %d clade(s); using clade "
+                    "representatives instead.", setup.name, len(sel_clades))
+        selected = representative_panel(setup.pool, setup.tips, logger)
+    return selected
+
+
 def _build_and_score(
     setup: CaseSetup, panel_mode: str, methods: tuple[str, ...], out_dir: Path,
     logger: logging.Logger,
 ) -> dict:
-    """Build the panel for ``panel_mode`` ('tip' or 'consensus'), align, run detection
-    with ``methods``, and score the call. Raises ``CaseSkipped`` when a parent clade has
+    """Build the panel for ``panel_mode`` ('tip', 'consensus' or 'mixed'), align, run
+    detection with ``methods``, and score the call. 'mixed' is individual tips *plus* one
+    consensus genome per clade -- the backbone competition keeps its tips while the donor
+    region can be won by a clade consensus. Raises ``CaseSkipped`` when a parent clade has
     no representative in the panel (the harness's representation invariant)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     t0 = time.monotonic()
-    if panel_mode == "consensus":
+    cons_map: dict[str, str] = {}
+    cons_paths: list[Path] = []
+    if panel_mode in ("consensus", "mixed"):
         # One denoised consensus genome per clade (source genomes already removed).
-        selected, cons_map = consensus_panel(
+        cons_paths, cons_map = consensus_panel(
             setup.members_by_clade, setup.reference, setup.tips, out_dir / "consensus", logger
         )
-        avail = set(setup.members_by_clade)
-        if not any(clade_match(c, setup.clade_a) for c in avail):
-            raise CaseSkipped(
-                f"backbone clade {setup.clade_a!r} has no panel representative "
-                "after the source genome was removed")
-        if not any(donor_match(c, setup.clade_b, setup.clade_a) for c in avail):
-            raise CaseSkipped(
-                f"donor clade {setup.clade_b!r} has no panel representative "
-                "after the source genome was removed")
-
-        def clade_of(label: str) -> str:
-            return cons_map.get(strip_sequence_extension(label), "?")
-
-        rows = [(strip_sequence_extension(p.name),
-                 cons_map[strip_sequence_extension(p.name)], "consensus") for p in selected]
+    if panel_mode == "consensus":
+        selected = cons_paths
     else:
-        try:
-            # Keep "siblings": for a hybrid of close parents the backbone parent is
-            # >95% genome-wide ANI to the query (its 70% backbone dominates the
-            # average) and would be dropped as a masking twin -- but the synthetic
-            # pool contains no actual recombinant twin, so this is the documented
-            # close-parent / --seed-keep-siblings setting, and dropping it would
-            # remove the backbone parent itself.
-            selected = select_regional(setup.query, setup.pool, window=setup.sel_window,
-                                       per_window=2, drop_siblings=False, logger=logger).selected
-        except ToolExecutionError:  # skani rejects very short gene/segment datasets
-            selected = representative_panel(setup.pool, setup.tips, logger)
-        # On a near-identical panel (mpox/VZV ~0.5%) dereplication collapses the parent
-        # clades into one representative, leaving nothing to compete; rebuild from one
-        # central genome per clade so both parents are present for the detector to test.
-        sel_clades = {clade_of_label(g.name, setup.tips) for g in selected}
-        if len([c for c in sel_clades if c not in ("?", "NA")]) < 2:
-            logger.info("[%s] regional selection collapsed to %d clade(s); using clade "
-                        "representatives instead.", setup.name, len(sel_clades))
-            selected = representative_panel(setup.pool, setup.tips, logger)
-        if not selected:
-            raise CaseSkipped("no reference panel could be built")
-        # The harness removes the two source genomes; a fair test needs each parent clade
-        # to remain credit-able from the panel (its design invariant).
-        panel_clades = {clade_of_label(g.name, setup.tips) for g in selected}
-        if not any(clade_match(c, setup.clade_a) for c in panel_clades):
-            raise CaseSkipped(
-                f"backbone clade {setup.clade_a!r} has no panel representative "
-                "after the source genome was removed")
-        if not any(donor_match(c, setup.clade_b, setup.clade_a) for c in panel_clades):
-            raise CaseSkipped(
-                f"donor clade {setup.clade_b!r} has no panel representative "
-                "after the source genome was removed")
+        selected = _tip_select(setup, logger)
+        if panel_mode == "mixed":
+            selected = selected + cons_paths
+    if not selected:
+        raise CaseSkipped("no reference panel could be built")
 
-        def clade_of(label: str) -> str:
-            return clade_of_label(label, setup.tips)
+    def clade_of(label: str) -> str:
+        key = strip_sequence_extension(label)
+        return cons_map[key] if key in cons_map else clade_of_label(label, setup.tips)
 
-        rows = [(strip_sequence_extension(g.name), clade_of_label(g.name, setup.tips), "nextclade")
-                for g in selected]
+    # The harness removes the two source genomes; a fair test needs each parent clade to
+    # remain credit-able from the panel (its design invariant).
+    panel_clades = {clade_of(g.name) for g in selected}
+    if not any(clade_match(c, setup.clade_a) for c in panel_clades):
+        raise CaseSkipped(
+            f"backbone clade {setup.clade_a!r} has no panel representative "
+            "after the source genome was removed")
+    if not any(donor_match(c, setup.clade_b, setup.clade_a) for c in panel_clades):
+        raise CaseSkipped(
+            f"donor clade {setup.clade_b!r} has no panel representative "
+            "after the source genome was removed")
+
+    rows = [(strip_sequence_extension(g.name), clade_of(g.name),
+             "consensus" if strip_sequence_extension(g.name) in cons_map else "nextclade")
+            for g in selected]
 
     collection = out_dir / "collection"
     if collection.exists():
@@ -690,6 +693,10 @@ COMPARE_CONFIGS = [
     ("+barcode", "tip", ("hmm", "3seq", "maxchi", "bootscan", "barcode")),
     ("consensus", "consensus", ("hmm", "3seq", "maxchi", "bootscan")),
     ("consensus+barcode", "consensus", ("hmm", "3seq", "maxchi", "bootscan", "barcode")),
+    # tips + per-clade consensus: keep the backbone's tips while letting a clade consensus
+    # win the donor region (tests whether the consensus donor gain survives without the
+    # consensus backbone regression).
+    ("mixed", "mixed", ("hmm", "3seq", "maxchi", "bootscan")),
 ]
 
 

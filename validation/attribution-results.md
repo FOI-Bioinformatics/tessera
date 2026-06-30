@@ -65,6 +65,39 @@ is a new design and would get its own brainstorm -> spec -> plan, with the same 
 measurement as its gate. `flu_h3n2_ha`'s backbone mismatch on a short HA segment is a separate
 problem and likely needs segment-aware handling, not a panel change.
 
+## Follow-up: the mixed panel (tips + per-clade consensus)
+
+The consensus result above is asymmetric -- it helps the donor and hurts the backbone -- so a
+natural refinement is a **mixed** panel: keep the individual tips (so the backbone keeps its
+genomes) *and* add one consensus genome per clade (so the donor region can be won by a clade
+consensus). The harness supports it as a fifth `--compare` config (`--method` default ensemble,
+`panel_mode="mixed"`). Measured on the decisive cases:
+
+| case | baseline | consensus | mixed |
+|------|----------|-----------|-------|
+| `measles` (7.5%) | PASS | FAIL (backbone) | **PASS** (backbone recovered) |
+| `rubella` (9.0%) | PASS | FAIL (backbone) | **FAIL** (backbone still mismatched) |
+| `rsv_a` (6.6%) | FAIL (donor) | FAIL (backbone) | **FAIL** (backbone sibling, donor exact) |
+| `marburg` (21.5%) | PASS | PASS | not completed (slow full genome; not decisive) |
+
+**The mixed panel is not a clean win either.** It removed the `measles` backbone regression but
+not `rubella`'s, and it did not close `rsv_a`: the consensus genome wins the donor region
+(donor becomes `exact`) but *also* outcompetes the backbone's own tips for the major-parent
+slot, so the backbone still degrades to a sibling sub-clade. Adding a denoised consensus to the
+panel makes it a stronger competitor for **both** parent roles, not just the donor.
+
+### What this closes, and the open direction
+
+The panel-composition lever is exhausted for G1: neither barcode, a consensus panel, nor a
+mixed panel cleanly improves attribution. The root cause is structural -- a single reference
+panel competes for both the major and the minor parent, so any reference good enough to fix the
+donor is also good enough to steal the backbone. A real fix has to *separate the
+representations*: score the **minor parent (donor)** against denoised per-clade consensuses
+while scoring the **major parent (backbone)** against individual genomes. That is a
+**caller-level** change (inside the attribution scoring), not a panel-composition change, and it
+is the open G1 direction -- deferred to its own brainstorm -> spec -> plan cycle. `flu_h3n2_ha`
+remains a separate short-segment backbone problem.
+
 ## Caveat on the product `--pool-consensus`
 
 The harness builds the consensus with the two source genomes removed (to keep the test honest),
