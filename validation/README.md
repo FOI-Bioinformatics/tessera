@@ -238,10 +238,17 @@ For each case it builds the setup once and scores a 2x2 grid -- {tip, consensus}
 table. Alongside the PASS/FAIL verdict it reports a finer **attribution tier**
 (`exact` / `sibling` / `mismatch`) and a **clade depth** (shared leading clade components
 between the recovered and the true donor), so an improvement shows even when it does not flip
-the verdict. The `baseline` column reproduces the headline 16/2/6; the other three columns are
-this measurement, **not** the headline numbers. Whether barcode or the consensus panel is then
+the verdict. The `baseline` column reproduces the headline 16/2/6; the other columns are
+this measurement, **not** the headline numbers. Whether any configuration is then
 promoted to a product default is a separate, data-gated decision -- no PASS rule is loosened
 here to manufacture a win.
+
+A fifth column, `reattribute`, runs the tip panel with `--reattribute-donors` enabled: after
+detection, the minor-parent label is re-evaluated by searching all panel sequences for a
+closer match to the recombinant insert, with the backbone unchanged. This is expected to
+recover `rsv_a`'s donor (the insert is a closer match to `A.D.1.8` than the initially-called
+neighbouring sublineage) in cases where the consensus panel alone could not, because it
+operates on the alignment already produced rather than replacing the panel itself.
 
 The first run of this measurement is written up in
 [`attribution-results.md`](attribution-results.md): on these datasets barcode is inert (no

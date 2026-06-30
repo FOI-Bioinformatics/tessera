@@ -538,7 +538,7 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
 
 def _build_and_score(
     setup: CaseSetup, panel_mode: str, methods: tuple[str, ...], out_dir: Path,
-    logger: logging.Logger,
+    logger: logging.Logger, *, reattribute: bool = False,
 ) -> dict:
     """Build the panel for ``panel_mode`` ('tip' or 'consensus'), align, run detection
     with ``methods``, and score the call. Raises ``CaseSkipped`` when a parent clade has
@@ -622,7 +622,8 @@ def _build_and_score(
     windowing = run_recomb(RecombParams(msa=msa, output=out_dir, query=setup.query_label,
                                         window_size=setup.window, window_step=setup.step,
                                         organism=setup.name, methods=methods,
-                                        lineage_map=lineage_map), logger)
+                                        lineage_map=lineage_map,
+                                        reattribute_donors=reattribute), logger)
     runtime = time.monotonic() - t0
     mode = "info-site" if windowing.startswith("informative") else "bp"
     return _score_regions(out_dir, clade_of, setup, len(selected), mode, runtime)
@@ -686,10 +687,12 @@ def run_case(case: dict, logger: logging.Logger) -> dict:
 # The 2x2 attribution-comparison grid: tip vs source-removed consensus panel, default
 # ensemble vs +barcode. The baseline (tip, default) reproduces the headline harness.
 COMPARE_CONFIGS = [
-    ("baseline", "tip", ("hmm", "3seq", "maxchi", "bootscan")),
-    ("+barcode", "tip", ("hmm", "3seq", "maxchi", "bootscan", "barcode")),
-    ("consensus", "consensus", ("hmm", "3seq", "maxchi", "bootscan")),
-    ("consensus+barcode", "consensus", ("hmm", "3seq", "maxchi", "bootscan", "barcode")),
+    ("baseline", "tip", ("hmm", "3seq", "maxchi", "bootscan"), False),
+    ("+barcode", "tip", ("hmm", "3seq", "maxchi", "bootscan", "barcode"), False),
+    ("consensus", "consensus", ("hmm", "3seq", "maxchi", "bootscan"), False),
+    ("consensus+barcode", "consensus", ("hmm", "3seq", "maxchi", "bootscan", "barcode"), False),
+    # post-hoc donor re-attribution on the tip panel (backbone unchanged)
+    ("reattribute", "tip", ("hmm", "3seq", "maxchi", "bootscan"), True),
 ]
 
 
@@ -699,11 +702,12 @@ def compare_case(case: dict, logger: logging.Logger) -> dict:
     is ill-posed and propagates; a SKIP from a later config is recorded per config."""
     setup = _prepare_case(case, logger)
     records: dict[str, dict] = {}
-    for label, mode, names in COMPARE_CONFIGS:
+    for label, mode, names, reattribute in COMPARE_CONFIGS:
         methods = parse_methods(",".join(names))
         sub = setup.out / ("cmp_" + re.sub(r"[^\w]+", "_", label))
         try:
-            records[label] = _build_and_score(setup, mode, methods, sub, logger)
+            records[label] = _build_and_score(setup, mode, methods, sub, logger,
+                                               reattribute=reattribute)
         except CaseSkipped:
             if label == "baseline":
                 raise
@@ -775,8 +779,8 @@ def _run_compare(cases: list[dict], logger: logging.Logger) -> int:
           f"{len(COMPARE_CONFIGS)} configs each\n" + "=" * 72)
     tsv = [["case", "divergence", "config", "detected", "backbone_tier", "backbone_depth",
             "donor_tier", "donor_depth", "donor_obs", "expected_donor", "agree", "pass"]]
-    pass_count = {label: 0 for label, _, _ in COMPARE_CONFIGS}
-    improved = {label: 0 for label, _, _ in COMPARE_CONFIGS}
+    pass_count = {label: 0 for label, _, _, _ in COMPARE_CONFIGS}
+    improved = {label: 0 for label, _, _, _ in COMPARE_CONFIGS}
     ran = 0
     for case in cases:
         try:
@@ -792,7 +796,7 @@ def _run_compare(cases: list[dict], logger: logging.Logger) -> int:
         base = res["configs"].get("baseline", {})
         base_depth = base.get("donor_depth", -1) if not base.get("skip") else -1
         print(f"\n{res['name']}  ({res['clade_a']} x {res['clade_b']}, {res['divergence']:.1f}%)")
-        for label, _, _ in COMPARE_CONFIGS:
+        for label, _, _, _ in COMPARE_CONFIGS:
             rec = res["configs"][label]
             if rec.get("skip"):
                 print(f"  {label:18} SKIP")
@@ -818,7 +822,7 @@ def _run_compare(cases: list[dict], logger: logging.Logger) -> int:
     out_tsv.write_text("\n".join("\t".join(map(str, row)) for row in tsv) + "\n")
 
     print("\n" + "=" * 72 + f"\nsummary (of {ran} cases that ran)")
-    for label, _, _ in COMPARE_CONFIGS:
+    for label, _, _, _ in COMPARE_CONFIGS:
         extra = ("" if label == "baseline"
                  else f"; donor attribution improved vs baseline in {improved[label]}")
         print(f"  {label:18} PASS {pass_count[label]}/{ran}{extra}")
