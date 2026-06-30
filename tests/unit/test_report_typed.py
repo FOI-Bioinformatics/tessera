@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tessera.recomb.report import _verdict_html
+from tessera.recomb.report_html import _verdict_html
 
 # A minimal summary dict as produced by _summary for a no-recombination call.
 _S = {
