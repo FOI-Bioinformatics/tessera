@@ -17,6 +17,7 @@ from .coverage import CoverageGap
 from .diagnostics import RecombinationSignal
 from .regions import Region
 from .report_assets import _CSS, _GLOSSARY, _REFERENCES
+from .report_context import ReportContext
 from .report_plots import GREY, _color_map, build_interactive_figure
 from .similarity import WindowSimilarity
 from .typing import LineageMap, typed
@@ -507,30 +508,23 @@ def write_html_report(
     provenance: dict[str, str],
     output_dir: Path,
     logger: logging.Logger,
-    coverage_gaps: list[CoverageGap] | None = None,
-    coverage_threshold: float = 0.0,
-    extra_sections: list[tuple[str, str]] | None = None,
-    lineage_map: LineageMap | None = None,
-    query_lineage: str | None = None,
-    signal: RecombinationSignal | None = None,
-    organism: str | None = None,
-    methods_run: tuple[str, ...] = (),
-    method_breakdown: list[dict] | None = None,
-    per_major: dict[str, str] | None = None,
+    ctx: ReportContext,
 ) -> Path:
     """Write a single self-contained ``report.html``."""
-    gaps = coverage_gaps or []
+    gaps = ctx.gaps
+    lineage_map = ctx.lineage_map
+    threshold = ctx.coverage_threshold
     fig = build_interactive_figure(result, datasets, regions, gaps)
     plot_div = fig.to_html(full_html=False, include_plotlyjs="inline")
 
     colors = _color_map(datasets)
     s = _summary(result, regions, datasets)
     organism_html = (
-        f'<div class="organism">{html.escape(organism)}</div>' if organism else ""
+        f'<div class="organism">{html.escape(ctx.organism)}</div>' if ctx.organism else ""
     )
     extras = "".join(
         f'<section class="section"><div class="eyebrow">{html.escape(title)}</div>{body}</section>'
-        for title, body in (extra_sections or [])
+        for title, body in (ctx.extra_sections or [])
     )
 
     doc = (
@@ -542,16 +536,16 @@ def write_html_report(
         '<header><div class="eyebrow">Tessera &middot; recombination report</div>'
         f'<h1 class="mono">{html.escape(result.query)}</h1>'
         f"{organism_html}"
-        f"{_verdict_html(s, result.query, colors, lineage_map, query_lineage)}"
-        f"{_caveat_html(gaps, coverage_threshold)}</header>"
+        f"{_verdict_html(s, result.query, colors, lineage_map, ctx.query_lineage)}"
+        f"{_caveat_html(gaps, threshold)}</header>"
         f"{_cards_html(s, colors, lineage_map)}"
         '<section class="section"><div class="eyebrow">Query mosaic</div>'
         f"{_mosaic_html(regions, colors, s, gaps, lineage_map)}</section>"
         '<section class="section"><div class="eyebrow">Recombinant regions</div>'
         f'{_regions_html(regions, colors, s["query_len"], lineage_map)}</section>'
-        f"{_method_section(method_breakdown, methods_run, per_major, lineage_map)}"
+        f"{_method_section(ctx.method_breakdown, ctx.methods_run, ctx.per_major, lineage_map)}"
         '<section class="section"><div class="eyebrow">Reference coverage</div>'
-        f"{_coverage_html(gaps, coverage_threshold)}</section>"
+        f"{_coverage_html(gaps, threshold)}</section>"
         f"{extras}"
         '<section class="section"><div class="eyebrow">Similarity across the alignment</div>'
         '<p class="cap">Each line is one reference\'s similarity to the query along the '
@@ -559,7 +553,7 @@ def write_html_report(
         'stretches. Drag to zoom, hover for values.</p>'
         f"{plot_div}</section>"
         '<section class="section"><div class="eyebrow">Recombination signal (parent-free)</div>'
-        f"{_signal_html(signal)}</section>"
+        f"{_signal_html(ctx.signal)}</section>"
         '<section class="section"><div class="eyebrow">Window winners</div>'
         '<p class="cap">Windows in which each reference is the query\'s closest match '
         '(ties included).</p>'
