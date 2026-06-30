@@ -21,7 +21,13 @@ from .diagnostics import recombination_signal
 from .ensemble import consensus_regions, reconcile_major
 from .hmm import DEFAULT_JUMP_RATE
 from .regions import DEFAULT_METHODS, RegionParams, call_regions
-from .report import print_coverage, print_regions, print_summary, write_reports
+from .report import (
+    ReportContext,
+    print_coverage,
+    print_regions,
+    print_summary,
+    write_reports,
+)
 from .similarity import (
     compute_similarity,
     compute_similarity_informative,
@@ -326,10 +332,12 @@ def run_recomb(
     write_reports(
         result, analysis, regions, per_window_winners, provenance, output_dir,
         top_n=params.top_n, plot_format=params.plot_format, logger=logger,
-        coverage_gaps=coverage_gaps, coverage_threshold=coverage_threshold,
-        extra_sections=extra_sections, lineage_map=lineage_map,
-        query_lineage=query_lineage, signal=signal, organism=params.organism,
-        methods_run=params.methods, method_breakdown=method_breakdown, per_major=per_major,
+        ctx=ReportContext(
+            coverage_gaps=coverage_gaps, coverage_threshold=coverage_threshold,
+            extra_sections=extra_sections, lineage_map=lineage_map,
+            query_lineage=query_lineage, signal=signal, organism=params.organism,
+            methods_run=params.methods, method_breakdown=method_breakdown, per_major=per_major,
+        ),
     )
     logger.info("All done.")
     return windowing
