@@ -14,15 +14,6 @@ import typer
 from .main import _require_choice, app, get_logger, stage_errors
 
 
-def _seed_source(candidate_pool, nextclade: bool, nextclade_dataset: str | None) -> str:
-    """Local pool wins, then Nextclade, then the default BLAST recruitment."""
-    if candidate_pool:
-        return "local"
-    if nextclade or nextclade_dataset:
-        return "nextclade"
-    return "blast"
-
-
 @app.command(name="detect")
 def detect(
     query: Path = typer.Option(
@@ -95,18 +86,14 @@ def detect(
     logger = get_logger(output)
     with stage_errors(logger):
         _require_choice(aligner, set(aligner_registry.names()), "--aligner")
-        params = FillParams(
-            query=query, collection=None, output=output,
+        params = FillParams.for_detection(
+            query=query, output=output,
             aligner=aligner, max_rounds=max_rounds,
             window_size=window_size, window_step=window_step,
             email=email or os.environ.get("NCBI_EMAIL"),
             threads=threads, cache_dir=cache_dir,
-            # Detection-tuned preset: recruit parents, drop siblings, curate the panel.
-            seed_source=_seed_source(candidate_pool, nextclade, nextclade_dataset),
-            nextclade_dataset=nextclade_dataset,
-            candidate_pool=candidate_pool, taxon=taxon,
-            seed_mode="parents", curate=True,
-            auto_diversify=True, negative_lineage=True,
+            taxon=taxon, candidate_pool=candidate_pool,
+            nextclade=nextclade, nextclade_dataset=nextclade_dataset,
             methods=parse_methods(method), pool_consensus=pool_consensus,
             organism=organism, lineage_map=lineage_map,
         )
