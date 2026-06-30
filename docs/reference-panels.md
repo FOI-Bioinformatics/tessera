@@ -166,7 +166,11 @@ For an over-represented lineage, seed from a **finite pool** instead
   to compete **one denoised consensus genome per clade** (the majority base per column
   across the clade's tips) instead of every tip -- a stable per-lineage reference (the
   jpHMM principle) that is harder to lose to a near-identical adjacent-clade genome at low
-  divergence. The consensus pool is cached separately.
+  divergence. The consensus pool is cached separately. Use it for low-divergence,
+  near-identical panels rather than as an always-on default: the harness attribution
+  measurement (`validation/attribution-results.md`) found that one-genome-per-clade
+  competition can *degrade* backbone (major-parent) attribution at moderate divergence
+  (~7-9%), so it is opt-in.
 
 ```
 tessera fill-references --query CRF01_AE.fasta --output filled/ --aligner mafft \

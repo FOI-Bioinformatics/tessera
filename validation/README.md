@@ -243,6 +243,12 @@ this measurement, **not** the headline numbers. Whether barcode or the consensus
 promoted to a product default is a separate, data-gated decision -- no PASS rule is loosened
 here to manufacture a win.
 
+The first run of this measurement is written up in
+[`attribution-results.md`](attribution-results.md): on these datasets barcode is inert (no
+verdict or attribution change) and the consensus panel is a net regression (it improves donor
+attribution on two cases but degrades backbone attribution on two others), so neither was
+promoted -- the value of measuring before committing.
+
 ## Expectation schema (`expected` block)
 
 - `major_parent` -- the top window-winner must equal this label.
