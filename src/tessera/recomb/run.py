@@ -20,6 +20,7 @@ from .coverage import (
 from .diagnostics import recombination_signal
 from .ensemble import consensus_regions, reconcile_major
 from .hmm import DEFAULT_JUMP_RATE
+from .reattribute import reattribute_donors
 from .regions import DEFAULT_METHODS, RegionParams, call_regions
 from .report import (
     ReportContext,
@@ -85,6 +86,11 @@ class RecombParams:
     # The organism / species name, shown in the report header (e.g. "Monkeypox virus").
     # Populated by detect / fill-references from --organism or the detected taxon.
     organism: str | None = None
+    # Opt-in post-hoc donor re-attribution: re-label a region's donor to the clade whose
+    # consensus best matches the query over that region (typed panels only). Off by
+    # default; the backbone and detection are untouched. See recomb/reattribute.py.
+    reattribute_donors: bool = False
+    reattribute_margin: float = 0.03
 
 
 def _select_windowing(bp_result, params: RecombParams, query_label: str, logger):
@@ -245,6 +251,12 @@ def run_recomb(
         rmin_intervals=signal.rmin_intervals if signal else None,
         lineage_map=lineage_map,
     )
+    if params.reattribute_donors and lineage_map:
+        # reattribute_donors excludes by clade name, so map the backbone genome to its clade
+        regions = reattribute_donors(
+            regions, result, lineage_map, lineage_of(major_parent, lineage_map),
+            margin=params.reattribute_margin, logger=logger,
+        )
     if excluded_siblings:
         logger.info(
             "Excluded %d whole-genome sibling(s) of the query (its own lineage) from the "

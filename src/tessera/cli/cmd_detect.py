@@ -68,6 +68,11 @@ def detect(
         help="Organism / species name for the report header; defaults to the taxon.",
     ),
     threads: int = typer.Option(4, "-t", "--threads", help="Aligner worker threads."),
+    reattribute_donors: bool = typer.Option(
+        False, "--reattribute-donors/--no-reattribute-donors",
+        help="Refine each region's donor to the best-matching clade consensus "
+        "(typed panel; backbone unchanged). Off by default.",
+    ),
 ) -> None:
     """Detect recombination in a query with no reference genomes supplied.
 
@@ -96,5 +101,6 @@ def detect(
             nextclade=nextclade, nextclade_dataset=nextclade_dataset,
             methods=parse_methods(method), pool_consensus=pool_consensus,
             organism=organism, lineage_map=lineage_map,
+            reattribute_donors=reattribute_donors,
         )
         fill_references(params, logger)

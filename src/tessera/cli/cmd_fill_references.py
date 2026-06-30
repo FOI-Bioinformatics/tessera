@@ -152,6 +152,11 @@ def fill_references(
         "names mined from genome headers; written into the panel's lineages.tsv.",
     ),
     threads: int = typer.Option(4, "-t", "--threads", help="Aligner worker threads."),
+    reattribute_donors: bool = typer.Option(
+        False, "--reattribute-donors/--no-reattribute-donors",
+        help="Refine each region's donor to the best-matching clade consensus "
+        "(typed panel; backbone unchanged). Off by default.",
+    ),
 ) -> None:
     """Iteratively search NCBI and add references until coverage stops improving.
 
@@ -186,5 +191,6 @@ def fill_references(
             curate=curate, sibling_margin=sibling_margin, af_min=af_min, derep_ani=derep_ani,
             report=report, methods=parse_methods(method), pool_consensus=pool_consensus,
             organism=organism, lineage_map=lineage_map,
+            reattribute_donors=reattribute_donors,
         )
         fill_references(params, logger)

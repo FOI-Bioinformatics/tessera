@@ -65,6 +65,43 @@ is a new design and would get its own brainstorm -> spec -> plan, with the same 
 measurement as its gate. `flu_h3n2_ha`'s backbone mismatch on a short HA segment is a separate
 problem and likely needs segment-aware handling, not a panel change.
 
+## Caller-level donor re-attribution (`--reattribute-donors`)
+
+The asymmetry above motivated a caller-level fix (design + plan under
+`docs/superpowers/`): a post-merge step that re-labels each region's **donor** to the clade
+whose denoised consensus best matches the query over that region, margin-guarded, leaving
+detection and the **backbone** untouched. It is opt-in (`--reattribute-donors`, default off)
+and a no-op on untyped panels. Measured as a fifth `--compare` column:
+
+| config | PASS | donor attribution improved vs baseline |
+|--------|------|----------------------------------------|
+| baseline | 16/18 | -- |
+| reattribute | 16/18 | 0 |
+
+**Safe but inert on this harness.** Unlike the consensus panel, re-attribution causes **no
+regression** -- `measles` and `rubella` stay PASS, because it competes only the donor and
+excludes the backbone clade (a backbone-exclusion bug, caught in final review, was fixed
+before this run: the call site now maps the backbone *genome* to its *clade*). But it does
+**not** close `rsv_a`: the donor stays `A.D.1.6` (sibling), unchanged from baseline.
+
+**Why -- a representation artifact, not an attribution-mechanism limit.** The true donor
+clade `A.D.1.8` is **absent from the panel re-attribution sees**. The harness's
+`select_regional` dereplication reduces the tip panel to `A.D.1.4 / A.D.1.6 / A.D.1.9`
+(among others) and drops `A.D.1.8`. Re-attribution scores against the clades present in the
+aligned panel (`result.rows`), so it cannot recover a clade that was dereplicated away. The
+`consensus`-panel column reached `A.D.1.8` only because it builds one consensus per clade
+from the *full* source-removed pool (all ~36 `A.D` sub-clades), bypassing the dereplication
+-- which is also why it pays the backbone regression elsewhere.
+
+**Conclusion.** The feature is correct, safe, and opt-in-merge-worthy (it would sharpen a
+donor when the true clade *is* represented but a noisy adjacent genome wins a few windows),
+but on this harness `rsv_a` is fundamentally a **G2 representation** problem: the true donor
+sub-clade is not in the panel. Per the plan's gate, do **not** promote to default-when-typed
+(it did not flip `rsv_a`). The real levers for `rsv_a` are G2: keep/recruit the true donor
+sub-clade in the panel (don't dereplicate it away), or score the donor against per-clade
+consensuses built from a fuller clade set than the dereplicated panel exposes. Both are
+separate cycles. `flu_h3n2_ha` remains a separate short-segment backbone problem.
+
 ## Caveat on the product `--pool-consensus`
 
 The harness builds the consensus with the two source genomes removed (to keep the test honest),

@@ -114,6 +114,16 @@ def recomb(
         100, "--phi-window",
         help="PHI test window width, in informative-site ranks.",
     ),
+    reattribute_donors: bool = typer.Option(
+        False, "--reattribute-donors/--no-reattribute-donors",
+        help="Refine each region's donor to the clade whose consensus best matches the "
+        "query over that region (needs a typed panel; backbone unchanged). Off by default.",
+    ),
+    reattribute_margin: float = typer.Option(
+        0.03, "--reattribute-margin",
+        help="A donor is re-attributed only when a clade beats the current donor's "
+        "consensus similarity by at least this much.",
+    ),
 ) -> None:
     """Identify recombination events in a multiple sequence alignment."""
     from ..recomb.regions import parse_methods
@@ -149,5 +159,7 @@ def recomb(
             phi_window=phi_window,
             lineage_map_path=lineage_map,
             organism=organism,
+            reattribute_donors=reattribute_donors,
+            reattribute_margin=reattribute_margin,
         )
         run_recomb(params, logger)
