@@ -68,4 +68,4 @@ ignore = ["B008"]
 "src/tessera/cli/main.py" = ["E402", "I001"]
 # The HTML report embeds a compact inline stylesheet; keeping CSS rules one per
 # line (rather than wrapped) is more readable than honouring the line limit.
-"src/tessera/recomb/report.py" = ["E501"]
+"src/tessera/recomb/report_assets.py" = ["E501"]

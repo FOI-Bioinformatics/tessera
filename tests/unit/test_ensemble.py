@@ -103,7 +103,7 @@ def test_parent_free_support_set_when_overlapping_rmin_interval() -> None:
 
 
 def test_agreement_raises_confidence_to_high() -> None:
-    from tessera.recomb.report import _confidence
+    from tessera.recomb.report_html import _confidence
     # a single marginal caller is not high...
     one = [mk("B", 100, 200, "3seq", support=0.55, qvalue=0.03)]
     assert _confidence(one, []) == "moderate"
