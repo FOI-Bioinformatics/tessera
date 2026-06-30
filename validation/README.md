@@ -220,6 +220,29 @@ fine-subclade attribution misses, not detection misses. The pass set is a perfor
 characterisation, not a fixed contract -- the clades chosen follow from each dataset's
 current Nextclade tree.
 
+#### Attribution comparison (`--compare`)
+
+Because both FAILs are *attribution* (wrong adjacent sub-clade), not detection, the harness
+has a measurement mode that asks whether the two features built for attribution help: the
+**barcode** caller (denoised per-clade markers) and a **source-removed per-clade consensus**
+panel (the `--pool-consensus` idea, with the two spliced source genomes excluded so the test
+stays honest). Run:
+
+```
+python validation/run_hybrids.py --compare            # all cases
+python validation/run_hybrids.py --compare rsv_a flu_h3n2_ha
+```
+
+For each case it builds the setup once and scores a 2x2 grid -- {tip, consensus} panel x
+{default ensemble, +barcode} -- writing `data/attribution_compare.tsv` and a per-config
+table. Alongside the PASS/FAIL verdict it reports a finer **attribution tier**
+(`exact` / `sibling` / `mismatch`) and a **clade depth** (shared leading clade components
+between the recovered and the true donor), so an improvement shows even when it does not flip
+the verdict. The `baseline` column reproduces the headline 16/2/6; the other three columns are
+this measurement, **not** the headline numbers. Whether barcode or the consensus panel is then
+promoted to a product default is a separate, data-gated decision -- no PASS rule is loosened
+here to manufacture a win.
+
 ## Expectation schema (`expected` block)
 
 - `major_parent` -- the top window-winner must equal this label.
