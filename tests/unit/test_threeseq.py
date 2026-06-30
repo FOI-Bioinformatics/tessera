@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import itertools
-import random
 from pathlib import Path
 
 import numpy as np
@@ -17,7 +16,7 @@ from tessera.recomb.threeseq import (
     triplet_steps,
 )
 
-from ..conftest import write_fasta
+from ..conftest import recombinant_msa, write_fasta
 
 
 def _brute_pvalue(m: int, n: int, depth: int) -> float:
@@ -72,27 +71,8 @@ def test_triplet_steps_keeps_only_discriminating_sites(tmp_path: Path) -> None:
     assert steps.tolist() == [1, -1]
 
 
-def _recombinant_msa(tmp_path: Path, *, recombinant: bool) -> Path:
-    rng = random.Random(7)
-    base = "".join(rng.choice("ACGT") for _ in range(6000))
-
-    def mut(seq: str, frac: float) -> str:
-        chars = list(seq)
-        for i in range(len(chars)):
-            if rng.random() < frac:
-                chars[i] = rng.choice("ACGT")
-        return "".join(chars)
-
-    a, b, other = mut(base, 0.03), mut(base, 0.03), mut(base, 0.10)
-    query = list(a)
-    if recombinant:
-        query[2000:4000] = list(b[2000:4000])  # A backbone, B insert
-    return write_fasta(tmp_path / "m.fasta",
-                       {"query": "".join(query), "A": a, "B": b, "other": other})
-
-
 def test_call_regions_3seq_finds_the_recombinant(tmp_path: Path) -> None:
-    result = compute_similarity(str(_recombinant_msa(tmp_path, recombinant=True)),
+    result = compute_similarity(str(recombinant_msa(tmp_path, recombinant=True)),
                                 "query", window_size=500, window_step=50)
     regions, major, dropped = call_regions(
         result, analyze(result), 500, RegionParams.with_defaults(500, method="3seq")
@@ -107,7 +87,7 @@ def test_call_regions_3seq_finds_the_recombinant(tmp_path: Path) -> None:
 
 
 def test_call_regions_3seq_no_false_positive_on_pure_query(tmp_path: Path) -> None:
-    result = compute_similarity(str(_recombinant_msa(tmp_path, recombinant=False)),
+    result = compute_similarity(str(recombinant_msa(tmp_path, recombinant=False)),
                                 "query", window_size=500, window_step=50)
     regions, major, _ = call_regions(
         result, analyze(result), 500, RegionParams.with_defaults(500, method="3seq")
