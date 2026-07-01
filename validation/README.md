@@ -13,6 +13,7 @@ validation/
   datasets.json        one entry per dataset (inputs, aligner, expected outcome)
   fetch.py             download the fetch-based datasets from NCBI (efetch)
   run_validation.py    build MSA + run recomb per dataset, check, print a table
+  run_deep_typing.py   run the real --deep-typing lineage ladder, check nextclade-nn
   data/                downloaded sequences + run artifacts (gitignored)
 ```
 
@@ -133,6 +134,25 @@ Needs MAFFT/minimap2/skani/skDER on PATH and contacts the Nextclade dataset serv
 on the first run (pools are cached afterwards under `~/.cache/tessera/nextclade`).
 For a short gene/segment dataset that skani rejects the panel falls back to one
 central genome per clade.
+
+## Deep-typing ladder check (`run_deep_typing.py`)
+
+The unit tests exercise the lineage-assignment ladder with the Nextclade and skani
+calls stubbed. This opt-in check runs the real ladder once -- the path `detect
+--deep-typing` uses -- so the Nextclade nearest-neighbour tier is exercised against a
+live dataset. It reuses the bundled SARS-CoV-2 collection, rewrites each genome header
+to a bare accession (so header mining cannot short-circuit and the ladder must reach
+the nearest-neighbour tier), calls `assign_lineages`, and checks that every genome is
+typed via source `nextclade-nn` with a non-empty label.
+
+```
+export PATH="$HOME/miniforge3/envs/recomfi-aln/bin:$PATH"   # skani on PATH
+python validation/run_deep_typing.py
+```
+
+It SKIPs (does not fail) when skani is absent, the collection has not been fetched, or
+the Nextclade fetch is unavailable. The `ncbi-datasets` source tag -- the other half of
+`--deep-typing` -- is covered by the unit tests rather than a fetch-based end-to-end.
 
 A dataset is **SKIP**ped (not failed) when it cannot supply a valid test: the
 most-divergent clade pair is below ~4 % divergence (too few discriminating sites:
