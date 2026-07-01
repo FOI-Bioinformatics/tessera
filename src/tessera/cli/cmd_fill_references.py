@@ -157,6 +157,12 @@ def fill_references(
         help="Refine each region's donor to the best-matching clade consensus "
         "(typed panel; backbone unchanged). Off by default.",
     ),
+    keep_recombinant_lineages: bool = typer.Option(
+        False, "--keep-recombinant-lineages/--no-keep-recombinant-lineages",
+        help="Keep recombinant (CRF/URF/X) lineages in the panel. Off by default: "
+        "they carry both parents' segments and mask the true parents. Turn on to "
+        "recruit the best-matching genome even if it is a known hybrid.",
+    ),
 ) -> None:
     """Iteratively search NCBI and add references until coverage stops improving.
 
@@ -192,5 +198,6 @@ def fill_references(
             report=report, methods=parse_methods(method), pool_consensus=pool_consensus,
             organism=organism, lineage_map=lineage_map,
             reattribute_donors=reattribute_donors,
+            keep_recombinant=keep_recombinant_lineages,
         )
         fill_references(params, logger)
