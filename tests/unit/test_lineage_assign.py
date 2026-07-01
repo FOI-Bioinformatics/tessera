@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from tessera.discover import lineage_assign as la
@@ -24,3 +25,20 @@ def test_cluster_by_ani_all_singletons_when_no_edges():
     a, b = _g("a"), _g("b")
     clusters = la.cluster_by_ani([a, b], [])
     assert sorted(len(v) for v in clusters.values()) == [1, 1]
+
+
+def test_assign_by_nearest_reference(monkeypatch):
+    g1, g2 = _g("q1"), _g("q2")
+    tipA, tipB = _g("refA"), _g("refB")
+    labeled = {tipA: "A.1", tipB: "B.2"}
+
+    # q1 is closest to tipA (95%) and clears the floor; q2's best (85%) is below it.
+    fake = {
+        g1: {tipA: (95.0, 90.0), tipB: (80.0, 88.0)},
+        g2: {tipA: (85.0, 90.0), tipB: (82.0, 80.0)},
+    }
+    monkeypatch.setattr(la, "skani_query_ani", lambda q, refs, logger: fake[q])
+
+    out = la.assign_by_nearest_reference([g1, g2], labeled, ani_floor=90.0,
+                                         logger=logging.getLogger("t"))
+    assert out == {"q1": "A.1"}          # q1 assigned; q2 below floor -> omitted

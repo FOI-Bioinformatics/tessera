@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from ..core.io import strip_sequence_extension
 from .panel import skani_query_ani
 
 DEFAULT_REF_ANI_FLOOR = 90.0   # a genome joins a reference clade only above this ANI
@@ -57,3 +58,26 @@ def _ani_edges(
         ani = skani_query_ani(g, others, logger)
         edges += [(g, other) for other, (a, _af) in ani.items() if a >= threshold]
     return edges
+
+
+def assign_by_nearest_reference(
+    genomes: list[Path], labeled_tips: dict[Path, str], *, ani_floor: float,
+    logger: logging.Logger,
+) -> dict[str, str]:
+    """Assign each genome the clade of its nearest labelled reference tip.
+
+    ``labeled_tips`` maps a reference-tip FASTA path to its clade. For each genome the
+    tip with the highest whole-genome ANI wins, but only when it clears ``ani_floor``;
+    genomes below the floor are left unassigned (absent from the result). Returns
+    ``{genome_label: clade}``.
+    """
+    tips = list(labeled_tips)
+    assigned: dict[str, str] = {}
+    if not tips:
+        return assigned
+    for g in genomes:
+        ani = skani_query_ani(g, tips, logger)
+        best = max(ani, key=lambda t: ani[t][0], default=None)
+        if best is not None and ani[best][0] >= ani_floor:
+            assigned[strip_sequence_extension(g.name)] = labeled_tips[best]
+    return assigned
