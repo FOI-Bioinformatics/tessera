@@ -35,7 +35,9 @@ def test_default_uses_tier1_not_ladder(tmp_path, monkeypatch):
 def test_deep_typing_calls_ladder_with_datasets_rows(tmp_path, monkeypatch):
     params, out = _panel(tmp_path)
     params.deep_typing = True
-    (out / "ncbi_lineages.tsv").write_text("ACC1\tDENV1\n")
+    # ACC1 is in the panel; ACC9 was fetched but dropped during selection, so its
+    # datasets row must be filtered out (lineages.tsv should describe the panel).
+    (out / "ncbi_lineages.tsv").write_text("ACC1\tDENV1\nACC9\tDENV3\n")
     seen = {}
 
     def fake_ladder(genomes, **kwargs):
@@ -44,5 +46,5 @@ def test_deep_typing_calls_ladder_with_datasets_rows(tmp_path, monkeypatch):
 
     monkeypatch.setattr(it, "assign_lineages", fake_ladder)
     lineage_map, _ = _type_panel(params, out / "collection", "QRY", _LOG)
-    assert seen["datasets_rows"] == [("ACC1", "DENV1")]
+    assert seen["datasets_rows"] == [("ACC1", "DENV1")]  # ACC9 excluded (not in panel)
     assert lineage_map["ACC1"] == "DENV1"

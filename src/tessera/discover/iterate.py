@@ -410,12 +410,21 @@ def _type_panel(
     """
     coll_files = [p for p in collection.iterdir() if p.is_file()]
     if params.deep_typing:
+        # The consolidated sidecar records the full fetched NCBI-Virus set; restrict the
+        # datasets rows to accessions that survived selection so lineages.tsv describes the
+        # panel, not the download.
+        panel_accessions = {strip_sequence_extension(p.name) for p in coll_files}
+        recorded = _read_ncbi_lineages(params.output)
+        datasets_rows = (
+            [(acc, lin) for acc, lin in recorded if acc in panel_accessions]
+            if recorded else None
+        )
         lineage_rows = assign_lineages(
             coll_files,
             user_lineage_map=params.lineage_map,
             taxon=params.taxon,
             nextclade_dataset=params.nextclade_dataset,
-            datasets_rows=_read_ncbi_lineages(params.output),
+            datasets_rows=datasets_rows,
             email=params.email,
             cache_dir=params.cache_dir,
             logger=logger,

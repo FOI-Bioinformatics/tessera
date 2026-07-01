@@ -23,11 +23,12 @@ def test_record_then_read_merges_and_dedups(tmp_path: Path):
     src1 = tmp_path / "cache1"
     src2 = tmp_path / "cache2"
     _sidecar(src1, {"ACC1": "DENV1", "ACC2": "DENV4"})
-    _sidecar(src2, {"ACC2": "DENV4", "ACC3": "DENV2"})  # ACC2 duplicate
+    _sidecar(src2, {"ACC2": "DENV4-updated", "ACC3": "DENV2"})  # ACC2 re-recorded
     _record_ncbi_lineages(out, src1)
     _record_ncbi_lineages(out, src2)
     rows = dict(_read_ncbi_lineages(out))
-    assert rows == {"ACC1": "DENV1", "ACC2": "DENV4", "ACC3": "DENV2"}
+    # The later record wins for the duplicate accession.
+    assert rows == {"ACC1": "DENV1", "ACC2": "DENV4-updated", "ACC3": "DENV2"}
 
 
 def test_record_missing_source_is_noop(tmp_path: Path):
