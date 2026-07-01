@@ -42,3 +42,26 @@ def test_assign_by_nearest_reference(monkeypatch):
     out = la.assign_by_nearest_reference([g1, g2], labeled, ani_floor=90.0,
                                          logger=logging.getLogger("t"))
     assert out == {"q1": "A.1"}          # q1 assigned; q2 below floor -> omitted
+
+
+def test_assign_lineages_ladder_precedence(monkeypatch):
+    m1, ref1, dn1, dn2 = _g("m1"), _g("ref1"), _g("dn1"), _g("dn2")
+    genomes = [m1, ref1, dn1, dn2]
+
+    # (1) metadata types only m1
+    monkeypatch.setattr(la, "build_lineage_map",
+                        lambda **kw: [("m1", "B.1", "title")])
+    monkeypatch.setattr(la, "titles_from_collection", lambda files: {})
+    # (2) a reference exists; nearest-neighbour types ref1
+    monkeypatch.setattr(la, "_reference_tips", lambda **kw: {_g("tip"): "A.1"})
+    monkeypatch.setattr(la, "assign_by_nearest_reference",
+                        lambda genomes, tips, *, ani_floor, logger: {"ref1": "A.1"})
+    # (3) de-novo clusters the remaining dn1, dn2 together
+    monkeypatch.setattr(la, "_ani_edges", lambda genomes, *, threshold, logger: [(dn1, dn2)])
+
+    rows = la.assign_lineages(genomes, taxon="Test virus", logger=logging.getLogger("t"))
+    by_label = {label: (lin, src) for label, lin, src in rows}
+    assert by_label["m1"] == ("B.1", "title")
+    assert by_label["ref1"] == ("A.1", "nextclade-nn")
+    assert by_label["dn1"][1] == "denovo" and by_label["dn2"][1] == "denovo"
+    assert by_label["dn1"][0] == by_label["dn2"][0]      # same de-novo lineage
