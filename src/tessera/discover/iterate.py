@@ -39,6 +39,7 @@ from ..recomb.typing import (
 )
 from .blast import BlastError, blast_subsequence
 from .fetch import efetch_available, efetch_fasta
+from .lineage_assign import assign_lineages
 from .panel import (
     curate_collection_dir,
     panel_table_html,
@@ -106,6 +107,7 @@ class FillParams:
     lineage_map: Path | None = None  # user TSV (accession<TAB>genotype) to type references
     reattribute_donors: bool = False  # opt-in donor re-attribution in the detection step
     keep_recombinant: bool = False  # keep recombinant (CRF/URF/X) lineages in a typed panel
+    deep_typing: bool = False  # type the recruited panel with the full ladder, not just headers
 
     @classmethod
     def for_detection(
@@ -130,6 +132,7 @@ class FillParams:
         lineage_map: Path | None = None,
         reattribute_donors: bool = False,
         keep_recombinant: bool = False,
+        deep_typing: bool = False,
     ) -> FillParams:
         """Build the detection-tuned preset over fill-references.
 
@@ -159,6 +162,7 @@ class FillParams:
             organism=organism, lineage_map=lineage_map,
             reattribute_donors=reattribute_donors,
             keep_recombinant=keep_recombinant,
+            deep_typing=deep_typing,
         )
 
 
@@ -182,6 +186,11 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
     if params.curate and not skani_available():
         raise UserInputError(
             "--curate needs skani. Install with: conda install -c bioconda skani skder"
+        )
+    if params.deep_typing and not skani_available():
+        raise UserInputError(
+            "--deep-typing runs the lineage ladder (Nextclade + de-novo) and needs skani. "
+            "Install with: conda install -c bioconda skani skder"
         )
     query_label = strip_sequence_extension(params.query.name)
     params.output.mkdir(parents=True, exist_ok=True)
@@ -400,11 +409,23 @@ def _type_panel(
     accession. Returns the resolved lineage map and the query's own lineage.
     """
     coll_files = [p for p in collection.iterdir() if p.is_file()]
-    lineage_rows = build_lineage_map(
-        user_tsv=params.lineage_map,
-        title_by_label=titles_from_collection(coll_files),
-        organism=params.taxon,
-    )
+    if params.deep_typing:
+        lineage_rows = assign_lineages(
+            coll_files,
+            user_lineage_map=params.lineage_map,
+            taxon=params.taxon,
+            nextclade_dataset=params.nextclade_dataset,
+            datasets_rows=_read_ncbi_lineages(params.output),
+            email=params.email,
+            cache_dir=params.cache_dir,
+            logger=logger,
+        )
+    else:
+        lineage_rows = build_lineage_map(
+            user_tsv=params.lineage_map,
+            title_by_label=titles_from_collection(coll_files),
+            organism=params.taxon,
+        )
     # Type the query itself from its own header so the verdict can name its lineage
     # (and a recombinant query can be cross-checked against its designated parents).
     query_lineage = genotype_from_title(first_header(params.query), params.taxon)
