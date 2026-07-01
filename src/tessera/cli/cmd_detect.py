@@ -80,6 +80,12 @@ def detect(
         "recruit the best-matching genome even if it is a known hybrid. "
         "Applies only when the references carry lineage labels.",
     ),
+    deep_typing: bool = typer.Option(
+        False, "--deep-typing/--no-deep-typing",
+        help="Type the recruited panel with the full lineage ladder (Nextclade "
+        "nearest-neighbour + de-novo ANI clustering) instead of header mining alone. "
+        "Needs skani; off by default.",
+    ),
 ) -> None:
     """Detect recombination in a query with no reference genomes supplied.
 
@@ -110,5 +116,6 @@ def detect(
             organism=organism, lineage_map=lineage_map,
             reattribute_donors=reattribute_donors,
             keep_recombinant=keep_recombinant_lineages,
+            deep_typing=deep_typing,
         )
         fill_references(params, logger)

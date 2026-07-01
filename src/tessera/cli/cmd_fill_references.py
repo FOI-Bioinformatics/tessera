@@ -164,6 +164,12 @@ def fill_references(
         "recruit the best-matching genome even if it is a known hybrid. "
         "Applies only when the references carry lineage labels.",
     ),
+    deep_typing: bool = typer.Option(
+        False, "--deep-typing/--no-deep-typing",
+        help="Type the recruited panel with the full lineage ladder (Nextclade "
+        "nearest-neighbour + de-novo ANI clustering) instead of header mining alone. "
+        "Needs skani; off by default.",
+    ),
 ) -> None:
     """Iteratively search NCBI and add references until coverage stops improving.
 
@@ -200,5 +206,6 @@ def fill_references(
             organism=organism, lineage_map=lineage_map,
             reattribute_donors=reattribute_donors,
             keep_recombinant=keep_recombinant_lineages,
+            deep_typing=deep_typing,
         )
         fill_references(params, logger)
