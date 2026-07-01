@@ -36,6 +36,41 @@ def _write_regions(tmp_path, rows):
     (tmp_path / "recombination_profile.tsv").write_text("phi_p\trmin\n-\t0\n")
 
 
+def test_neg_pure_pass_when_no_regions(tmp_path):
+    _write_regions(tmp_path, [])  # no calls
+    setup = _setup(out=tmp_path, case_type="neg_pure", clade_b="", q_start=0, q_end=0)
+    res = rh._score_regions(tmp_path, (lambda x: "A"), setup, 5, "tip", 1.0)
+    assert res["pass"] is True and res["n_false_regions"] == 0
+
+
+def test_neg_pure_fail_on_false_call(tmp_path):
+    _write_regions(tmp_path, [
+        {"minor_parent": "gB", "major_parent": "gA", "query_start": 10,
+         "query_end": 90, "methods": "hmm", "donor_absent": "no"}])
+    setup = _setup(out=tmp_path, case_type="neg_pure", clade_b="", q_start=0, q_end=0)
+    res = rh._score_regions(tmp_path, {"gA": "A", "gB": "B"}.get, setup, 5, "tip", 1.0)
+    assert res["pass"] is False and res["n_false_regions"] == 1
+
+
+def test_neg_within_passes_same_clade_call(tmp_path):
+    # A region whose minor and major are the SAME top-level clade is not a cross-clade FP.
+    _write_regions(tmp_path, [
+        {"minor_parent": "gA2", "major_parent": "gA1", "query_start": 10,
+         "query_end": 90, "methods": "hmm", "donor_absent": "no"}])
+    setup = _setup(out=tmp_path, case_type="neg_within", clade_a="A", clade_b="A")
+    res = rh._score_regions(tmp_path, {"gA1": "A.1", "gA2": "A.2"}.get, setup, 5, "tip", 1.0)
+    assert res["pass"] is True
+
+
+def test_neg_within_fails_cross_clade_call(tmp_path):
+    _write_regions(tmp_path, [
+        {"minor_parent": "gB", "major_parent": "gA1", "query_start": 10,
+         "query_end": 90, "methods": "hmm", "donor_absent": "no"}])
+    setup = _setup(out=tmp_path, case_type="neg_within", clade_a="A", clade_b="A")
+    res = rh._score_regions(tmp_path, {"gA1": "A.1", "gB": "B"}.get, setup, 5, "tip", 1.0)
+    assert res["pass"] is False
+
+
 def test_single_insert_pass(tmp_path):
     _write_regions(tmp_path, [
         {"minor_parent": "gB", "major_parent": "gA", "query_start": 120,

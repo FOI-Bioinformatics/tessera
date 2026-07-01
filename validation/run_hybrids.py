@@ -380,6 +380,30 @@ def pick_parents(
     return ca, cb, reps[ca], reps[cb]
 
 
+def _pick_within_clade(
+    tips: dict[str, tuple[str, list[str]]], reference: str, logger: logging.Logger,
+) -> tuple[str, str, str]:
+    """Return ``(clade, src_a, src_b)``: the largest non-recombinant clade and its two
+    most-divergent members, for constructing a within-clade negative splice."""
+    by_clade: dict[str, list[str]] = {}
+    for acc, (clade, _muts) in tips.items():
+        if clade and clade not in ("?", "NA") and not is_recombinant_clade(clade):
+            by_clade.setdefault(clade, []).append(acc)
+    ranked = sorted(by_clade.items(), key=lambda kv: len(kv[1]), reverse=True)
+    for clade, members in ranked:
+        if len(members) < 2:
+            continue
+        seqs = {a: reconstruct_gapped(reference, tips[a][1]) for a in members}
+        best = max(
+            ((100.0 - pct_identity(seqs[a], seqs[b]), a, b)
+             for i, a in enumerate(members) for b in members[i + 1:]),
+            default=None,
+        )
+        if best:
+            return clade, best[1], best[2]
+    raise CaseSkipped("no clade has two divergent members for a within-clade splice")
+
+
 def make_hybrid(reference: str, src_a_muts, src_b_muts) -> tuple[str, int, int]:
     """Splice an A-backbone / B-insert hybrid; return (query, q_start, q_end)."""
     a_gap = reconstruct_gapped(reference, src_a_muts)
@@ -485,17 +509,39 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
     tree = json.loads(_download_text(dataset, "treeJson", logger))["tree"]
     tips = collect_tips(tree, case.get("clade_key"))
 
-    clade_a, clade_b, src_a, src_b = pick_parents(tips, reference, case.get("clades", []), logger)
-    divergence = 100.0 - pct_identity(
-        reconstruct_gapped(reference, tips[src_a][1]),
-        reconstruct_gapped(reference, tips[src_b][1]),
-    )
-    logger.info("[%s] backbone clade %s (%s) x donor clade %s (%s); inter-clade divergence %.1f%%",
-                name, clade_a, src_a, clade_b, src_b, divergence)
-    if divergence < case.get("min_divergence", MIN_DIVERGENCE):
-        raise CaseSkipped(f"clades too similar ({divergence:.1f}% divergence)")
+    case_type = case.get("case_type", "single_insert")
+    if case_type == "neg_pure":
+        clade_a, _, src_a, _ = pick_parents(tips, reference, case.get("clades", []), logger)
+        clade_b = ""
+        src_b = src_a
+        query_seq = reconstruct_gapped(reference, tips[src_a][1]).replace("-", "")
+        q_start = q_end = 0
+        divergence = 0.0
+        logger.info("[%s] neg_pure: clade %s (%s) unspliced query", name, clade_a, src_a)
+    elif case_type == "neg_within":
+        clade_a, src_a, src_b = _pick_within_clade(tips, reference, logger)
+        clade_b = clade_a
+        divergence = 100.0 - pct_identity(
+            reconstruct_gapped(reference, tips[src_a][1]),
+            reconstruct_gapped(reference, tips[src_b][1]),
+        )
+        logger.info("[%s] neg_within: clade %s (%s x %s); intra-clade divergence %.1f%%",
+                    name, clade_a, src_a, src_b, divergence)
+        query_seq, q_start, q_end = make_hybrid(reference, tips[src_a][1], tips[src_b][1])
+    else:  # single_insert
+        clade_a, clade_b, src_a, src_b = pick_parents(
+            tips, reference, case.get("clades", []), logger)
+        divergence = 100.0 - pct_identity(
+            reconstruct_gapped(reference, tips[src_a][1]),
+            reconstruct_gapped(reference, tips[src_b][1]),
+        )
+        logger.info(
+            "[%s] backbone clade %s (%s) x donor clade %s (%s); inter-clade divergence %.1f%%",
+            name, clade_a, src_a, clade_b, src_b, divergence)
+        if divergence < case.get("min_divergence", MIN_DIVERGENCE):
+            raise CaseSkipped(f"clades too similar ({divergence:.1f}% divergence)")
+        query_seq, q_start, q_end = make_hybrid(reference, tips[src_a][1], tips[src_b][1])
 
-    query_seq, q_start, q_end = make_hybrid(reference, tips[src_a][1], tips[src_b][1])
     if len(query_seq) < MIN_GENOME:
         raise CaseSkipped(f"genome/segment too short to test ({len(query_seq)} bp)")
     window, step, sel_window = window_params(len(query_seq))
@@ -533,7 +579,7 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
         query=query, query_label=query_label, q_start=q_start, q_end=q_end,
         window=window, step=step, sel_window=sel_window, aligner=aligner,
         reference=reference, tips=tips, pool=pool, members_by_clade=members_by_clade,
-        case_type=case.get("case_type", "single_insert"),
+        case_type=case_type,
     )
 
 
@@ -648,6 +694,8 @@ def _score_regions(
     """Score a completed run by the case's type (default: single-insert hybrid)."""
     scorer = {
         "single_insert": _score_single_insert,
+        "neg_pure": _score_neg_pure,
+        "neg_within": _score_neg_within,
     }.get(setup.case_type, _score_single_insert)
     return scorer(out_dir, clade_of, setup, n_refs, mode, runtime)
 
@@ -696,6 +744,45 @@ def _score_single_insert(
         "backbone_tier": attribution_tier(major_clade, setup.clade_a),
         "backbone_depth": shared_clade_depth(major_clade, setup.clade_a),
     }
+
+
+def _base(setup: CaseSetup, mode: str, runtime: float, present: list, **extra) -> dict:
+    """Reporting fields shared by every scorer."""
+    row = {
+        "name": setup.name, "clade_a": setup.clade_a, "clade_b": setup.clade_b,
+        "divergence": setup.divergence, "mode": mode, "runtime": runtime,
+        "detected": len(present) >= 1, "n_regions": len(present),
+        "case_type": setup.case_type,
+    }
+    row.update(extra)
+    return row
+
+
+def _score_neg_pure(
+    out_dir: Path, clade_of, setup: CaseSetup, n_refs: int, mode: str, runtime: float,
+) -> dict:
+    """Non-recombinant query: PASS iff no (donor-present) region is called."""
+    regions = parse_regions(out_dir / "recombination_regions.tsv")
+    present = [r for r in regions if r.get("donor_absent") != "yes"]
+    row = _base(setup, mode, runtime, present, n_refs=n_refs, n_false_regions=len(present))
+    row["pass"] = len(present) == 0
+    return row
+
+
+def _score_neg_within(
+    out_dir: Path, clade_of, setup: CaseSetup, n_refs: int, mode: str, runtime: float,
+) -> dict:
+    """Within-clade splice: PASS iff no region attributes a cross-top-level-clade donor."""
+    regions = parse_regions(out_dir / "recombination_regions.tsv")
+    present = [r for r in regions if r.get("donor_absent") != "yes"]
+    cross = [
+        r for r in present
+        if base_clade(clade_of(r["minor_parent"])).split(".")[0]
+        != base_clade(clade_of(r["major_parent"])).split(".")[0]
+    ]
+    row = _base(setup, mode, runtime, present, n_refs=n_refs, n_false_regions=len(cross))
+    row["pass"] = len(cross) == 0
+    return row
 
 
 def run_case(case: dict, logger: logging.Logger) -> dict:
@@ -792,6 +879,15 @@ def _run_default(cases: list[dict], logger: logging.Logger) -> int:
     skipped = sum(1 for r in results if r.get("skip") is not None)
     errored = sum(1 for r in results if r.get("pass") is None and r.get("skip") is None)
     print(f"\n{passed}/{ran} passed  ({skipped} skipped, {errored} error)")
+    scored = [r for r in results if r.get("pass") is not None]
+    negs = [r for r in scored if r.get("case_type") in ("neg_pure", "neg_within")]
+    pos = [r for r in scored if r not in negs]
+    sens_pass = sum(1 for r in pos if r["pass"])
+    spec_pass = sum(1 for r in negs if r["pass"])
+    false_calls = sum(r.get("n_false_regions", 0) for r in negs)
+    print(f"sensitivity {sens_pass}/{len(pos)}  "
+          f"specificity {spec_pass}/{len(negs)} ({false_calls} false call(s))  "
+          f"({skipped} skipped, {errored} error)")
     return 1 if errored else 0
 
 
