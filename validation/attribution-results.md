@@ -109,3 +109,40 @@ so it is a proxy for, not identical to, the shipped `--pool-consensus` (which in
 tips). The backbone-degradation-at-moderate-divergence effect is a property of one-genome-per-
 clade competition and may apply to the product feature too; `--pool-consensus` is best treated
 as a tool for low-divergence, near-identical panels rather than an always-on default.
+
+## Lineage-aware panel selection (default-when-typed)
+
+Follow-up measurement of the G2 lever the section above called for: reduce the panel **by
+lineage** instead of by clade-blind ANI. When the references carry lineage labels,
+`select_regional` now keeps one query-closest representative per non-recombinant lineage
+(recombinant CRF/URF/X lineages excluded unless `--keep-recombinant-lineages`); untyped
+genomes still fall back to ANI dereplication. The harness types its tip pool by tree clade
+and passes it in. Re-ran `--compare` over all 24 datasets (18 run, 6 SKIP).
+
+| config | PASS | vs prior baseline |
+|--------|------|-------------------|
+| baseline (tip, lineage-selected) | 16/18 | unchanged (16/18) |
+
+**No change to the headline count, but the `rsv_a` failure moved.** The prior baseline failed
+`rsv_a` on the **donor** (dereplication dropped the true donor sub-clade `A.D.1.8`, so it was
+scored `A.D.1.6`, a sibling). Lineage selection keeps `A.D.1.8` as its own lineage, so the
+**donor is now exact** -- the G2 representation gap this document diagnosed is closed on the
+donor side. But the same one-representative-per-lineage rule, applied across RSV-A's ~45 fine
+sub-lineages, preserves a near-sibling of the query backbone that ANI dereplication used to
+collapse, so the **backbone** attribution regresses `exact -> sibling`. Net: `rsv_a` still
+FAILs, with the failure relocated from donor to backbone (`bb sibling  don exact`).
+
+The other cases are unchanged: `flu_h3n2_ha` still FAILs on its short-segment backbone
+mismatch; `hiv1` was already PASS on the main baseline (the "masking CRF" regression belonged
+to the abandoned clade-aware-dereplication branch, not to main), and stays PASS; the remaining
+15 hold. Spot-checked `rsv_a` / `hiv1` / `dengue` again after the `select_regional`
+simplification (single up-front query-ANI, one reduction switch) -- verdicts identical.
+
+**Conclusion.** Lineage selection is the correct primitive for donor **representation**: it
+recovers a true parent clade that ANI dereplication discards, exactly the fix the section above
+asked for. It is merged **default-when-typed** because it is net-neutral on the pass count,
+closes the donor-representation gap, and is the consumer of the `type-lineages` output plus the
+requested `--keep-recombinant-lineages` toggle. It does **not** by itself close `rsv_a`: on a
+fine-grained sub-lineage system, keeping one representative per lineage must be paired with
+suppression of the query's whole-genome backbone siblings, or the recovered donor is offset by
+a backbone-sibling regression. That pairing is a separate cycle.

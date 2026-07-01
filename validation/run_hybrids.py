@@ -572,8 +572,20 @@ def _build_and_score(
             # pool contains no actual recombinant twin, so this is the documented
             # close-parent / --seed-keep-siblings setting, and dropping it would
             # remove the backbone parent itself.
-            selected = select_regional(setup.query, setup.pool, window=setup.sel_window,
-                                       per_window=2, drop_siblings=False, logger=logger).selected
+            # Type the pool by tree clade so the panel is reduced by lineage (one
+            # query-closest representative per clade, recombinant clades excluded) --
+            # this keeps a true parent that ANI would collapse (rsv_a's A.D.1.8) and
+            # drops the masking CRF clades (hiv1).
+            lineage_of = {
+                strip_sequence_extension(g.name): clade_of_label(g.name, setup.tips)
+                for g in setup.pool
+            }
+            lineage_of = {k: v for k, v in lineage_of.items() if v and v not in ("?", "NA")}
+            selected = select_regional(
+                setup.query, setup.pool, window=setup.sel_window, per_window=2,
+                drop_siblings=False, lineage_of=lineage_of or None,
+                keep_recombinant=False, logger=logger,
+            ).selected
         except ToolExecutionError:  # skani rejects very short gene/segment datasets
             selected = representative_panel(setup.pool, setup.tips, logger)
         # On a near-identical panel (mpox/VZV ~0.5%) dereplication collapses the parent

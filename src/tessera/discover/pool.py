@@ -275,24 +275,25 @@ def select_regional(
     if not records:
         raise UserInputError(f"Query FASTA {query_fasta} has no sequence.")
 
+    # Whole-genome query ANI over the full pool, computed once: it drives the reduction
+    # (a lineage's representative is its query-closest member) and the sibling / related
+    # filters below. A superset of any reduced pool, so every later ``whole[g]`` resolves.
+    whole = skani_query_ani(query_fasta, genomes, logger)
     if lineage_of:
-        # Typed references: reduce by lineage, not by clade-blind ANI. Compute the
-        # whole-genome query ANI on the full pool first, so a lineage's representative
-        # is its query-closest member and the sibling/related filters below can reuse it.
-        whole = skani_query_ani(query_fasta, genomes, logger)
+        # Typed references: reduce by lineage, not by clade-blind ANI -- one
+        # query-closest representative per lineage, recombinant lineages excluded.
         pool = _lineage_select(
             genomes, lineage_of, whole,
             keep_recombinant=keep_recombinant, derep_ani=derep_ani, logger=logger,
         )
+    elif dereplicate_pool and len(genomes) > 2:
+        pool, _ = dereplicate(genomes, ani=derep_ani, logger=logger)
+        logger.info(
+            "Dereplicated pool: %d representative(s) from %d genome(s).",
+            len(pool), len(genomes),
+        )
     else:
         pool = genomes
-        if dereplicate_pool and len(genomes) > 2:
-            pool, _ = dereplicate(genomes, ani=derep_ani, logger=logger)
-            logger.info(
-                "Dereplicated pool: %d representative(s) from %d genome(s).",
-                len(pool), len(genomes),
-            )
-        whole = skani_query_ani(query_fasta, pool, logger)
     # Drop the query's siblings -- near-identical genome-wide over near-full coverage --
     # so they cannot win every region and mask the recombination.
     if drop_siblings:
