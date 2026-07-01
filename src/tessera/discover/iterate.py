@@ -39,6 +39,7 @@ from ..recomb.typing import (
 )
 from .blast import BlastError, blast_subsequence
 from .fetch import efetch_available, efetch_fasta
+from .lineage_assign import assign_lineages
 from .panel import (
     curate_collection_dir,
     panel_table_html,
@@ -46,6 +47,7 @@ from .panel import (
     skani_available,
     write_panel_tsv,
 )
+from .pool import NCBI_LINEAGES_TSV
 from .run import (
     MIN_SUBSEQ,
     _base_accession,
@@ -105,6 +107,7 @@ class FillParams:
     lineage_map: Path | None = None  # user TSV (accession<TAB>genotype) to type references
     reattribute_donors: bool = False  # opt-in donor re-attribution in the detection step
     keep_recombinant: bool = False  # keep recombinant (CRF/URF/X) lineages in a typed panel
+    deep_typing: bool = False  # type the recruited panel with the full ladder, not just headers
 
     @classmethod
     def for_detection(
@@ -129,6 +132,7 @@ class FillParams:
         lineage_map: Path | None = None,
         reattribute_donors: bool = False,
         keep_recombinant: bool = False,
+        deep_typing: bool = False,
     ) -> FillParams:
         """Build the detection-tuned preset over fill-references.
 
@@ -158,6 +162,7 @@ class FillParams:
             organism=organism, lineage_map=lineage_map,
             reattribute_donors=reattribute_donors,
             keep_recombinant=keep_recombinant,
+            deep_typing=deep_typing,
         )
 
 
@@ -181,6 +186,11 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
     if params.curate and not skani_available():
         raise UserInputError(
             "--curate needs skani. Install with: conda install -c bioconda skani skder"
+        )
+    if params.deep_typing and not skani_available():
+        raise UserInputError(
+            "--deep-typing runs the lineage ladder (Nextclade + de-novo) and needs skani. "
+            "Install with: conda install -c bioconda skani skder"
         )
     query_label = strip_sequence_extension(params.query.name)
     params.output.mkdir(parents=True, exist_ok=True)
@@ -358,6 +368,36 @@ def _grow_collection(
     return trace, panel_rows, last_msa
 
 
+def _record_ncbi_lineages(output: Path, source_dir: Path) -> None:
+    """Merge ``source_dir``'s NCBI-datasets lineage sidecar into the run's consolidated
+    ``<output>/ncbi_lineages.tsv`` (dedup by accession). No-op when the source has none."""
+    src = source_dir / NCBI_LINEAGES_TSV
+    if not src.exists():
+        return
+    merged: dict[str, str] = dict(_read_ncbi_lineages(output) or [])
+    for line in src.read_text().splitlines():
+        acc, _, lineage = line.partition("\t")
+        if acc and lineage:
+            merged[acc] = lineage
+    with open(output / NCBI_LINEAGES_TSV, "w") as fo:
+        for acc, lineage in sorted(merged.items()):
+            fo.write(f"{acc}\t{lineage}\n")
+
+
+def _read_ncbi_lineages(output: Path) -> list[tuple[str, str]] | None:
+    """Read ``<output>/ncbi_lineages.tsv`` into ``(accession, lineage)`` rows, or
+    ``None`` when the sidecar is absent."""
+    path = output / NCBI_LINEAGES_TSV
+    if not path.exists():
+        return None
+    rows: list[tuple[str, str]] = []
+    for line in path.read_text().splitlines():
+        acc, _, lineage = line.partition("\t")
+        if acc and lineage:
+            rows.append((acc, lineage))
+    return rows
+
+
 def _type_panel(
     params: FillParams, collection: Path, query_label: str, logger: logging.Logger,
 ) -> tuple[dict[str, str], str | None]:
@@ -369,11 +409,32 @@ def _type_panel(
     accession. Returns the resolved lineage map and the query's own lineage.
     """
     coll_files = [p for p in collection.iterdir() if p.is_file()]
-    lineage_rows = build_lineage_map(
-        user_tsv=params.lineage_map,
-        title_by_label=titles_from_collection(coll_files),
-        organism=params.taxon,
-    )
+    if params.deep_typing:
+        # The consolidated sidecar records the full fetched NCBI-Virus set; restrict the
+        # datasets rows to accessions that survived selection so lineages.tsv describes the
+        # panel, not the download.
+        panel_accessions = {strip_sequence_extension(p.name) for p in coll_files}
+        recorded = _read_ncbi_lineages(params.output)
+        datasets_rows = (
+            [(acc, lin) for acc, lin in recorded if acc in panel_accessions]
+            if recorded else None
+        )
+        lineage_rows = assign_lineages(
+            coll_files,
+            user_lineage_map=params.lineage_map,
+            taxon=params.taxon,
+            nextclade_dataset=params.nextclade_dataset,
+            datasets_rows=datasets_rows,
+            email=params.email,
+            cache_dir=params.cache_dir,
+            logger=logger,
+        )
+    else:
+        lineage_rows = build_lineage_map(
+            user_tsv=params.lineage_map,
+            title_by_label=titles_from_collection(coll_files),
+            organism=params.taxon,
+        )
     # Type the query itself from its own header so the verdict can name its lineage
     # (and a recombinant query can be cross-checked against its designated parents).
     query_lineage = genotype_from_title(first_header(params.query), params.taxon)
@@ -543,11 +604,13 @@ def _fetch_diverse(params: FillParams, logger: logging.Logger) -> list[Path]:
             "Using the cached NCBI Virus panel for '%s' (%d genome(s)): %s",
             taxon, len(existing), cache,
         )
+        _record_ncbi_lineages(params.output, cache)
         return existing
     cache.mkdir(parents=True, exist_ok=True)
     if params.source_refseq:
         fetched = fetch_ncbi_virus(taxon, cache, refseq=True, logger=logger)
         if len(fetched) >= SEED_MIN_DIVERSE:
+            _record_ncbi_lineages(params.output, cache)
             return fetched
         logger.info(
             "RefSeq set for '%s' has only %d genome(s); broadening to complete genomes.",
@@ -564,6 +627,7 @@ def _fetch_diverse(params: FillParams, logger: logging.Logger) -> list[Path]:
             "locally to a diverse panel -- this can take a few minutes.",
             len(fetched), taxon,
         )
+    _record_ncbi_lineages(params.output, cache)
     return fetched
 
 

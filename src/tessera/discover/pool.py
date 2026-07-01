@@ -42,6 +42,7 @@ DEFAULT_SEED_WINDOW = 1500  # query window width (bp) for regional matching
 DEFAULT_PER_WINDOW = 2  # candidates to keep per window
 DEFAULT_ANI_FLOOR = 70.0  # drop pool genomes below this genome-wide ANI as unrelated
 DEFAULT_DEREP_ANI = 99.0  # collapse pool genomes at or above this ANI to one representative
+NCBI_LINEAGES_TSV = "ncbi_lineages.tsv"  # sidecar: accession<TAB>datasets-lineage
 # A pool genome this identical to the query genome-wide, over near-full coverage, is a
 # sibling (the query's own lineage). It is closest in every region and so out-ranks the
 # parents everywhere; dropping it lets the regional parents win. The absolute cutoff
@@ -108,6 +109,20 @@ def _scope_flags(refseq: bool, complete_only: bool, released_after: str | None) 
     return flags
 
 
+def write_ncbi_lineages(dest: Path, labels: dict[str, str]) -> Path | None:
+    """Persist an accession -> NCBI-datasets-lineage map as a 2-column sidecar in
+    ``dest`` (``accession<TAB>lineage``). Returns the path, or ``None`` when there is
+    nothing to write. Lets a later typing pass tag these accessions ``ncbi-datasets``
+    after the source ``data_report.jsonl`` has been discarded."""
+    if not labels:
+        return None
+    out = dest / NCBI_LINEAGES_TSV
+    with open(out, "w") as fo:
+        for acc, lineage in sorted(labels.items()):
+            fo.write(f"{acc}\t{lineage}\n")
+    return out
+
+
 def fetch_ncbi_virus(
     taxon: str,
     dest: Path,
@@ -150,6 +165,7 @@ def fetch_ncbi_virus(
                 f"NCBI Virus returned no genomes for '{taxon}'. Try --taxon or a broader scope."
             )
         labels = _lineage_labels(data_dir / "data_report.jsonl")
+        write_ncbi_lineages(dest, labels)
         written = _split_fasta(fna, dest, labels, limit=limit)
     logger.info("Fetched %d genome(s) from NCBI Virus into %s.", len(written), dest)
     return written
