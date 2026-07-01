@@ -538,7 +538,7 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
         logger.info("[%s] neg_within: clade %s (%s x %s); intra-clade divergence %.1f%%",
                     name, clade_a, src_a, src_b, divergence)
         query_seq, q_start, q_end = make_hybrid(reference, tips[src_a][1], tips[src_b][1])
-    else:  # single_insert and low_div
+    else:  # single_insert, low_div, panel_donor_absent, panel_equidistant
         clade_a, clade_b, src_a, src_b = pick_parents(
             tips, reference, case.get("clades", []), logger,
             objective=case.get("pair_objective", "max"))
@@ -590,6 +590,33 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
                 or is_recombinant_clade(clade)):
             continue
         members_by_clade.setdefault(clade, []).append(tipkey)
+
+    # Panel-adversarial case types: manipulate pool/members_by_clade after standard build.
+    if case_type == "panel_donor_absent":
+        # Remove every genome whose clade matches the true donor (clade_b) to simulate an
+        # absent donor; the pipeline should flag the span as donor-absent, not mis-attribute.
+        members_by_clade = {c: m for c, m in members_by_clade.items()
+                            if not clade_match(c, clade_b)}
+        retained_tips = {acc for accs in members_by_clade.values() for acc in accs}
+        pool = [g for g in pool
+                if base_to_tip.get(strip_sequence_extension(g.name).split(".")[0])
+                in retained_tips]
+        if not pool:
+            raise CaseSkipped(
+                f"panel_donor_absent: removing donor clade {clade_b!r} emptied the pool")
+    elif case_type == "panel_equidistant":
+        # Verify both the true donor (clade_b) and the decoy clade (C) remain in the panel,
+        # so the scorer can test that B is preferred over the equidistant decoy.
+        decoy_clade = case.get("decoy_clade")
+        if decoy_clade is None:
+            raise CaseSkipped("panel_equidistant: no decoy_clade configured")
+        if not any(clade_match(c, clade_b) for c in members_by_clade):
+            raise CaseSkipped(
+                f"panel_equidistant: donor clade {clade_b!r} absent from panel "
+                "after source removal")
+        if not any(clade_match(c, decoy_clade) for c in members_by_clade):
+            raise CaseSkipped(
+                f"panel_equidistant: decoy clade {decoy_clade!r} absent from panel")
 
     return CaseSetup(
         name=name, out=out, clade_a=clade_a, clade_b=clade_b, divergence=divergence,
@@ -714,6 +741,8 @@ def _score_regions(
         "neg_pure": _score_neg_pure,
         "neg_within": _score_neg_within,
         "low_div": _score_low_div,
+        "panel_donor_absent": _score_panel_donor_absent,
+        "panel_equidistant": _score_panel_equidistant,
     }.get(setup.case_type, _score_single_insert)
     return scorer(out_dir, clade_of, setup, n_refs, mode, runtime)
 
@@ -825,6 +854,40 @@ def _score_low_div(
                  backbone_tier=attribution_tier(major_clade, setup.clade_a),
                  donor_tier=attribution_tier(donor_obs, setup.clade_b),
                  **{"pass": passed})
+
+
+def _score_panel_donor_absent(
+    out_dir: Path, clade_of, setup: CaseSetup, n_refs: int, mode: str, runtime: float,
+) -> dict:
+    """True donor removed from the panel: PASS iff the span is flagged donor-absent and
+    not confidently mis-attributed to a present cross-clade donor."""
+    regions = parse_regions(out_dir / "recombination_regions.tsv")
+
+    def overlaps(r):
+        return int(r["query_start"]) <= setup.q_end and int(r["query_end"]) >= setup.q_start
+
+    absent_hit = any(r.get("donor_absent") == "yes" and overlaps(r) for r in regions)
+    present = [r for r in regions if r.get("donor_absent") != "yes"]
+    misattr = any(
+        overlaps(r)
+        and "," in (r.get("methods") or "")
+        and base_clade(clade_of(r["minor_parent"])).split(".")[0] != setup.clade_a.split(".")[0]
+        for r in present
+    )
+    passed = absent_hit and not misattr
+    return _base(setup, mode, runtime, present, n_refs=n_refs,
+                 absent_hit=absent_hit, misattributed=misattr, **{"pass": passed})
+
+
+def _score_panel_equidistant(
+    out_dir: Path, clade_of, setup: CaseSetup, n_refs: int, mode: str, runtime: float,
+) -> dict:
+    """Two equidistant candidate donors (B pinned as truth): PASS iff donor attributed to
+    B, not the decoy C. Guards the plurality_major tie-break."""
+    res = _score_single_insert(out_dir, clade_of, setup, n_refs, mode, runtime)
+    # _score_single_insert already requires donor_match(observed, clade_b, clade_a); a C
+    # attribution fails donor_ok. Reuse its verdict directly.
+    return res
 
 
 def run_case(case: dict, logger: logging.Logger) -> dict:

@@ -101,3 +101,31 @@ def test_low_div_pass_top_level(tmp_path):
                    clade_a="A", clade_b="B")
     res = rh._score_regions(tmp_path, {"gA": "A.2", "gB": "B.1"}.get, setup, 5, "tip", 1.0)
     assert res["pass"] is True
+
+
+def test_donor_absent_pass_on_gap(tmp_path):
+    _write_regions(tmp_path, [
+        {"minor_parent": "", "major_parent": "gA", "query_start": 120,
+         "query_end": 180, "methods": "coverage", "donor_absent": "yes"}])
+    setup = _setup(out=tmp_path, case_type="panel_donor_absent", clade_a="A", clade_b="B")
+    res = rh._score_regions(tmp_path, {"gA": "A"}.get, setup, 5, "tip", 1.0)
+    assert res["pass"] is True
+
+
+def test_donor_absent_fail_on_misattribution(tmp_path):
+    # No donor_absent region; a confident cross-clade present region mis-attributes the span.
+    _write_regions(tmp_path, [
+        {"minor_parent": "gC", "major_parent": "gA", "query_start": 120,
+         "query_end": 180, "methods": "hmm,3seq", "donor_absent": "no"}])
+    setup = _setup(out=tmp_path, case_type="panel_donor_absent", clade_a="A", clade_b="B")
+    res = rh._score_regions(tmp_path, {"gA": "A", "gC": "C"}.get, setup, 5, "tip", 1.0)
+    assert res["pass"] is False
+
+
+def test_equidistant_pass_when_B_wins(tmp_path):
+    _write_regions(tmp_path, [
+        {"minor_parent": "gB", "major_parent": "gA", "query_start": 120,
+         "query_end": 180, "methods": "hmm", "donor_absent": "no"}])
+    setup = _setup(out=tmp_path, case_type="panel_equidistant", clade_a="A", clade_b="B")
+    res = rh._score_regions(tmp_path, {"gA": "A", "gB": "B", "gC": "C"}.get, setup, 5, "tip", 1.0)
+    assert res["pass"] is True
