@@ -36,6 +36,16 @@ _TSV_HEADER = "label\tgenotype\tsource"
 _LINEAGE_TOKEN = re.compile(r"[A-Za-z][\w.\-]*\d[\w.\-]*")
 _MIN_TOKEN_LEN = 4
 
+# Recombinant lineage names (HIV CRF/URF, Pango X-lineages): a clean parental panel
+# excludes them, since they carry both parents' segments and mask the true parents.
+_RECOMBINANT_LINEAGE = re.compile(r"^(CRF|URF)\d|^X[A-Z]|recombinant", re.IGNORECASE)
+
+
+def is_recombinant_lineage(name: str) -> bool:
+    """True when a lineage name denotes a recombinant (CRF/URF, a Pango X-lineage,
+    or the literal 'recombinant')."""
+    return bool(_RECOMBINANT_LINEAGE.search(name))
+
 
 def _base_accession(label: str) -> str:
     """Drop the version suffix so 'U54771' and 'U54771.1' compare equal."""

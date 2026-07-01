@@ -53,7 +53,14 @@ from tessera.msa.build import MsaParams, build_msa
 from tessera.recomb.consensus import consensus_sequence
 from tessera.recomb.regions import DEFAULT_METHODS, parse_methods
 from tessera.recomb.run import RecombParams, run_recomb
-from tessera.recomb.typing import LINEAGES_TSV, lineage_map_from_rows, write_lineage_map
+from tessera.recomb.typing import (
+    LINEAGES_TSV,
+    lineage_map_from_rows,
+    write_lineage_map,
+)
+from tessera.recomb.typing import (
+    is_recombinant_lineage as is_recombinant_clade,
+)
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data" / "hybrids"
@@ -183,14 +190,6 @@ def pct_identity(a: str, b: str) -> float:
 
 
 MIN_MEMBERS = 3  # a clade must have at least this many genomes to be a parent
-
-# Recombinant clade names (HIV CRF/URF, Pango X-lineages): excluded as hybrid
-# parents -- a clean recombination test needs non-recombinant parental lineages.
-_RECOMBINANT_CLADE = re.compile(r"^(CRF|URF)\d|^X[A-Z]|recombinant", re.IGNORECASE)
-
-
-def is_recombinant_clade(name: str) -> bool:
-    return bool(_RECOMBINANT_CLADE.search(name))
 
 
 def base_clade(name: str) -> str:
@@ -573,8 +572,20 @@ def _build_and_score(
             # pool contains no actual recombinant twin, so this is the documented
             # close-parent / --seed-keep-siblings setting, and dropping it would
             # remove the backbone parent itself.
-            selected = select_regional(setup.query, setup.pool, window=setup.sel_window,
-                                       per_window=2, drop_siblings=False, logger=logger).selected
+            # Type the pool by tree clade so the panel is reduced by lineage (one
+            # query-closest representative per clade, recombinant clades excluded) --
+            # this keeps a true parent that ANI would collapse (rsv_a's A.D.1.8) and
+            # drops the masking CRF clades (hiv1).
+            lineage_of = {
+                strip_sequence_extension(g.name): clade_of_label(g.name, setup.tips)
+                for g in setup.pool
+            }
+            lineage_of = {k: v for k, v in lineage_of.items() if v and v not in ("?", "NA")}
+            selected = select_regional(
+                setup.query, setup.pool, window=setup.sel_window, per_window=2,
+                drop_siblings=False, lineage_of=lineage_of or None,
+                keep_recombinant=False, logger=logger,
+            ).selected
         except ToolExecutionError:  # skani rejects very short gene/segment datasets
             selected = representative_panel(setup.pool, setup.tips, logger)
         # On a near-identical panel (mpox/VZV ~0.5%) dereplication collapses the parent

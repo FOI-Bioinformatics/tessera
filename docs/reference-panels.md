@@ -239,3 +239,13 @@ The same curation runs inside the fill loop with `fill-references --curate`, whi
 keeps the growing panel diverse and sibling-free each round and adds a "Reference
 panel" section to the report. Both need skani (and skDER for dereplication):
 `conda install -c bioconda skani skder`.
+
+## Make a collection lineage-ready (`type-lineages`)
+
+`tessera type-lineages -c genomes/ -o out/` assigns a lineage to every genome and writes
+`out/lineages.tsv`, so an NCBI or local set is typed like a Nextclade pool. Each genome takes
+the best label available: a header/metadata designation, else the clade of its nearest
+Nextclade-dataset reference tip (skani ANI, above `--ref-ani-floor`), else a de-novo lineage
+from ANI clustering (`--cluster-ani`). Downstream `recomb`/`detect`/`fill-references` read the
+`lineages.tsv` beside the MSA or output, so the typed names carry through. Needs skani; the
+nearest-neighbour step fetches the Nextclade dataset on first use.
