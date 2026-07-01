@@ -53,7 +53,14 @@ from tessera.msa.build import MsaParams, build_msa
 from tessera.recomb.consensus import consensus_sequence
 from tessera.recomb.regions import DEFAULT_METHODS, parse_methods
 from tessera.recomb.run import RecombParams, run_recomb
-from tessera.recomb.typing import LINEAGES_TSV, lineage_map_from_rows, write_lineage_map
+from tessera.recomb.typing import (
+    LINEAGES_TSV,
+    lineage_map_from_rows,
+    write_lineage_map,
+)
+from tessera.recomb.typing import (
+    is_recombinant_lineage as is_recombinant_clade,
+)
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data" / "hybrids"
@@ -183,14 +190,6 @@ def pct_identity(a: str, b: str) -> float:
 
 
 MIN_MEMBERS = 3  # a clade must have at least this many genomes to be a parent
-
-# Recombinant clade names (HIV CRF/URF, Pango X-lineages): excluded as hybrid
-# parents -- a clean recombination test needs non-recombinant parental lineages.
-_RECOMBINANT_CLADE = re.compile(r"^(CRF|URF)\d|^X[A-Z]|recombinant", re.IGNORECASE)
-
-
-def is_recombinant_clade(name: str) -> bool:
-    return bool(_RECOMBINANT_CLADE.search(name))
 
 
 def base_clade(name: str) -> str:
