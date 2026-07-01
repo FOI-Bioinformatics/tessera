@@ -467,6 +467,7 @@ class CaseSetup:
     tips: dict[str, tuple[str, list[str]]]
     pool: list[Path]  # source-removed, clade-labelled tree tips
     members_by_clade: dict[str, list[str]]  # source-removed clade -> tip accessions
+    case_type: str = "single_insert"
 
 
 def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
@@ -532,6 +533,7 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
         query=query, query_label=query_label, q_start=q_start, q_end=q_end,
         window=window, step=step, sel_window=sel_window, aligner=aligner,
         reference=reference, tips=tips, pool=pool, members_by_clade=members_by_clade,
+        case_type=case.get("case_type", "single_insert"),
     )
 
 
@@ -641,6 +643,16 @@ def _build_and_score(
 
 
 def _score_regions(
+    out_dir: Path, clade_of, setup: CaseSetup, n_refs: int, mode: str, runtime: float,
+) -> dict:
+    """Score a completed run by the case's type (default: single-insert hybrid)."""
+    scorer = {
+        "single_insert": _score_single_insert,
+    }.get(setup.case_type, _score_single_insert)
+    return scorer(out_dir, clade_of, setup, n_refs, mode, runtime)
+
+
+def _score_single_insert(
     out_dir: Path, clade_of, setup: CaseSetup, n_refs: int, mode: str, runtime: float,
 ) -> dict:
     """Score a completed detection run: detection, backbone/donor attribution, ensemble
