@@ -249,3 +249,15 @@ Nextclade-dataset reference tip (skani ANI, above `--ref-ani-floor`), else a de-
 from ANI clustering (`--cluster-ani`). Downstream `recomb`/`detect`/`fill-references` read the
 `lineages.tsv` beside the MSA or output, so the typed names carry through. Needs skani; the
 nearest-neighbour step fetches the Nextclade dataset on first use.
+
+### Type the recruited panel automatically (`--deep-typing`)
+
+`detect` and `fill-references` type their recruited panel at the end of a run. By default this
+is header/metadata mining only. Pass `--deep-typing` to run the full `type-lineages` ladder on
+the recruited references instead, so genomes that carry no clean header lineage still get a
+Nextclade nearest-neighbour or de-novo label. It writes the same `lineages.tsv` and feeds the
+lineage-aware panel selection. It is off by default because it adds a Nextclade/skani pass at
+the end of the run; it needs skani (the command errors early if skani is absent). References
+fetched from NCBI Virus are additionally tagged with the source `ncbi-datasets` -- their
+structured datasets lineage, captured during download in an `ncbi_lineages.tsv` sidecar,
+rather than a token mined back out of the header.
