@@ -9,6 +9,7 @@ external tool is the already-optional ``skani``.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 
 from ..core.io import strip_sequence_extension
@@ -130,6 +131,7 @@ def _reference_tips(
 def assign_lineages(
     genomes: list[Path], *, user_lineage_map: Path | None = None,
     taxon: str | None = None, nextclade_dataset: str | None = None,
+    datasets_rows: Iterable[tuple[str, str]] | None = None,
     ref_ani_floor: float = DEFAULT_REF_ANI_FLOOR, cluster_ani: float = DEFAULT_CLUSTER_ANI,
     email: str | None = None, cache_dir: Path | None = None, logger: logging.Logger,
 ) -> list[tuple[str, str, str]]:
@@ -137,6 +139,7 @@ def assign_lineages(
     de-novo ladder. Returns ``(label, lineage, source)`` rows for ``write_lineage_map``."""
     rows = build_lineage_map(
         user_tsv=user_lineage_map,
+        datasets_rows=datasets_rows,
         title_by_label=titles_from_collection(genomes),
         organism=taxon,
     )

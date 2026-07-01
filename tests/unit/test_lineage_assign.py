@@ -7,6 +7,8 @@ from pathlib import Path
 
 from tessera.discover import lineage_assign as la
 
+_LOG = logging.getLogger("tessera.test")
+
 
 def _g(name: str) -> Path:
     return Path(f"/pool/{name}.fasta")
@@ -65,6 +67,20 @@ def test_assign_lineages_ladder_precedence(monkeypatch):
     assert by_label["ref1"] == ("A.1", "nextclade-nn")
     assert by_label["dn1"][1] == "denovo" and by_label["dn2"][1] == "denovo"
     assert by_label["dn1"][0] == by_label["dn2"][0]      # same de-novo lineage
+
+
+def test_datasets_rows_override_title_and_tag_source(tmp_path, monkeypatch):
+    # One genome whose title mines to genotype "1" (source 'title'); a datasets row
+    # for the same accession must win and be tagged 'ncbi-datasets'.
+    g = tmp_path / "ACC1.fasta"
+    g.write_text(">ACC1 genotype 1\nACGT\n")
+    # No Nextclade dataset, no de-novo edges: keep the ladder on tier-1 only.
+    monkeypatch.setattr(la, "_reference_tips", lambda **k: {})
+    rows = la.assign_lineages(
+        [g], taxon=None, datasets_rows=[("ACC1", "DENV1")], logger=_LOG,
+    )
+    by_label = {label: (lineage, source) for label, lineage, source in rows}
+    assert by_label["ACC1"] == ("DENV1", "ncbi-datasets")
 
 
 def test_reference_tips_parses_and_picks_one_per_clade(monkeypatch, tmp_path):
