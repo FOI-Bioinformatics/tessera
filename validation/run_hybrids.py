@@ -102,6 +102,17 @@ HYBRIDS: list[dict] = [
     {"name": "chikv", "dataset": "community/v-gen-lab/chikV/genotypes"},
     {"name": "enterovirus_d68", "dataset": "enpen/enterovirus/ev-d68"},
     {"name": "prrsv2", "dataset": "community/isuvdl/mazeller/prrsv2/orf5/yimim2023"},
+    # Phase-1 hard cases: specificity (negatives), low-divergence attribution, and a
+    # panel-adversarial donor-absent case. These reuse existing datasets; the equidistant
+    # case is added below once its clade pins are read from a probe run.
+    {"name": "neg_measles", "dataset": "nextstrain/measles/genome/WHO-2012",
+     "case_type": "neg_pure"},
+    {"name": "neg_within_hiv", "dataset": "community/neherlab/hiv-1/hxb2",
+     "case_type": "neg_within"},
+    {"name": "lowdiv_dengue", "dataset": "nextstrain/dengue/all", "case_type": "low_div",
+     "pair_objective": "min", "divergence_band": [1.0, 4.0], "min_divergence": 1.0},
+    {"name": "donorabsent_rsv", "dataset": "nextstrain/rsv/a/EPI_ISL_412866",
+     "case_type": "panel_donor_absent"},
 ]
 INSERT = (0.35, 0.65)  # donor (clade B) occupies this fraction of the genome
 MIN_GENOME = 400  # skip a dataset whose genome/segment is too short to splice
@@ -868,10 +879,12 @@ def _score_panel_donor_absent(
 
     absent_hit = any(r.get("donor_absent") == "yes" and overlaps(r) for r in regions)
     present = [r for r in regions if r.get("donor_absent") != "yes"]
+    def cross_clade(r):
+        top = base_clade(clade_of(r["minor_parent"]) or "").split(".")[0]
+        return top != setup.clade_a.split(".")[0]
+
     misattr = any(
-        overlaps(r)
-        and "," in (r.get("methods") or "")
-        and base_clade(clade_of(r["minor_parent"])).split(".")[0] != setup.clade_a.split(".")[0]
+        overlaps(r) and "," in (r.get("methods") or "") and cross_clade(r)
         for r in present
     )
     passed = absent_hit and not misattr
@@ -972,11 +985,13 @@ def _run_default(cases: list[dict], logger: logging.Logger) -> int:
             print(f"{r['name']:16} ERROR: {r.get('error', '')[:50]}")
             continue
         verdict = "PASS" if r["pass"] else "FAIL"
+        # Single-insert rows carry major_clade/backbone_ok/donor_ok; the negative and
+        # panel case types return the lean _base row, so fall back gracefully.
         print(f"{r['name']:16} {r['clade_a']+' x '+r['clade_b']:24.24} "
-              f"{r['divergence']:4.1f}% {r['major_clade']:>10.10} "
-              f"{'Y' if r['detected'] else 'n':>3} {'Y' if r['backbone_ok'] else 'n':>3} "
-              f"{'Y' if r['donor_ok'] else 'n':>3} {'Y' if r.get('agree') else '.':>3} "
-              f"{r['mode']:>9} "
+              f"{r['divergence']:4.1f}% {r.get('major_clade', '-'):>10.10} "
+              f"{'Y' if r['detected'] else 'n':>3} {'Y' if r.get('backbone_ok') else 'n':>3} "
+              f"{'Y' if r.get('donor_ok') else 'n':>3} {'Y' if r.get('agree') else '.':>3} "
+              f"{r.get('mode', '-'):>9} "
               f"{r.get('phi_p', '-'):>8.8} {r.get('rmin', '-'):>4} "
               f"{r['runtime']:5.0f}s  {verdict}")
     passed = sum(1 for r in results if r.get("pass"))
