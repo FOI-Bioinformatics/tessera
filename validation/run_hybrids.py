@@ -336,7 +336,7 @@ def clade_representative(members: list[str], tips: dict[str, tuple[str, list[str
 
 def pick_parents(
     tips: dict[str, tuple[str, list[str]]], reference: str, pinned: list[str],
-    logger: logging.Logger,
+    logger: logging.Logger, *, objective: str = "max",
 ) -> tuple[str, str, str, str]:
     """Return ``(clade_a, clade_b, source_a, source_b)``.
 
@@ -347,6 +347,10 @@ def pick_parents(
     Recombinant clades are excluded as parents, but if that leaves fewer than two
     eligible clades (e.g. the SARS-CoV-2 XBB dataset, which is entirely XBB
     sub-lineages) they are allowed back in. Too few clades either way is a SKIP.
+
+    ``objective`` controls pair selection when not pinned: ``"max"`` picks the
+    most-divergent pair (default); ``"min"`` picks the least-divergent pair whose
+    divergence is still at or above ``MIN_DIVERGENCE``.
     """
     def eligible_of(exclude_recombinant: bool) -> dict[str, list[str]]:
         by_clade = clade_members(tips, exclude_recombinant=exclude_recombinant)
@@ -372,8 +376,14 @@ def pick_parents(
         for i, ca in enumerate(clades):
             for cb in clades[i + 1:]:
                 div = 100.0 - pct_identity(rep_seq[ca], rep_seq[cb])
-                if best is None or div > best[0]:
-                    best = (div, ca, cb)
+                if objective == "min":
+                    if div >= MIN_DIVERGENCE and (best is None or div < best[0]):
+                        best = (div, ca, cb)
+                else:
+                    if best is None or div > best[0]:
+                        best = (div, ca, cb)
+        if best is None:
+            raise CaseSkipped("no clade pair meets the minimum divergence threshold")
         _, ca, cb = best
     if len(eligible[cb]) > len(eligible[ca]):  # backbone = the better-represented clade
         ca, cb = cb, ca
@@ -528,9 +538,10 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
         logger.info("[%s] neg_within: clade %s (%s x %s); intra-clade divergence %.1f%%",
                     name, clade_a, src_a, src_b, divergence)
         query_seq, q_start, q_end = make_hybrid(reference, tips[src_a][1], tips[src_b][1])
-    else:  # single_insert
+    else:  # single_insert and low_div
         clade_a, clade_b, src_a, src_b = pick_parents(
-            tips, reference, case.get("clades", []), logger)
+            tips, reference, case.get("clades", []), logger,
+            objective=case.get("pair_objective", "max"))
         divergence = 100.0 - pct_identity(
             reconstruct_gapped(reference, tips[src_a][1]),
             reconstruct_gapped(reference, tips[src_b][1]),
@@ -540,6 +551,12 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
             name, clade_a, src_a, clade_b, src_b, divergence)
         if divergence < case.get("min_divergence", MIN_DIVERGENCE):
             raise CaseSkipped(f"clades too similar ({divergence:.1f}% divergence)")
+        band = case.get("divergence_band")
+        if band is not None:
+            lo, hi = band
+            if not (lo <= divergence <= hi):
+                raise CaseSkipped(
+                    f"divergence {divergence:.1f}% outside band [{lo}, {hi}]")
         query_seq, q_start, q_end = make_hybrid(reference, tips[src_a][1], tips[src_b][1])
 
     if len(query_seq) < MIN_GENOME:
@@ -696,6 +713,7 @@ def _score_regions(
         "single_insert": _score_single_insert,
         "neg_pure": _score_neg_pure,
         "neg_within": _score_neg_within,
+        "low_div": _score_low_div,
     }.get(setup.case_type, _score_single_insert)
     return scorer(out_dir, clade_of, setup, n_refs, mode, runtime)
 
@@ -783,6 +801,30 @@ def _score_neg_within(
     row = _base(setup, mode, runtime, present, n_refs=n_refs, n_false_regions=len(cross))
     row["pass"] = len(cross) == 0
     return row
+
+
+def _score_low_div(
+    out_dir: Path, clade_of, setup: CaseSetup, n_refs: int, mode: str, runtime: float,
+) -> dict:
+    """Low-divergence attribution: require detection + donor top-level + backbone
+    top-level clade (no <4% free pass). Exact-vs-sibling is reported, not gating."""
+    regions = parse_regions(out_dir / "recombination_regions.tsv")
+    present = [r for r in regions if r.get("donor_absent") != "yes"]
+    major_clade = clade_of(regions[0]["major_parent"]) if regions else "?"
+    span = [r for r in present
+            if int(r["query_start"]) <= setup.q_end and int(r["query_end"]) >= setup.q_start]
+    donor_hits = [r for r in span
+                  if attribution_tier(clade_of(r["minor_parent"]), setup.clade_b) != "mismatch"]
+    detected = len(present) >= 1
+    backbone_ok = attribution_tier(major_clade, setup.clade_a) != "mismatch"
+    passed = detected and len(donor_hits) >= 1 and backbone_ok
+    donor_obs = max((clade_of(r["minor_parent"]) for r in span),
+                    key=lambda c: shared_clade_depth(c, setup.clade_b), default="?")
+    return _base(setup, mode, runtime, present, n_refs=n_refs, major_clade=major_clade,
+                 backbone_ok=backbone_ok, donor_ok=len(donor_hits) >= 1,
+                 backbone_tier=attribution_tier(major_clade, setup.clade_a),
+                 donor_tier=attribution_tier(donor_obs, setup.clade_b),
+                 **{"pass": passed})
 
 
 def run_case(case: dict, logger: logging.Logger) -> dict:

@@ -80,3 +80,24 @@ def test_single_insert_pass(tmp_path):
     setup = _setup(out=tmp_path)
     res = rh._score_regions(tmp_path, clade_of, setup, 5, "tip", 1.0)
     assert res["pass"] is True and res["backbone_ok"] and res["donor_ok"]
+
+
+def test_low_div_requires_backbone_top_level(tmp_path):
+    # donor correct top-level (B), backbone WRONG top-level (C) -> FAIL even at low div.
+    _write_regions(tmp_path, [
+        {"minor_parent": "gB", "major_parent": "gC", "query_start": 120,
+         "query_end": 180, "methods": "hmm", "donor_absent": "no"}])
+    setup = _setup(out=tmp_path, case_type="low_div", divergence=2.0,
+                   clade_a="A", clade_b="B")
+    res = rh._score_regions(tmp_path, {"gB": "B.1", "gC": "C.1"}.get, setup, 5, "tip", 1.0)
+    assert res["pass"] is False  # backbone C != A, not relaxed away
+
+
+def test_low_div_pass_top_level(tmp_path):
+    _write_regions(tmp_path, [
+        {"minor_parent": "gB", "major_parent": "gA", "query_start": 120,
+         "query_end": 180, "methods": "hmm", "donor_absent": "no"}])
+    setup = _setup(out=tmp_path, case_type="low_div", divergence=2.0,
+                   clade_a="A", clade_b="B")
+    res = rh._score_regions(tmp_path, {"gA": "A.2", "gB": "B.1"}.get, setup, 5, "tip", 1.0)
+    assert res["pass"] is True
