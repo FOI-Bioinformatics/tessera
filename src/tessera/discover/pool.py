@@ -29,6 +29,7 @@ from ..core.errors import UserInputError
 from ..core.io import read_fasta, strip_sequence_extension, write_fasta_record
 from ..core.plugins import ToolCapabilities
 from ..core.process import run_tool
+from ..recomb.typing import is_recombinant_lineage
 from .blast import BlastError, blast_subsequence
 from .panel import dereplicate, skani_available, skani_query_ani
 
@@ -196,6 +197,47 @@ def _split_fasta(
     return written
 
 
+def _lineage_select(
+    genomes: list[Path],
+    lineage_of: dict[str, str],
+    query_ani: dict[Path, tuple[float, float]],
+    *,
+    keep_recombinant: bool,
+    derep_ani: float,
+    logger: logging.Logger,
+) -> list[Path]:
+    """Reduce a pool by lineage: keep one query-closest representative per lineage.
+
+    Genomes with a lineage label are grouped by lineage and the member with the
+    highest whole-genome ANI to the query is kept; recombinant (CRF/URF/X) lineages
+    are dropped unless ``keep_recombinant`` is set, since they carry both parents'
+    segments and mask the true parents. Genomes with no label fall back to ANI
+    dereplication (the pre-lineage behaviour). Returns the union.
+    """
+    typed_by_lineage: dict[str, list[Path]] = {}
+    untyped: list[Path] = []
+    for g in genomes:
+        lineage = lineage_of.get(strip_sequence_extension(g.name))
+        if not lineage:
+            untyped.append(g)
+        elif keep_recombinant or not is_recombinant_lineage(lineage):
+            typed_by_lineage.setdefault(lineage, []).append(g)
+    reps = [
+        max(members, key=lambda g: query_ani.get(g, (0.0, 0.0))[0])
+        for members in typed_by_lineage.values()
+    ]
+    if len(untyped) > 2:
+        kept_untyped, _ = dereplicate(untyped, ani=derep_ani, logger=logger)
+    else:
+        kept_untyped = untyped
+    logger.info(
+        "Lineage selection: %d representative(s) from %d lineage(s); "
+        "%d untyped genome(s) -> %d after ANI dereplication.",
+        len(reps), len(typed_by_lineage), len(untyped), len(kept_untyped),
+    )
+    return reps + kept_untyped
+
+
 def select_regional(
     query_fasta: Path,
     genomes: list[Path],
@@ -205,6 +247,8 @@ def select_regional(
     ani_floor: float = DEFAULT_ANI_FLOOR,
     derep_ani: float = DEFAULT_DEREP_ANI,
     dereplicate_pool: bool = True,
+    lineage_of: dict[str, str] | None = None,
+    keep_recombinant: bool = False,
     drop_siblings: bool = True,
     sibling_identity: float = DEFAULT_SIBLING_IDENTITY,
     sibling_coverage: float = DEFAULT_SIBLING_COVERAGE,
@@ -216,6 +260,10 @@ def select_regional(
     parents are not out-ranked everywhere) and genomes unrelated to the query, then
     cuts the query into windows and keeps each window's best-matching genomes. The
     union is a focused panel covering the query region by region.
+
+    When ``lineage_of`` labels the genomes, the pool is reduced by lineage -- one
+    query-closest representative per lineage, recombinant lineages excluded unless
+    ``keep_recombinant`` -- instead of by ANI; untyped genomes still dereplicate.
     """
     if not skani_available():
         raise UserInputError(
@@ -227,14 +275,24 @@ def select_regional(
     if not records:
         raise UserInputError(f"Query FASTA {query_fasta} has no sequence.")
 
-    pool = genomes
-    if dereplicate_pool and len(genomes) > 2:
-        pool, _ = dereplicate(genomes, ani=derep_ani, logger=logger)
-        logger.info(
-            "Dereplicated pool: %d representative(s) from %d genome(s).", len(pool), len(genomes)
+    if lineage_of:
+        # Typed references: reduce by lineage, not by clade-blind ANI. Compute the
+        # whole-genome query ANI on the full pool first, so a lineage's representative
+        # is its query-closest member and the sibling/related filters below can reuse it.
+        whole = skani_query_ani(query_fasta, genomes, logger)
+        pool = _lineage_select(
+            genomes, lineage_of, whole,
+            keep_recombinant=keep_recombinant, derep_ani=derep_ani, logger=logger,
         )
-
-    whole = skani_query_ani(query_fasta, pool, logger)
+    else:
+        pool = genomes
+        if dereplicate_pool and len(genomes) > 2:
+            pool, _ = dereplicate(genomes, ani=derep_ani, logger=logger)
+            logger.info(
+                "Dereplicated pool: %d representative(s) from %d genome(s).",
+                len(pool), len(genomes),
+            )
+        whole = skani_query_ani(query_fasta, pool, logger)
     # Drop the query's siblings -- near-identical genome-wide over near-full coverage --
     # so they cannot win every region and mask the recombination.
     if drop_siblings:
