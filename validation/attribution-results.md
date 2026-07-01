@@ -146,3 +146,44 @@ requested `--keep-recombinant-lineages` toggle. It does **not** by itself close 
 fine-grained sub-lineage system, keeping one representative per lineage must be paired with
 suppression of the query's whole-genome backbone siblings, or the recovered donor is offset by
 a backbone-sibling regression. That pairing is a separate cycle.
+
+## Plurality best-match major parent (baseline 18/18)
+
+A diagnostic of the residual `rsv_a` failure showed it was **not** a panel-representation problem
+but a **major-parent attribution** problem. The true backbone clade `A.1` was in the panel and was
+the strict best match in the most windows (203), yet the HMM caller labeled it a *minor/donor* and
+picked a uniformly-mediocre sibling (`A.D.5.2`, ~0.92 similarity everywhere) as the major parent
+across the whole genome -- inverting the call. Root cause: the HMM derived the major parent from
+the **most-occupied Viterbi state**, which a genome that is best in no window but decent everywhere
+can win over a genome that is excellent over a large span but poor elsewhere (a real dominant
+parent). This contradicted the module's own definition ("the query is most similar to one dataset
+across the genome -- the major parent") and the heuristic caller, which already used most-windows-won.
+
+The fix derives the HMM major parent by **plurality best-match** (the genome that is the strict best
+match in the most informative windows, tie-broken by mean similarity), aligning the HMM with the
+heuristic caller and the module docstring. No change to panel selection, the segmentation model, or
+the other callers.
+
+Re-ran `python validation/run_hybrids.py --compare` over all 24 datasets (18 run, 6 SKIP):
+
+| config | PASS | vs prior baseline |
+|--------|------|-------------------|
+| baseline (tip) | **18/18** | 16/18 -> 18/18 |
+
+Both prior FAILs closed and no case regressed:
+- `rsv_a` (A.1 x A.D.1.8): major parent moves from the sibling `A.D.5.2` to the true `A.1`; donor
+  `A.D.1.8` stays exact. PASS in all five configs.
+- `flu_h3n2_ha` (C.1 x K): the *other* persistent FAIL, same root cause -- its backbone was a
+  mis-anchored sibling. Now `bb exact`. PASS.
+- The other 16 hold. The only non-baseline FAIL is `measles` under the source-removed **consensus**
+  panel mode (`bb mismatch`) -- the previously documented per-clade-consensus backbone artifact,
+  which PASSes in baseline; the headline `baseline` column is a clean 18/18.
+
+Measured on the aligner env (`recomfi-aln`), not CI. This supersedes the 16/18 lineage-selection
+result above: the residual `rsv_a` gap was an attribution bug, and the backbone-sibling-suppression
+"separate cycle" the section above proposed is not needed -- plurality attribution closes it directly.
+
+The design targeted a clean **17/18** and treated `flu_h3n2_ha` as a separate short-segment problem
+that would not close. The measured outcome was better than planned: `flu_h3n2_ha` shared the same
+mis-anchored-backbone root cause, so plurality attribution closed it too, giving **18/18**. The
+prediction was conservative; the result is reported as measured.

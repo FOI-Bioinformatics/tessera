@@ -4,8 +4,47 @@ from __future__ import annotations
 
 import numpy as np
 
-from tessera.recomb.hmm import segment_query
+from tessera.recomb.hmm import plurality_major, segment_query
 from tessera.recomb.similarity import WindowSimilarity
+
+
+def _wsim(similarities: dict[str, list[float]]) -> WindowSimilarity:
+    # plurality_major reads only .similarities; the other fields satisfy the
+    # dataclass's required arguments.
+    n = len(next(iter(similarities.values())))
+    return WindowSimilarity(
+        positions=list(range(n)), query_positions=list(range(n)),
+        similarities=similarities, query="q", width=n,
+        query_cumulative=np.arange(n + 1),
+    )
+
+
+def test_plurality_major_prefers_window_winner_over_uniform_genome():
+    # X is the strict best in 7 of 10 windows; Y is uniformly second-best everywhere
+    # (it would occupy the most HMM path but wins no window).
+    x = [1.0] * 7 + [0.80] * 3
+    y = [0.92] * 10
+    z = [0.70] * 7 + [1.0] * 3  # wins the last 3
+    assert plurality_major(_wsim({"X": x, "Y": y, "Z": z}), ["X", "Y", "Z"]) == "X"
+
+
+def test_plurality_major_tiebreak_by_mean_similarity():
+    # Both win 5 of 10 windows; A has the higher mean over informative windows.
+    a = [1.0] * 5 + [0.0] * 5
+    b = [0.6] * 5 + [0.61] * 5  # wins windows 5-9 (0.61 > 0.0), mean lower than A's wins
+    # A wins 0-4 (1.0 > 0.6); B wins 5-9 (0.61 > 0.0). 5-5 tie -> mean similarity breaks it.
+    assert plurality_major(_wsim({"A": a, "B": b}), ["A", "B"]) in {"A", "B"}
+    # Make the tiebreak deterministic and checkable: A's mean (0.5) vs B's (0.605) -> B.
+    assert plurality_major(_wsim({"A": a, "B": b}), ["A", "B"]) == "B"
+
+
+def test_plurality_major_none_when_no_informative_window():
+    nan = float("nan")
+    assert plurality_major(_wsim({"A": [nan, nan], "B": [nan, nan]}), ["A", "B"]) is None
+
+
+def test_plurality_major_single_label():
+    assert plurality_major(_wsim({"A": [0.9, 0.8]}), ["A"]) == "A"
 
 
 def _two_state_result(n=20, window=50):

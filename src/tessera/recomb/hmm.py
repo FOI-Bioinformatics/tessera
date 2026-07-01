@@ -57,6 +57,32 @@ def _estimate_identity(result: WindowSimilarity) -> float:
     return min(max(p, 0.80), 0.999)
 
 
+def plurality_major(result: WindowSimilarity, labels: list[str]) -> str | None:
+    """The label that is the strict best match in the most informative windows.
+
+    This is the major parent as defined for the query -- the reference it most
+    resembles across the genome -- rather than the state an HMM path happens to occupy
+    most (which a uniformly-mediocre genome, best in no window, can win). Ties are broken
+    by the highest mean similarity over each label's comparable windows, then by label
+    order. Returns ``None`` when no window is informative.
+    """
+    if not labels:
+        return None
+    matrix = np.array([result.similarities[label] for label in labels], dtype=float)  # (S, W)
+    wins = np.zeros(len(labels), dtype=int)
+    for i in range(matrix.shape[1]):
+        col = matrix[:, i]
+        if np.isfinite(col).any():
+            wins[int(np.nanargmax(col))] += 1
+    if not wins.any():
+        return None
+    means = [
+        float(np.nanmean(matrix[j])) if np.isfinite(matrix[j]).any() else float("-inf")
+        for j in range(len(labels))
+    ]
+    return labels[max(range(len(labels)), key=lambda j: (int(wins[j]), means[j]))]
+
+
 def segment_query(
     result: WindowSimilarity,
     *,
@@ -83,7 +109,7 @@ def segment_query(
         post = _posterior(emission, trans)
 
     segments = _path_to_segments(path, post, labels, result)
-    major = _major_state(path, labels)
+    major = plurality_major(result, labels)
     return segments, major
 
 
@@ -202,6 +228,3 @@ def _breakpoint_interval(
     )
 
 
-def _major_state(path: np.ndarray, labels: list[str]) -> str:
-    counts = np.bincount(path, minlength=len(labels))
-    return labels[int(np.argmax(counts))]
