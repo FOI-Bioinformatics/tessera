@@ -93,8 +93,8 @@ def _reference_tips(
     *, query: Path, nextclade_dataset: str | None, email: str | None,
     cache_dir: Path | None, logger: logging.Logger,
 ) -> dict[Path, str]:
-    """Resolve a Nextclade dataset and return its clade-labelled tips, dereplicated per
-    clade. Empty when no dataset resolves. ``resolve_dataset`` auto-detects the dataset
+    """Resolve a Nextclade dataset and return its clade-labelled tips, one representative
+    per clade. Empty when no dataset resolves. ``resolve_dataset`` auto-detects the dataset
     from ``query`` (a representative collection genome) unless ``nextclade_dataset`` is
     given. Each tip FASTA header is ``>{accession} {clade}``, so the clade is the
     header's remainder."""
