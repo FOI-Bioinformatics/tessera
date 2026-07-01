@@ -104,6 +104,7 @@ class FillParams:
     pool_consensus: bool = False
     lineage_map: Path | None = None  # user TSV (accession<TAB>genotype) to type references
     reattribute_donors: bool = False  # opt-in donor re-attribution in the detection step
+    keep_recombinant: bool = False  # keep recombinant (CRF/URF/X) lineages in a typed panel
 
     @classmethod
     def for_detection(
@@ -127,6 +128,7 @@ class FillParams:
         organism: str | None = None,
         lineage_map: Path | None = None,
         reattribute_donors: bool = False,
+        keep_recombinant: bool = False,
     ) -> FillParams:
         """Build the detection-tuned preset over fill-references.
 
@@ -155,6 +157,7 @@ class FillParams:
             methods=methods, pool_consensus=pool_consensus,
             organism=organism, lineage_map=lineage_map,
             reattribute_donors=reattribute_donors,
+            keep_recombinant=keep_recombinant,
         )
 
 
@@ -567,9 +570,19 @@ def _fetch_diverse(params: FillParams, logger: logging.Logger) -> list[Path]:
 def _select_from(params: FillParams, genomes: list[Path], logger: logging.Logger):
     from .pool import select_regional
 
+    # Type the pool from its headers (user map > NCBI datasets lineage > mined title
+    # token) so the panel is reduced by lineage rather than clade-blind ANI. An empty
+    # map (untyped pool) yields the pre-lineage global behaviour.
+    rows = build_lineage_map(
+        user_tsv=params.lineage_map,
+        title_by_label=titles_from_collection(genomes),
+        organism=params.taxon,
+    )
+    lineage_of = lineage_map_from_rows(rows)
     return select_regional(
         params.query, genomes, window=params.seed_window, per_window=SEED_PER_WINDOW,
         derep_ani=params.derep_diverse_ani, drop_siblings=not params.seed_keep_siblings,
+        lineage_of=lineage_of or None, keep_recombinant=params.keep_recombinant,
         logger=logger,
     )
 
