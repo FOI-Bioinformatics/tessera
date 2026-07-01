@@ -182,3 +182,8 @@ Both prior FAILs closed and no case regressed:
 Measured on the aligner env (`recomfi-aln`), not CI. This supersedes the 16/18 lineage-selection
 result above: the residual `rsv_a` gap was an attribution bug, and the backbone-sibling-suppression
 "separate cycle" the section above proposed is not needed -- plurality attribution closes it directly.
+
+The design targeted a clean **17/18** and treated `flu_h3n2_ha` as a separate short-segment problem
+that would not close. The measured outcome was better than planned: `flu_h3n2_ha` shared the same
+mis-anchored-backbone root cause, so plurality attribution closed it too, giving **18/18**. The
+prediction was conservative; the result is reported as measured.

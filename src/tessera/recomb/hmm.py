@@ -63,8 +63,8 @@ def plurality_major(result: WindowSimilarity, labels: list[str]) -> str | None:
     This is the major parent as defined for the query -- the reference it most
     resembles across the genome -- rather than the state an HMM path happens to occupy
     most (which a uniformly-mediocre genome, best in no window, can win). Ties are broken
-    by the highest mean similarity over informative windows, then by label order.
-    Returns ``None`` when no window is informative.
+    by the highest mean similarity over each label's comparable windows, then by label
+    order. Returns ``None`` when no window is informative.
     """
     if not labels:
         return None
