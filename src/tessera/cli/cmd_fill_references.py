@@ -161,7 +161,8 @@ def fill_references(
         False, "--keep-recombinant-lineages/--no-keep-recombinant-lineages",
         help="Keep recombinant (CRF/URF/X) lineages in the panel. Off by default: "
         "they carry both parents' segments and mask the true parents. Turn on to "
-        "recruit the best-matching genome even if it is a known hybrid.",
+        "recruit the best-matching genome even if it is a known hybrid. "
+        "Applies only when the references carry lineage labels.",
     ),
 ) -> None:
     """Iteratively search NCBI and add references until coverage stops improving.

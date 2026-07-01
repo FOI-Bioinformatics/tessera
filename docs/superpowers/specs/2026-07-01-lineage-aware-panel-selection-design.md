@@ -17,6 +17,14 @@ the recombinant exclusion is a **toggle** (default exclude), because sometimes t
 genome is wanted even if it is a known hybrid. Activation is **default-on when a lineage map is
 present**, gated by the `--compare` harness showing a clean 17/18.
 
+> **Outcome note (superseded gate).** The measured result was **16/18**, not the predicted
+> 17/18: lineage selection recovers `rsv_a`'s true donor (`A.D.1.8`, now exact) but regresses
+> its backbone to a sibling, and `hiv1` was already passing on main (the CRF-masking premise
+> above belonged to the abandoned clade-aware-dereplication branch, not to main). The feature
+> was merged default-when-typed on a net-neutral / donor-representation-gap-closed basis, not
+> on the 17/18 gate. See `validation/attribution-results.md` for the faithful record; the
+> `rsv_a` backbone-sibling pairing is a follow-up cycle.
+
 ## Goal
 
 At `select_regional`, when references carry lineage labels, build the panel by lineage instead of
