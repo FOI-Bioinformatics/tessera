@@ -18,7 +18,7 @@ from ..recomb.typing import (
     titles_from_collection,
 )
 from .nextclade import build_pool, resolve_dataset
-from .panel import dereplicate, skani_query_ani
+from .panel import skani_query_ani
 
 DEFAULT_REF_ANI_FLOOR = 90.0   # a genome joins a reference clade only above this ANI
 DEFAULT_CLUSTER_ANI = 95.0     # de-novo: genomes at/above this ANI share a lineage
@@ -116,10 +116,15 @@ def _reference_tips(
         clade = parts[1].strip() if len(parts) > 1 else ""
         if clade and clade not in ("NA", "example"):
             clade_of[tip] = clade
-    # one representative per clade so nearest-neighbour is not dominated by a big clade
-    label_by_name = {strip_sequence_extension(p.name): c for p, c in clade_of.items()}
-    reps, _ = dereplicate(list(clade_of), clade_of=label_by_name, logger=logger)
-    return {p: clade_of[p] for p in reps if p in clade_of}
+    # One representative tip per clade (a plain per-clade pick; dependency-free) so the
+    # nearest-neighbour vote is not dominated by a clade with many tips.
+    reps: dict[Path, str] = {}
+    seen: set[str] = set()
+    for tip, clade in clade_of.items():
+        if clade not in seen:
+            seen.add(clade)
+            reps[tip] = clade
+    return reps
 
 
 def assign_lineages(

@@ -65,3 +65,26 @@ def test_assign_lineages_ladder_precedence(monkeypatch):
     assert by_label["ref1"] == ("A.1", "nextclade-nn")
     assert by_label["dn1"][1] == "denovo" and by_label["dn2"][1] == "denovo"
     assert by_label["dn1"][0] == by_label["dn2"][0]      # same de-novo lineage
+
+
+def test_reference_tips_parses_and_picks_one_per_clade(monkeypatch, tmp_path):
+    # Two tips of clade A.1, one of B.2, one untyped ("NA"):
+    # expect one A.1 rep, one B.2; NA dropped.
+    t1, t2, t3, t4 = (tmp_path / f"t{i}.fasta" for i in range(1, 5))
+    headers = {t1: "acc1 A.1", t2: "acc2 A.1", t3: "acc3 B.2", t4: "acc4 NA"}
+    for p in (t1, t2, t3, t4):
+        p.write_text(">x\nACGT\n")
+
+    class _DS:
+        path = "nextstrain/x"
+        tag = "2020"
+
+    monkeypatch.setattr(la, "resolve_dataset", lambda q, o, *, email, logger: _DS())
+    monkeypatch.setattr(la, "build_pool", lambda ds, *, cache_dir, logger: [t1, t2, t3, t4])
+    monkeypatch.setattr(la, "first_header", lambda p: headers[p])
+
+    tips = la._reference_tips(query=_g("q"), nextclade_dataset=None, email=None,
+                              cache_dir=tmp_path, logger=logging.getLogger("t"))
+    # one representative per clade; NA dropped
+    assert sorted(tips.values()) == ["A.1", "B.2"]
+    assert t4 not in tips
