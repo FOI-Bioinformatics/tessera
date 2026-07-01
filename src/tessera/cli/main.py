@@ -112,6 +112,7 @@ from . import (  # noqa: E402,F401
     cmd_find_references,
     cmd_msa,
     cmd_recomb,
+    cmd_type_lineages,
 )
 
 
