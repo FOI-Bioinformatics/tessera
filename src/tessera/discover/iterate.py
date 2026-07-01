@@ -46,6 +46,7 @@ from .panel import (
     skani_available,
     write_panel_tsv,
 )
+from .pool import NCBI_LINEAGES_TSV
 from .run import (
     MIN_SUBSEQ,
     _base_accession,
@@ -358,6 +359,36 @@ def _grow_collection(
     return trace, panel_rows, last_msa
 
 
+def _record_ncbi_lineages(output: Path, source_dir: Path) -> None:
+    """Merge ``source_dir``'s NCBI-datasets lineage sidecar into the run's consolidated
+    ``<output>/ncbi_lineages.tsv`` (dedup by accession). No-op when the source has none."""
+    src = source_dir / NCBI_LINEAGES_TSV
+    if not src.exists():
+        return
+    merged: dict[str, str] = dict(_read_ncbi_lineages(output) or [])
+    for line in src.read_text().splitlines():
+        acc, _, lineage = line.partition("\t")
+        if acc and lineage:
+            merged[acc] = lineage
+    with open(output / NCBI_LINEAGES_TSV, "w") as fo:
+        for acc, lineage in sorted(merged.items()):
+            fo.write(f"{acc}\t{lineage}\n")
+
+
+def _read_ncbi_lineages(output: Path) -> list[tuple[str, str]] | None:
+    """Read ``<output>/ncbi_lineages.tsv`` into ``(accession, lineage)`` rows, or
+    ``None`` when the sidecar is absent."""
+    path = output / NCBI_LINEAGES_TSV
+    if not path.exists():
+        return None
+    rows: list[tuple[str, str]] = []
+    for line in path.read_text().splitlines():
+        acc, _, lineage = line.partition("\t")
+        if acc and lineage:
+            rows.append((acc, lineage))
+    return rows
+
+
 def _type_panel(
     params: FillParams, collection: Path, query_label: str, logger: logging.Logger,
 ) -> tuple[dict[str, str], str | None]:
@@ -543,11 +574,13 @@ def _fetch_diverse(params: FillParams, logger: logging.Logger) -> list[Path]:
             "Using the cached NCBI Virus panel for '%s' (%d genome(s)): %s",
             taxon, len(existing), cache,
         )
+        _record_ncbi_lineages(params.output, cache)
         return existing
     cache.mkdir(parents=True, exist_ok=True)
     if params.source_refseq:
         fetched = fetch_ncbi_virus(taxon, cache, refseq=True, logger=logger)
         if len(fetched) >= SEED_MIN_DIVERSE:
+            _record_ncbi_lineages(params.output, cache)
             return fetched
         logger.info(
             "RefSeq set for '%s' has only %d genome(s); broadening to complete genomes.",
@@ -564,6 +597,7 @@ def _fetch_diverse(params: FillParams, logger: logging.Logger) -> list[Path]:
             "locally to a diverse panel -- this can take a few minutes.",
             len(fetched), taxon,
         )
+    _record_ncbi_lineages(params.output, cache)
     return fetched
 
 
