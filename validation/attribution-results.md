@@ -293,7 +293,7 @@ must-pass regression (`_run_frontier` always returns 0). The must-pass headline 
 
 ```
 [XPASS      ] interspecies_rsv   identity 0.81, detected + attributed
-[XFAIL      ] reassort_flu       no breakpoint at the HA|NA junction (~1718 bp)
+[XPASS      ] reassort_flu       segments trace to different parents -- HA:J.2.2 (A_Abudhabi_19563_2025) | NA:B.4.2 (A_AbuDhabi_932_2024)
 ```
 
 - **`interspecies_rsv`** (RSV-A backbone x RSV-B donor). The cross-species pair is spliced from two
@@ -303,9 +303,13 @@ must-pass regression (`_run_frontier` always returns 0). The must-pass headline 
   At **81% ANI** -- right at the HMM's 0.80 identity floor -- the recombinant is **detected and
   attributed** (XPASS). So inter-species recombination at the edge of the envelope is within reach;
   a more divergent species pair (< 80% ANI) would fall to KNOWN-LIMIT.
-- **`reassort_flu`** (flu H3N2 HA + NA). A reassortant query `HA_consensus[X] ++ NA_consensus[Y]`
-  over a panel of the individual segment consensuses. Detection-gated: **XFAIL** -- no breakpoint is
-  called at the HA|NA junction. This is the documented **known-limitation**: the single-backbone,
-  reference-anchored MSA model has no concept of a whole-segment swap, so a reassortment junction
-  between two independent segments is not surfaced as a recombination. Reported as a probe outcome,
-  not a regression.
+- **`reassort_flu`** (flu H3N2 HA + NA). Originally an XFAIL: a concatenated `HA ++ NA` query over a
+  single-backbone MSA produced an empty regions table, because a reference-anchored scan has no
+  concept of a whole-segment swap (the NA half fell off the one backbone). This known-limitation is
+  now addressed by the dedicated `tessera reassort` command, which types each segment against its own
+  Nextclade dataset and calls reassortment by nearest-reference-strain consistency. The probe builds a
+  two-record query (HA consensus of one clade, NA consensus of another), runs `assign_segments`, and
+  **XPASSes** when the segments trace to different parents: HA -> strain `A_Abudhabi_19563_2025`
+  (clade J.2.2), NA -> strain `A_AbuDhabi_932_2024` (clade B.4.2), disjoint parents -> `reassortant`.
+  Reported as a probe outcome, not a regression. The per-segment model sidesteps the single-backbone
+  limit rather than removing it; the intragenic scan still assumes one backbone.

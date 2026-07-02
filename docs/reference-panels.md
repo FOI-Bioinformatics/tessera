@@ -261,3 +261,26 @@ the end of the run; it needs skani (the command errors early if skani is absent)
 fetched from NCBI Virus are additionally tagged with the source `ncbi-datasets` -- their
 structured datasets lineage, captured during download in an `ncbi_lineages.tsv` sidecar,
 rather than a token mined back out of the header.
+
+## Detect reassortment across segments (`reassort`)
+
+The `detect`/`recomb` scan anchors a query to a single backbone and looks for *intragenic*
+recombination -- a crossover within one sequence. Segmented viruses (influenza, bunyaviruses,
+reoviruses) also reassort: they swap whole segments between parents. A concatenated multi-segment
+query has no single backbone, so that phenomenon is invisible to the single-backbone scan.
+
+`tessera reassort -q segments.fasta -o out/` handles it per segment. The query is a multi-FASTA
+with one record per segment; each segment is typed independently against its own Nextclade dataset
+(auto-detected, or pinned with `--dataset SEGMENT=path`), and its nearest reference tip gives a
+`(strain, clade, ANI)`. Because Nextclade flu trees label tips by strain name, the same strain
+appears across segment datasets, so the per-segment nearest strains can be compared: a query whose
+segments all trace to one parent strain is `clonal`; a query whose segments trace to disjoint
+strains is a `reassortant`. The clonal call depends on the parent strain being typed in *every*
+segment's dataset: only a fraction of strains are cross-typed across segments (for the H3N2 HA and
+NA datasets, roughly a quarter), so a genuinely clonal isolate whose exact strain is absent from
+one segment's tree can read `reassortant`. Widening `--ani-floor` tolerance or `TOP_K` (the nearest
+strains kept per segment) trades that bias against sensitivity. Segments below `--ani-floor` to
+every tip (or with no resolvable dataset) are reported `unassigned` and excluded from the call. Output is `out/reassortment.tsv`
+(one row per segment) plus a text mosaic and verdict. Needs skani; the typing step fetches each
+Nextclade dataset on first use. This v1 is assignment-only -- it reports which parent each segment
+came from, not intragenic recombination within a segment.

@@ -51,6 +51,7 @@ from tessera.discover.nextclade import (
 from tessera.discover.panel import skani_query_ani
 from tessera.discover.pool import select_regional
 from tessera.msa.build import MsaParams, build_msa
+from tessera.reassort import assign_segments
 from tessera.recomb.consensus import consensus_sequence
 from tessera.recomb.regions import DEFAULT_METHODS, parse_methods
 from tessera.recomb.run import RecombParams, run_recomb
@@ -596,15 +597,20 @@ def _prepare_frontier_species(case, logger):
     return setup, identity
 
 
-def _score_frontier_reassortant(out_dir, junction):
-    """Detection-gated: XPASS iff a called region overlaps the HA|NA junction. The
-    whole-segment-swap labeling is a documented KNOWN-LIMIT (not scored)."""
-    regions = parse_regions(out_dir / "recombination_regions.tsv")
-    present = [r for r in regions if r.get("donor_absent") != "yes"]
-    hit = any(int(r["query_start"]) <= junction <= int(r["query_end"]) for r in present)
-    if hit:
-        return "XPASS", f"breakpoint called at the HA|NA junction (~{junction} bp)"
-    return "XFAIL", f"no breakpoint at the HA|NA junction (~{junction} bp)"
+def _score_frontier_reassortant(result):
+    """Per-segment assignment: XPASS iff the segments trace to different parents
+    (``reassortant``). ``clonal`` (one parent explains both) is XFAIL; too few
+    assigned segments is a KNOWN-LIMIT (the probe could not type both segments)."""
+    mosaic = " | ".join(
+        f"{s.segment}:{s.clade} ({s.strain})" if s.status == "assigned"
+        else f"{s.segment}:unassigned"
+        for s in result.segments
+    )
+    if result.verdict == "reassortant":
+        return "XPASS", f"segments trace to different parents -- {mosaic}"
+    if result.verdict == "clonal":
+        return "XFAIL", f"one parent explains both segments -- {mosaic}"
+    return "KNOWN-LIMIT", f"too few segments typed to call -- {mosaic}"
 
 
 def _segment_consensus(path, clade_key, logger):
@@ -624,8 +630,11 @@ def _segment_consensus(path, clade_key, logger):
 
 
 def _prepare_frontier_reassortant(case, logger):
-    """Reassortant probe: query = HA_consensus[X] ++ NA_consensus[Y]; panel = the individual
-    segment consensuses. Returns ``(out_dir, junction)``; detection-gated only."""
+    """Reassortant probe: build a two-record query (HA consensus of clade X, NA consensus
+    of clade Y) and type each segment against its own Nextclade dataset via the
+    ``reassort`` command's ``assign_segments``. A reassortant is a query whose segments
+    trace to different parents -- the per-segment model the single-backbone scan cannot
+    represent. Returns the ``ReassortmentResult``."""
     name = case["name"]
     out = DATA / name
     out.mkdir(parents=True, exist_ok=True)
@@ -633,29 +642,17 @@ def _prepare_frontier_reassortant(case, logger):
     na = _segment_consensus(case["second_dataset"], case.get("clade_key"), logger)
     x = max(ha, key=lambda c: len(ha[c]))
     y = max(na, key=lambda c: len(na[c]))
-    query_seq = ha[x] + na[y]
-    junction = len(ha[x])
-    query = out / "hybrid.fasta"
+    query = out / "query.fasta"
     with open(query, "w") as fo:
-        write_fasta_record(fo, f"reassort_HA-{x}_NA-{y}", query_seq)
-    collection = out / "collection"
-    if collection.exists():
-        shutil.rmtree(collection)
-    collection.mkdir(parents=True)
-    for seg, cons in (("HA", ha), ("NA", na)):
-        for clade, seq in cons.items():
-            safe = re.sub(r"[^\w.-]+", "_", f"{seg}_{clade}")
-            with open(collection / f"{safe}.fasta", "w") as fo:
-                write_fasta_record(fo, safe, seq)
-    window, step, _sel = window_params(len(query_seq))
-    msa = out / "panel.msa.fasta"
-    build_msa(MsaParams(query=query, collection=collection, output=msa,
-                        aligner=case.get("aligner", "mafft"), threads=THREADS), logger)
-    run_recomb(RecombParams(msa=msa, output=out, query=strip_sequence_extension(query.name),
-                            window_size=window, window_step=step, organism=name,
-                            methods=parse_methods(",".join(DEFAULT_METHODS))), logger)
-    logger.info("[%s] reassortant HA:%s ++ NA:%s; junction at %d bp", name, x, y, junction)
-    return out, junction
+        write_fasta_record(fo, "HA", ha[x])
+        write_fasta_record(fo, "NA", na[y])
+    logger.info("[%s] reassortant probe: HA:%s + NA:%s -> typing each segment", name, x, y)
+    return assign_segments(
+        query,
+        dataset_overrides={"HA": case["dataset"], "NA": case["second_dataset"]},
+        email=os.environ.get("NCBI_EMAIL"),
+        logger=logger,
+    )
 
 
 def pick_parents_n(tips, reference, n, *, floor=0.0):
@@ -1374,8 +1371,8 @@ def _run_frontier_case(case: dict, logger: logging.Logger) -> dict:
             identity, rec["detected"], rec.get("backbone_ok", False), rec.get("donor_ok", False))
         return {"verdict": verdict, "detail": detail}
     if ct == "reassortant":
-        out_dir, junction = _prepare_frontier_reassortant(case, logger)
-        verdict, detail = _score_frontier_reassortant(out_dir, junction)
+        result = _prepare_frontier_reassortant(case, logger)
+        verdict, detail = _score_frontier_reassortant(result)
         return {"verdict": verdict, "detail": detail}
     raise CaseSkipped(f"unknown frontier case type {ct!r}")
 
