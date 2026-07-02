@@ -28,7 +28,7 @@ def _write_regions(tmp_path, rows):
     """rows: list of dicts with query_start/query_end/major_parent/minor_parent/methods/
     donor_absent. Writes recombination_regions.tsv + an empty profile."""
     cols = ["minor_parent", "major_parent", "query_start", "query_end", "methods",
-            "donor_absent"]
+            "donor_absent", "donor_undercovered"]
     lines = ["\t".join(cols)]
     for r in rows:
         lines.append("\t".join(str(r.get(c, "")) for c in cols))
@@ -117,6 +117,29 @@ def test_donor_absent_fail_on_misattribution(tmp_path):
     _write_regions(tmp_path, [
         {"minor_parent": "gC", "major_parent": "gA", "query_start": 120,
          "query_end": 180, "methods": "hmm,3seq", "donor_absent": "no"}])
+    setup = _setup(out=tmp_path, case_type="panel_donor_absent", clade_a="A", clade_b="B")
+    res = rh._score_regions(tmp_path, {"gA": "A", "gC": "C"}.get, setup, 5, "tip", 1.0)
+    assert res["pass"] is False
+
+
+def test_donor_absent_pass_on_undercovered_caveat(tmp_path):
+    # No donor_absent region, but the span-overlapping region is caveated
+    # donor_undercovered -> the tool acknowledged the missing donor -> PASS.
+    _write_regions(tmp_path, [
+        {"minor_parent": "gC", "major_parent": "gA", "query_start": 120,
+         "query_end": 180, "methods": "hmm,3seq", "donor_absent": "no",
+         "donor_undercovered": "yes"}])
+    setup = _setup(out=tmp_path, case_type="panel_donor_absent", clade_a="A", clade_b="B")
+    res = rh._score_regions(tmp_path, {"gA": "A", "gC": "C"}.get, setup, 5, "tip", 1.0)
+    assert res["pass"] is True
+
+
+def test_donor_absent_fail_on_clean_confident_misattribution(tmp_path):
+    # Confident, cross-clade, NOT undercovered -> a silent mis-attribution -> FAIL.
+    _write_regions(tmp_path, [
+        {"minor_parent": "gC", "major_parent": "gA", "query_start": 120,
+         "query_end": 180, "methods": "hmm,3seq", "donor_absent": "no",
+         "donor_undercovered": "no"}])
     setup = _setup(out=tmp_path, case_type="panel_donor_absent", clade_a="A", clade_b="B")
     res = rh._score_regions(tmp_path, {"gA": "A", "gC": "C"}.get, setup, 5, "tip", 1.0)
     assert res["pass"] is False
