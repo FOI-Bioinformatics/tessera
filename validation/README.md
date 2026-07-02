@@ -176,8 +176,13 @@ measures **specificity** (false positives), not only sensitivity. The default ru
   attribute the true one (a tie-break guard).
 
 An out-of-envelope case is `SKIP`ped, and a genuine attribution shortfall is reported as a FAIL,
-not hidden -- see `attribution-results.md` for the measured Phase-1 result (the current
-`panel_donor_absent` FAIL is a recorded next fix-target, not a regression).
+not hidden -- see `attribution-results.md` for the measured result.
+
+Phase 2 adds hard *topologies* via `make_mosaic` / `true_spans`: a `mosaic` case type with
+`pattern` in `{ABAC, AB_9010, AB_short, AB_terminal}` (multi-breakpoint 3-parent, asymmetric,
+sub-window short tract detection-gated, terminal breakpoint), and a `mask_sibling` case that
+requires the donor attributed *exactly* when a sibling sub-clade is present (a regression guard
+for the plurality-major major-parent fix).
 
 ### Observed performance (24 pathogens; one representative dataset each)
 

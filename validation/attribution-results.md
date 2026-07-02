@@ -247,3 +247,31 @@ Re-ran `python validation/run_hybrids.py` on the aligner env: **sensitivity 20/2
 1/1**, no case FAILs. `donorabsent_rsv` now PASSes (its region is flagged `donor_undercovered`),
 with no regression to the 18 positives, `lowdiv_rsv`, or `neg_measles` (the positives keep their
 true donor, so no coverage gap arises over the donor region and no new caveat is added).
+
+## Harder harness Phase 2 -- hard topologies + masking sibling
+
+Phase 2 generalises the single splice to a mosaic (`make_mosaic` / `true_spans`) and adds
+multi-breakpoint, asymmetric, short-tract, and terminal-breakpoint patterns plus a masking-sibling
+attribution case. Additive: the Phase-1 cases and scorers are unchanged. Measured on the aligner
+env: **sensitivity 24/25, specificity 1/1**, no regression to any Phase-1 case. Of the five new
+cases, four PASS and one is a recorded finding:
+
+- **`mosaic_dengue`** (ABAC, 3-parent multi-breakpoint, DENV2 backbone x DENV1 + DENV4 donors,
+  33.1%): PASS -- every non-backbone span recovered with the correct donor serotype and the
+  backbone correct. The segmentation handles multiple breakpoints.
+- **`terminal_mumps`** (AB_terminal, donor at the genome start, 6.9%): PASS -- the donor span is
+  recovered and the region sits within one window of query 0 (no whole-genome mis-call).
+- **`short_wnv`** (AB_short, a sub-window donor tract, 20.2%): PASS -- detection-gated only; a
+  region is called. Span recovery is reported (not required), since a sub-window tract may be
+  windowed away.
+- **`masksib_rsv`** (mask_sibling, donor `A.D.1.8` with sibling `A.D.5.2` present, 6.6%): PASS --
+  the donor is attributed **exactly** (not the sibling). This is a direct regression guard for the
+  plurality-major major-parent fix: the masking sibling does not win.
+- **`asym_measles`** (AB_9010, a 10% asymmetric donor tract, H1 x B3, 7.5%): **FAIL (recorded
+  finding)** -- the event is detected and the backbone is correct, but the small 10% donor span is
+  not recovered/attributed. A genuine sensitivity limit at small asymmetric tract sizes, surfaced
+  by the harder harness (the same way `donorabsent` was). It is not tuned away; it is a candidate
+  next fix-target (or a reclassification of AB_9010 to detection-gated in a later cycle).
+
+`panel_equidistant` and `neg_within` remain scaffolding without live entries (deferred as in
+Phase 1). Phase 3 (frontier inter-species / reassortment, XFAIL) remains a separate cycle.
