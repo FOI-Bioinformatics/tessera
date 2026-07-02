@@ -628,7 +628,8 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
     elif case_type == "mosaic":
         pattern = case["pattern"]
         n = 3 if pattern == "ABAC" else 2
-        parents = pick_parents_n(tips, reference, n, floor=case.get("min_divergence", 0.0))
+        parents = pick_parents_n(tips, reference, n,
+                                 floor=case.get("min_divergence", MIN_DIVERGENCE))
         clade_a, src_a = parents[0]  # backbone = the largest clade
         clade_b, src_b = parents[1]
         muts = {c: tips[s][1] for c, s in parents}
@@ -848,6 +849,14 @@ def _build_and_score(
             raise CaseSkipped(
                 f"donor clade {setup.clade_b!r} has no panel representative "
                 "after the source genome was removed")
+        # A mosaic scores every non-backbone span, so each of its donor clades (e.g. the
+        # third parent in ABAC) must remain represented; a dropped one is a SKIP, not a FAIL.
+        if setup.case_type == "mosaic":
+            for _q0, _q1, donor in setup.true_spans:
+                if not any(donor_match(c, donor, setup.clade_a) for c in panel_clades):
+                    raise CaseSkipped(
+                        f"mosaic donor clade {donor!r} has no panel representative "
+                        "after the source genome was removed")
 
         def clade_of(label: str) -> str:
             return clade_of_label(label, setup.tips)
