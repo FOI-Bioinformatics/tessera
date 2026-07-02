@@ -89,6 +89,32 @@ def test_build_pool_failure_is_non_fatal(tmp_path, monkeypatch):
     assert status["NA"] == "assigned"
 
 
+def test_resolve_dataset_failure_is_non_fatal(tmp_path, monkeypatch):
+    # resolve_dataset raises for HA (no dataset maps); HA -> unassigned, NA still assigned.
+    na_tip = tmp_path / "NA_pool" / "strainB.fasta"
+    na_tip.parent.mkdir(parents=True, exist_ok=True)
+    na_tip.write_text(">x\nACGT\n")
+
+    def resolve(fasta, override, *, email, logger):
+        if "HA" in fasta.read_text():
+            raise RuntimeError("no dataset maps to this segment")
+        return _DS("NA_ds")
+
+    monkeypatch.setattr(assign, "skani_available", lambda: True)
+    monkeypatch.setattr(assign, "resolve_dataset", resolve)
+    monkeypatch.setattr(assign, "nextclade_cache", lambda p, t, override=None: Path("/x"))
+    monkeypatch.setattr(assign, "build_pool", lambda ds, *, cache_dir, logger: [na_tip])
+    monkeypatch.setattr(assign, "skani_query_ani",
+                        lambda q, refs, logger: {na_tip: (99.0, 0.99)})
+    monkeypatch.setattr(assign, "_clade_of_tip", lambda tip: "cladeX")
+
+    q = _write_query(tmp_path, [("HA", "HAxx"), ("NA", "NAyy")])
+    result = assign_segments(q, logger=LOG)
+    status = {s.segment: s.status for s in result.segments}
+    assert status["HA"] == "unassigned"
+    assert status["NA"] == "assigned"
+
+
 def test_missing_skani_raises(tmp_path, monkeypatch):
     from tessera.core.errors import UserInputError
     monkeypatch.setattr(assign, "skani_available", lambda: False)
