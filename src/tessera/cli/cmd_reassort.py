@@ -29,7 +29,7 @@ def reassort(
     email: str | None = typer.Option(
         None, "--email", help="Contact email for NCBI dataset auto-detection (or NCBI_EMAIL)."
     ),
-    dataset: list[str] = typer.Option(
+    dataset: list[str] | None = typer.Option(
         None, "--dataset",
         help="Override a segment's Nextclade dataset, as SEGMENT=path (repeatable).",
     ),
