@@ -91,7 +91,8 @@ def scan_segment(
 ) -> SegmentScan:
     """Scan one segment for intragenic recombination. Never raises: a failure is recorded as
     ``scanned=False`` so the caller can continue with the other segments."""
-    seg_dir = out_dir / re.sub(r"[^\w.-]+", "_", segment)
+    seg_name = re.sub(r"[^\w.-]+", "_", segment)
+    seg_dir = out_dir / seg_name
     try:
         panel = build_pool(
             dataset,
@@ -110,10 +111,12 @@ def scan_segment(
         for p in panel:
             shutil.copy(p, collection / p.name)
             rows.append((strip_sequence_extension(p.name), _clade_of_header(p), "consensus"))
-        query = seg_dir / "query.fasta"
+        # build_msa labels the query leaf by the file's stem, so name the file after the
+        # segment; run_recomb must then look the query up by that same stem.
+        query = seg_dir / f"{seg_name}.fasta"
         with open(query, "w") as fo:
-            write_fasta_record(fo, segment, seq)
-        rows.append((segment, "query", "query"))
+            write_fasta_record(fo, seg_name, seq)
+        rows.append((seg_name, "query", "query"))
         write_lineage_map(seg_dir / LINEAGES_TSV, rows)
         lineage_map = lineage_map_from_rows(rows)
 
@@ -121,7 +124,7 @@ def scan_segment(
         msa = seg_dir / "panel.msa.fasta"
         build_msa(
             MsaParams(query=query, collection=collection, output=msa, aligner=aligner), logger)
-        run_recomb(RecombParams(msa=msa, output=seg_dir, query=segment,
+        run_recomb(RecombParams(msa=msa, output=seg_dir, query=seg_name,
                                 window_size=window, window_step=step, organism=segment,
                                 methods=DEFAULT_METHODS, lineage_map=lineage_map), logger)
     except Exception as exc:  # noqa: BLE001 - a per-segment scan failure is non-fatal
