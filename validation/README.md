@@ -160,6 +160,25 @@ mpox, VZV, ebola, SARS-CoV-2 within Omicron), or it has fewer than two clades wi
 at least three genomes -- including datasets with no clade attribute at all
 (hantavirus, Oropouche, CCHFV).
 
+### Harder cases: precision as well as recall
+
+Beyond the single-insert positives above, the harness carries additional `case_type`s so it
+measures **specificity** (false positives), not only sensitivity. The default run prints both
+`sensitivity P/N` and `specificity Q/M` lines. Phase-1 case types:
+
+- `neg_pure` -- a pure, non-recombinant genome that must yield **zero** recombinant regions.
+- `low_div` -- pins the *closest* viable clade pair (`pair_objective: "min"`, within a
+  `divergence_band`) and **requires** backbone + donor at the correct top-level clade, with no
+  sub-4% relaxation, testing attribution near the informative-site floor.
+- `panel_donor_absent` -- removes the true donor clade from the panel; the run must report a
+  coverage gap rather than mis-attribute the region to a present sibling.
+- `panel_equidistant` -- two candidate donors equally close to the query; the caller must
+  attribute the true one (a tie-break guard).
+
+An out-of-envelope case is `SKIP`ped, and a genuine attribution shortfall is reported as a FAIL,
+not hidden -- see `attribution-results.md` for the measured Phase-1 result (the current
+`panel_donor_absent` FAIL is a recorded next fix-target, not a regression).
+
 ### Observed performance (24 pathogens; one representative dataset each)
 
 | case | backbone x donor | divergence | result |
