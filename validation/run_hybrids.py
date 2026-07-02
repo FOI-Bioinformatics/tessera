@@ -113,7 +113,7 @@ HYBRIDS: list[dict] = [
     # scorer and helper are kept (unit-tested) for a later cycle with a fairer panel.
     {"name": "lowdiv_rsv", "dataset": "nextstrain/rsv/a/EPI_ISL_412866",
      "case_type": "low_div", "pair_objective": "min",
-     "divergence_band": [1.0, 6.0], "min_divergence": 1.0},
+     "divergence_band": [1.0, 4.0], "min_divergence": 1.0},
     {"name": "donorabsent_rsv", "dataset": "nextstrain/rsv/a/EPI_ISL_412866",
      "case_type": "panel_donor_absent"},
 ]
@@ -350,7 +350,7 @@ def clade_representative(members: list[str], tips: dict[str, tuple[str, list[str
 
 def pick_parents(
     tips: dict[str, tuple[str, list[str]]], reference: str, pinned: list[str],
-    logger: logging.Logger, *, objective: str = "max",
+    logger: logging.Logger, *, objective: str = "max", floor: float = MIN_DIVERGENCE,
 ) -> tuple[str, str, str, str]:
     """Return ``(clade_a, clade_b, source_a, source_b)``.
 
@@ -391,7 +391,7 @@ def pick_parents(
             for cb in clades[i + 1:]:
                 div = 100.0 - pct_identity(rep_seq[ca], rep_seq[cb])
                 if objective == "min":
-                    if div >= MIN_DIVERGENCE and (best is None or div < best[0]):
+                    if div >= floor and (best is None or div < best[0]):
                         best = (div, ca, cb)
                 else:
                     if best is None or div > best[0]:
@@ -555,7 +555,8 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
     else:  # single_insert, low_div, panel_donor_absent, panel_equidistant
         clade_a, clade_b, src_a, src_b = pick_parents(
             tips, reference, case.get("clades", []), logger,
-            objective=case.get("pair_objective", "max"))
+            objective=case.get("pair_objective", "max"),
+            floor=case.get("min_divergence", MIN_DIVERGENCE))
         divergence = 100.0 - pct_identity(
             reconstruct_gapped(reference, tips[src_a][1]),
             reconstruct_gapped(reference, tips[src_b][1]),

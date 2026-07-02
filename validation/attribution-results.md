@@ -202,10 +202,16 @@ sensitivity 19/20   specificity 1/1 (0 false calls)   (6 skipped, 0 error)
 - **No regression:** all 18 previously-passing positives still PASS.
 - **Specificity (new):** `neg_measles` -- a pure, non-recombinant measles genome -- yields **zero**
   recombinant regions (PASS). The harness now has a false-positive axis it never had before.
-- **Low-divergence attribution (new):** `lowdiv_rsv` pins the *closest* viable RSV-A pair
-  (`A.3` x `A.D.3.3`, **4.0%** divergence, the least-divergent pair above the 1% floor) and
-  **requires** backbone + donor at the correct top-level clade (no <4% free pass). It PASSes with
-  both exact -- attribution holds down to 4% on RSV-A's fine sub-clades.
+- **Low-divergence attribution (new):** `lowdiv_rsv` pins the *closest* viable RSV-A pair above a
+  1% floor (`A.D.1` x `A.D.2`, **1.0%** divergence) and **requires** backbone + donor at the
+  correct top-level clade -- no sub-4% free pass, unlike the positive cases which drop the backbone
+  requirement below 4%. It PASSes: the event is detected and both parents are placed at the correct
+  top level. Honest caveat: RSV-A's clades all share the top-level label `A`, so on this dataset the
+  top-level requirement is lenient -- at 1% the observed backbone sub-clade (`A.D.5.1`) does not
+  match the true `A.D.1`, which the top-level floor permits. The case therefore demonstrates
+  detection plus coarse attribution at 1%, not exact sub-clade resolution; a dataset with distinct
+  top-level clades a few percent apart would exercise the requirement more strictly (a Phase-2
+  refinement).
 - **Panel-adversarial finding (`donorabsent_rsv`, FAIL -- recorded, not hidden):** with the true
   donor clade `A.D.1.8` removed from the panel, the caller **mis-attributes** the donated region to
   a present `A.D` sibling rather than flagging it as a coverage gap / donor-absent region. At 6.6%
@@ -216,6 +222,8 @@ sensitivity 19/20   specificity 1/1 (0 false calls)   (6 skipped, 0 error)
 `neg_within` (a within-clade splice that should not read as cross-clade) was **deferred**: the
 panel reduction under test collapses a clade to a single representative, so a within-clade mosaic's
 two same-clade sources cannot both be represented at detection time, which makes the case unfair
-until a later cycle supplies a fairer panel. Its scorer and helper are kept (unit-tested). Phase 2
-(multi-breakpoint / short-tract topologies) and Phase 3 (frontier inter-species / reassortment,
-XFAIL) remain separate cycles.
+until a later cycle supplies a fairer panel. Its scorer and helper are kept (unit-tested).
+`panel_equidistant` (a donor tie-break guard) is likewise implemented and unit-tested but not yet
+given a live `HYBRIDS` entry -- its clade + decoy pins need a probe run to choose two equidistant
+donors, deferred with `neg_within`. Phase 2 (multi-breakpoint / short-tract topologies) and Phase 3
+(frontier inter-species / reassortment, XFAIL) remain separate cycles.
