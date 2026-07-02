@@ -1152,12 +1152,47 @@ def compare_case(case: dict, logger: logging.Logger) -> dict:
     }
 
 
+def _select_cases(cases, *, names, frontier):
+    """Filter HYBRIDS by name and by tier: frontier cases run only when ``frontier`` is
+    set, must_pass cases only when it is not."""
+    want = "frontier" if frontier else "must_pass"
+    return [c for c in cases
+            if (not names or c["name"] in names)
+            and c.get("tier", "must_pass") == want]
+
+
+def _run_frontier(cases: list[dict], logger: logging.Logger) -> int:
+    """Run the frontier (known-limitation) cases and print a separate XPASS/XFAIL/
+    KNOWN-LIMIT/SKIP table. Always returns 0: a frontier outcome is never a regression."""
+    print(f"\nTessera FRONTIER probes -- {len(cases)} case(s) (known limitations)\n" + "=" * 72)
+    for case in cases:
+        try:
+            rec = _run_frontier_case(case, logger)
+            print(f"[{rec['verdict']:11}] {case['name']:16} {rec.get('detail', '')}")
+        except CaseSkipped as exc:
+            print(f"[SKIP       ] {case['name']:16} {exc}")
+        except Exception as exc:  # noqa: BLE001 - report, never fail the batch
+            logger.exception("[%s] frontier ERROR", case["name"])
+            print(f"[ERROR      ] {case['name']:16} {type(exc).__name__}: {exc}")
+    print("\n(frontier probes measure the envelope; they never count as a regression)")
+    return 0
+
+
+def _run_frontier_case(case: dict, logger: logging.Logger) -> dict:
+    """Dispatch a frontier case to its prepare + score. Case types are added in later
+    tasks; returns ``{"verdict": ..., "detail": ...}``."""
+    raise CaseSkipped(f"unknown frontier case type {case.get('case_type')!r}")
+
+
 def main(argv: list[str]) -> int:
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
     logger = logging.getLogger("tessera")
     compare = "--compare" in argv
+    frontier = "--frontier" in argv
     names = [a for a in argv if not a.startswith("-")]
-    cases = [c for c in HYBRIDS if not names or c["name"] in names]
+    cases = _select_cases(HYBRIDS, names=names, frontier=frontier)
+    if frontier:
+        return _run_frontier(cases, logger)
     if compare:
         return _run_compare(cases, logger)
     return _run_default(cases, logger)
