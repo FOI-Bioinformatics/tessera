@@ -128,6 +128,14 @@ HYBRIDS: list[dict] = [
      "case_type": "mosaic", "pattern": "AB_terminal"},
     {"name": "masksib_rsv", "dataset": "nextstrain/rsv/a/EPI_ISL_412866",
      "case_type": "mask_sibling", "clades": ["A.1", "A.D.1.8"]},
+    # Phase-3 frontier probes: run only under --frontier, scored XPASS/XFAIL/KNOWN-LIMIT
+    # in a separate block that never counts as a must-pass regression.
+    {"name": "interspecies_rsv", "tier": "frontier", "case_type": "inter_species",
+     "dataset": "nextstrain/rsv/a/EPI_ISL_412866",
+     "second_dataset": "nextstrain/rsv/b/EPI_ISL_1653999"},
+    {"name": "reassort_flu", "tier": "frontier", "case_type": "reassortant",
+     "dataset": "nextstrain/flu/h3n2/ha/EPI1857216",
+     "second_dataset": "nextstrain/flu/h3n2/na/EPI1857215"},
 ]
 INSERT = (0.35, 0.65)  # donor (clade B) occupies this fraction of the genome
 MIN_GENOME = 400  # skip a dataset whose genome/segment is too short to splice
