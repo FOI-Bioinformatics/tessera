@@ -76,6 +76,8 @@ def _summarize_regions(path: Path) -> tuple[int, bool]:
     absent_idx = header.index("donor_absent") if "donor_absent" in header else None
     n = 0
     for ln in lines[1:]:
+        if not ln.strip():
+            continue
         fields = ln.split("\t")
         if absent_idx is not None and absent_idx < len(fields) and fields[absent_idx] == "yes":
             continue
