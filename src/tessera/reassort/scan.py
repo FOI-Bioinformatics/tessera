@@ -18,7 +18,7 @@ from pathlib import Path
 from ..core.cache import nextclade_cache
 from ..core.errors import UserInputError
 from ..core.io import strip_sequence_extension, write_fasta_record
-from ..discover.nextclade import build_pool
+from ..discover.nextclade import NON_CLADE_MARKERS, build_pool
 from ..msa.build import MsaParams, build_msa
 from ..recomb.regions import DEFAULT_METHODS
 from ..recomb.run import RecombParams, run_recomb
@@ -64,7 +64,7 @@ def _clade_of_header(path: Path) -> str:
     it is not a tree-derived clade (an example genome or an untyped tip)."""
     parts = first_header(path).split(None, 1)
     clade = parts[1].strip() if len(parts) > 1 else ""
-    return clade if clade and clade not in {"example", "NA", "?"} else "?"
+    return "?" if clade in NON_CLADE_MARKERS else clade
 
 
 def _summarize_regions(path: Path) -> tuple[int, bool]:

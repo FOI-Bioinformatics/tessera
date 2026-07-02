@@ -17,7 +17,7 @@ from pathlib import Path
 from ..core.cache import nextclade_cache
 from ..core.errors import ToolExecutionError, UserInputError
 from ..core.io import read_fasta, strip_sequence_extension, write_fasta_record
-from ..discover.nextclade import build_pool, resolve_dataset
+from ..discover.nextclade import NON_CLADE_MARKERS, build_pool, resolve_dataset
 from ..discover.panel import skani_available, skani_query_ani
 from ..recomb.typing import first_header
 from .constellation import DEFAULT_MARGIN, ParentGroup, call_constellation
@@ -47,22 +47,21 @@ class ReassortmentResult:
     scans: list[SegmentScan] = field(default_factory=list)
 
 
-_NON_CLADE = {"", "example", "NA", "?"}  # header markers that are not a tree-derived clade
-
-
 def _clade_of_tip(tip: Path) -> str | None:
     """The clade from a reconstructed tip's header ``>{strain} {clade}`` (2nd token), or None
     when the tip is not clade-typed (an example genome or an untyped tip)."""
     parts = first_header(tip).split(None, 1)
     clade = parts[1].strip() if len(parts) > 1 else ""
-    return None if clade in _NON_CLADE else clade
+    return None if clade in NON_CLADE_MARKERS else clade
 
 
 def _type_segment(seg, seq, overrides, ani_floor, email, cache_dir, tmp, logger):
     """Type one segment. Returns ``(SegmentAssignment, candidates, universe, dataset)`` where
     ``candidates`` is ``[(strain, ani)]`` best-first (empty if unassigned), ``universe`` is every
     strain in the dataset (empty if unassigned), and ``dataset`` is the resolved Nextclade dataset
-    (``None`` if resolution/typing failed). Never raises for this segment."""
+    (``None`` if no dataset maps). Returns an unassigned row for genuine per-segment skips (no
+    dataset, or a skani rejection of a short/odd segment); a transient failure (a download/network
+    error, or any unexpected error) propagates so it surfaces rather than reading as unassigned."""
     seg_fasta = Path(tmp) / f"{strip_sequence_extension(seg)}.fasta"
     with open(seg_fasta, "w") as fo:
         write_fasta_record(fo, seg, seq)

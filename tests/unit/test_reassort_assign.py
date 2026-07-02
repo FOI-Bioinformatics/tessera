@@ -81,6 +81,25 @@ def test_build_pool_error_propagates(tmp_path, monkeypatch):
         assign_segments(q, logger=LOG)
 
 
+def test_build_pool_download_error_propagates(tmp_path, monkeypatch):
+    # The real download-failure mode is UserInputError from _download_text; it must surface,
+    # not be caught by the ToolExecutionError (short-segment) handler (audit #10).
+    from tessera.core.errors import UserInputError
+
+    def build_pool(ds, *, cache_dir, logger):
+        raise UserInputError("Could not download https://.../tree.json: timed out")
+
+    monkeypatch.setattr(assign, "skani_available", lambda: True)
+    monkeypatch.setattr(assign, "resolve_dataset",
+                        lambda fasta, override, *, email, logger: _DS("HA_ds"))
+    monkeypatch.setattr(assign, "nextclade_cache", lambda p, t, override=None: Path("/x"))
+    monkeypatch.setattr(assign, "build_pool", build_pool)
+
+    q = _write_query(tmp_path, [("HA", "HAxx")])
+    with pytest.raises(UserInputError, match="Could not download"):
+        assign_segments(q, logger=LOG)
+
+
 def test_skani_short_segment_is_non_fatal(tmp_path, monkeypatch):
     # skani rejects a very short / odd segment with ToolExecutionError -> a genuine per-segment
     # skip: HA unassigned, NA still assigned, run continues.

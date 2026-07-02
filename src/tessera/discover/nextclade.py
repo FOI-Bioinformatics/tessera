@@ -43,6 +43,11 @@ NEXTCLADE = ToolCapabilities(
 
 # A nuc mutation: ref-base, 1-based position, alt-base ('-' = deletion).
 _MUT = re.compile(r"^([A-Za-z])(\d+)([A-Za-z-])$")
+
+# Clade-slot header tokens that are not a real tree-derived clade: an example genome
+# (``example``), an untyped tip (``NA``/``?``), or an absent token (``""``). Consumers that
+# read a pool genome's clade should treat these as "no clade".
+NON_CLADE_MARKERS = frozenset({"", "example", "NA", "?"})
 # Clade-label node attributes in priority order. The dataset-specific informative
 # labels come first -- Nextclade_pango / clade_nextstrain (SARS-CoV-2), LANL_subtype
 # (HIV) -- then clade_membership, the universal key present in most datasets but often
