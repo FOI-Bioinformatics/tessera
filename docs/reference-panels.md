@@ -271,16 +271,28 @@ query has no single backbone, so that phenomenon is invisible to the single-back
 
 `tessera reassort -q segments.fasta -o out/` handles it per segment. The query is a multi-FASTA
 with one record per segment; each segment is typed independently against its own Nextclade dataset
-(auto-detected, or pinned with `--dataset SEGMENT=path`), and its nearest reference tip gives a
-`(strain, clade, ANI)`. Because Nextclade flu trees label tips by strain name, the same strain
-appears across segment datasets, so the per-segment nearest strains can be compared: a query whose
-segments all trace to one parent strain is `clonal`; a query whose segments trace to disjoint
-strains is a `reassortant`. The clonal call depends on the parent strain being typed in *every*
-segment's dataset: only a fraction of strains are cross-typed across segments (for the H3N2 HA and
-NA datasets, roughly a quarter), so a genuinely clonal isolate whose exact strain is absent from
-one segment's tree can read `reassortant`. Widening `--ani-floor` tolerance or `TOP_K` (the nearest
-strains kept per segment) trades that bias against sensitivity. Segments below `--ani-floor` to
-every tip (or with no resolvable dataset) are reported `unassigned` and excluded from the call. Output is `out/reassortment.tsv`
-(one row per segment) plus a text mosaic and verdict. Needs skani; the typing step fetches each
-Nextclade dataset on first use. This v1 is assignment-only -- it reports which parent each segment
-came from, not intragenic recombination within a segment.
+(auto-detected, or pinned with `--dataset SEGMENT=path`), and its nearest reference tips give a
+`(strain, clade, ANI)`.
+
+Because Nextclade flu trees label tips by strain name, the same strain appears across segment
+datasets, so the per-segment nearest strains can be compared. The call is pairwise and
+coverage-aware: two segments are concordant when a strain is near-best (within `--margin` ANI
+points, default 0.5) for both, discordant when a near-best parent of one is typed in the other's
+tree but not near-best there (different parents), and uninformative when neither's near-best parents
+appear in the other's tree. A query is `reassortant` when any pair is discordant, `clonal` when the
+concordant pairs link every segment to one parent, and `undetermined` when cross-typing is too
+sparse to decide. Treating missing cross-typing as "cannot tell" rather than as disagreement is what
+keeps a clonal whole-genome isolate from reading `reassortant` as segment count grows.
+
+Segments are grouped into parent constellations (written to `out/constellation.tsv`, one row per
+group); a `parent_group` column in `out/reassortment.tsv` records each segment's group. A group whose
+segments are linked only transitively (segment A shares a strain with B, B with C, but A and C share
+none) has no single spanning strain, so its `parent_strains` is empty and the text mosaic shows `?`
+for it; the verdict is still `clonal` because no pair disagrees. Segments
+below `--ani-floor` to every tip, or aligning over too little of their length, or with no resolvable
+dataset, are reported `unassigned` and excluded from the call. Because there is no influenza taxon
+alias, flu auto-typing needs the `nextclade` CLI (for `nextclade sort`) or explicit `--dataset
+SEGMENT=path` overrides; without either, each flu segment resolves to nothing and is left
+unassigned. Needs skani; the typing step fetches each Nextclade dataset on first use. This is
+assignment-only -- it reports which parent each segment came from, not intragenic recombination
+within a segment.
