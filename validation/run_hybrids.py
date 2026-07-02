@@ -116,6 +116,18 @@ HYBRIDS: list[dict] = [
      "divergence_band": [1.0, 4.0], "min_divergence": 1.0},
     {"name": "donorabsent_rsv", "dataset": "nextstrain/rsv/a/EPI_ISL_412866",
      "case_type": "panel_donor_absent"},
+    # Phase-2 hard topologies + masking sibling. Multi-parent / segmented patterns reuse
+    # existing datasets; datasets with too few clades CaseSkip.
+    {"name": "mosaic_dengue", "dataset": "nextstrain/dengue/all",
+     "case_type": "mosaic", "pattern": "ABAC"},
+    {"name": "asym_measles", "dataset": "nextstrain/measles/genome/WHO-2012",
+     "case_type": "mosaic", "pattern": "AB_9010"},
+    {"name": "short_wnv", "dataset": "nextstrain/wnv/all-lineages",
+     "case_type": "mosaic", "pattern": "AB_short"},
+    {"name": "terminal_mumps", "dataset": "nextstrain/mumps/genome",
+     "case_type": "mosaic", "pattern": "AB_terminal"},
+    {"name": "masksib_rsv", "dataset": "nextstrain/rsv/a/EPI_ISL_412866",
+     "case_type": "mask_sibling", "clades": ["A.1", "A.D.1.8"]},
 ]
 INSERT = (0.35, 0.65)  # donor (clade B) occupies this fraction of the genome
 MIN_GENOME = 400  # skip a dataset whose genome/segment is too short to splice
