@@ -94,11 +94,14 @@ def scan_segment(
     seg_name = re.sub(r"[^\w.-]+", "_", segment)
     seg_dir = out_dir / seg_name
     try:
-        panel = build_pool(
+        pool = build_pool(
             dataset,
             cache_dir=nextclade_cache(dataset.path, dataset.tag, override=cache_dir),
             logger=logger, per_clade_consensus=True,
         )
+        # build_pool also appends raw example strains; the scan wants a clean per-clade
+        # panel, so keep only the denoised consensus genomes ({clade}_consensus).
+        panel = [p for p in pool if strip_sequence_extension(p.name).endswith("_consensus")]
         if len(panel) < 2:
             return SegmentScan(segment, False, False, 0, "single-clade panel")
 

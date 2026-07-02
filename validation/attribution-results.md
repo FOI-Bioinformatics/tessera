@@ -328,16 +328,19 @@ consensus (also repairs `detect`'s consensus-pool mode); (2) `build_msa` labels 
 query file's stem, so the query file is now named after the segment and `run_recomb` looks it up by
 that stem.
 
-Measured on the aligner env with a synthetic query (an HA record spliced from two H3N2 HA clade
-consensuses -- J.2.2 first half, J.2 second half -- plus a single-clade NA control): the command
-completes, assigns both segments, builds each panel, aligns, and runs the scan; `segment_scan.tsv`
-reports a region for **both** HA and NA. The result is **not a clean demonstration of localized
-intragenic recombination**: each called region spans almost the entire segment (HA 51-1651 of ~1700;
-NA 40-1380 of ~1439) and is attributed to arbitrary clades rather than the spliced J.2.2/J.2 parents,
-and the single-clade NA control is also flagged. This reflects the synthetic construction -- a
-consensus-vs-consensus query against a broad panel that `build_pool` populates with per-clade
-consensuses plus individual example strains -- rather than a localized crossover. So the plumbing is
-demonstrated (panel build, alignment, per-segment `run_recomb`, non-fatal handling, rollup), but the
-probe does not yet show clean intragenic localization or specificity. Recorded as measured; not
-retuned. A discriminating probe needs a real recombinant genome (not a consensus splice) against a
-consensus-only panel, which is follow-up work.
+A third issue was found while validating: `build_pool` appends raw example strains to the pool even
+in consensus mode, so the scan filters its panel to the denoised `{clade}_consensus` genomes only.
+
+Measured on the aligner env with a synthetic HA record spliced from two **divergent** H3N2 HA clade
+consensuses (J.2.2 first half + K second half, junction ~859 bp) plus a single-clade NA control: the
+scan detects and **localizes** the HA recombination -- a `J.2.2_consensus` region over query 53-837,
+i.e. the J.2.2 first half ending at the junction. Two caveats, both consistent with the recomb
+detector's documented low-divergence behavior and recorded rather than retuned: (1) a second,
+full-length region is co-called over HA and attributed to distant clades (the near-identical adjacent
+consensuses give the caller little to separate, so it also emits a genome-spanning region); (2) the
+single-clade NA control is itself flagged with one region (a specificity limit at low divergence).
+Splicing two *adjacent* clades instead (J.2.2 + its child J.2) localizes nothing -- too little
+between-parent divergence -- the same limit the main harness documents for low-divergence pairs. So
+`--scan-segments` demonstrably detects and localizes intragenic recombination given divergent parents;
+its specificity and attribution at low divergence inherit the single-backbone scan's known limits. A
+cleaner probe would use a real recombinant genome rather than a consensus splice.

@@ -92,6 +92,21 @@ def test_scan_segment_runs_recomb_and_summarizes(tmp_path, monkeypatch):
     assert (tmp_path / "out" / "HA" / "recombination_regions.tsv").exists()
 
 
+def test_scan_segment_keeps_only_consensus_genomes(tmp_path, monkeypatch):
+    # build_pool also returns raw example strains; the scan panel must keep only *_consensus.
+    # Here one consensus + one example -> only one consensus -> single-clade panel skip.
+    pool = tmp_path / "pool"
+    pool.mkdir()
+    cons = pool / "A_consensus.fasta"
+    cons.write_text(">A_consensus A\nACGT\n")
+    example = pool / "A_Texas_2_2021.fasta"
+    example.write_text(">A_Texas_2_2021 example\nACGT\n")
+    _stub_pool(monkeypatch, [cons, example])
+    result = scan_segment("HA", "ACGT", _DS(), tmp_path / "out", aligner="mafft",
+                          cache_dir=None, logger=LOG)
+    assert result == SegmentScan("HA", False, False, 0, "single-clade panel")
+
+
 def test_scan_segment_failure_is_non_fatal(tmp_path, monkeypatch):
     pool = tmp_path / "pool"
     pool.mkdir()
