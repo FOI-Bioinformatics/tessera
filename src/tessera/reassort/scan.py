@@ -119,7 +119,7 @@ def scan_segment(
         query = seg_dir / f"{seg_name}.fasta"
         with open(query, "w") as fo:
             write_fasta_record(fo, seg_name, seq)
-        rows.append((seg_name, "query", "query"))
+        rows.append((seg_name, seg_name, "query"))  # the query's lineage label is the segment name
         write_lineage_map(seg_dir / LINEAGES_TSV, rows)
         lineage_map = lineage_map_from_rows(rows)
 
