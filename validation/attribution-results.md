@@ -274,4 +274,30 @@ cases, four PASS and one is a recorded finding:
   next fix-target (or a reclassification of AB_9010 to detection-gated in a later cycle).
 
 `panel_equidistant` and `neg_within` remain scaffolding without live entries (deferred as in
-Phase 1). Phase 3 (frontier inter-species / reassortment, XFAIL) remains a separate cycle.
+Phase 1).
+
+## Harder harness Phase 3 -- frontier (inter-species + reassortment)
+
+Phase 3 probes the edges of the design envelope. Frontier cases run only under `--frontier`, are
+scored **XPASS / XFAIL / KNOWN-LIMIT / SKIP** in a separate table, and can never count as a
+must-pass regression (`_run_frontier` always returns 0). The must-pass headline is unchanged when
+`--frontier` is not passed. Measured on the aligner env:
+
+```
+[XPASS      ] interspecies_rsv   identity 0.81, detected + attributed
+[XFAIL      ] reassort_flu       no breakpoint at the HA|NA junction (~1718 bp)
+```
+
+- **`interspecies_rsv`** (RSV-A backbone x RSV-B donor). The cross-species pair is spliced from two
+  *reconstructed* genomes by length fraction, since the two species' tips use different references;
+  the envelope identity is a genuine **skani ANI** (a position-wise `pct_identity` on the unaligned,
+  different-length genomes is meaningless -- an early version reported a bogus 29% and was fixed).
+  At **81% ANI** -- right at the HMM's 0.80 identity floor -- the recombinant is **detected and
+  attributed** (XPASS). So inter-species recombination at the edge of the envelope is within reach;
+  a more divergent species pair (< 80% ANI) would fall to KNOWN-LIMIT.
+- **`reassort_flu`** (flu H3N2 HA + NA). A reassortant query `HA_consensus[X] ++ NA_consensus[Y]`
+  over a panel of the individual segment consensuses. Detection-gated: **XFAIL** -- no breakpoint is
+  called at the HA|NA junction. This is the documented **known-limitation**: the single-backbone,
+  reference-anchored MSA model has no concept of a whole-segment swap, so a reassortment junction
+  between two independent segments is not surfaced as a recombination. Reported as a probe outcome,
+  not a regression.
