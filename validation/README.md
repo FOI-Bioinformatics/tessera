@@ -184,6 +184,12 @@ sub-window short tract detection-gated, terminal breakpoint), and a `mask_siblin
 requires the donor attributed *exactly* when a sibling sub-clade is present (a regression guard
 for the plurality-major major-parent fix).
 
+Phase 3 adds **frontier** probes behind `--frontier` (`python validation/run_hybrids.py
+--frontier`): `inter_species` (a cross-species recombinant, envelope measured by skani ANI vs the
+0.80 HMM floor) and `reassortant` (a segment swap, detection-gated at the segment junction). They
+are scored `XPASS`/`XFAIL`/`KNOWN-LIMIT` in a separate table that can never count as a regression;
+without the flag the must-pass headline is unchanged.
+
 ### Observed performance (24 pathogens; one representative dataset each)
 
 | case | backbone x donor | divergence | result |

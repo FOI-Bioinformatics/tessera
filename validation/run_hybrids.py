@@ -48,6 +48,7 @@ from tessera.discover.nextclade import (
     build_pool,
     resolve_dataset,
 )
+from tessera.discover.panel import skani_query_ani
 from tessera.discover.pool import select_regional
 from tessera.msa.build import MsaParams, build_msa
 from tessera.recomb.consensus import consensus_sequence
@@ -128,6 +129,14 @@ HYBRIDS: list[dict] = [
      "case_type": "mosaic", "pattern": "AB_terminal"},
     {"name": "masksib_rsv", "dataset": "nextstrain/rsv/a/EPI_ISL_412866",
      "case_type": "mask_sibling", "clades": ["A.1", "A.D.1.8"]},
+    # Phase-3 frontier probes: run only under --frontier, scored XPASS/XFAIL/KNOWN-LIMIT
+    # in a separate block that never counts as a must-pass regression.
+    {"name": "interspecies_rsv", "tier": "frontier", "case_type": "inter_species",
+     "dataset": "nextstrain/rsv/a/EPI_ISL_412866",
+     "second_dataset": "nextstrain/rsv/b/EPI_ISL_1653999"},
+    {"name": "reassort_flu", "tier": "frontier", "case_type": "reassortant",
+     "dataset": "nextstrain/flu/h3n2/ha/EPI1857216",
+     "second_dataset": "nextstrain/flu/h3n2/na/EPI1857215"},
 ]
 INSERT = (0.35, 0.65)  # donor (clade B) occupies this fraction of the genome
 MIN_GENOME = 400  # skip a dataset whose genome/segment is too short to splice
@@ -471,6 +480,182 @@ def make_mosaic(reference, segments):
         if clade is not None:
             true_spans.append((q0, q1, clade))
     return mosaic.replace("-", "").upper(), true_spans
+
+
+def make_cross_hybrid(genome_a, genome_b, insert=INSERT):
+    """Splice two already-reconstructed, ungapped genomes by length fraction. Their
+    coordinate systems differ (e.g. two species' references), so a reference-relative
+    splice is invalid. Returns ``(query, q_start, q_end)`` in query coordinates."""
+    la, lb = len(genome_a), len(genome_b)
+    a1, a2 = int(la * insert[0]), int(la * insert[1])
+    b1, b2 = int(lb * insert[0]), int(lb * insert[1])
+    query = genome_a[:a1] + genome_b[b1:b2] + genome_a[a2:]
+    return query.upper(), a1, a1 + (b2 - b1)
+
+
+def _score_frontier_envelope(identity, detected, backbone_ok, donor_ok):
+    """Envelope verdict for an inter-species case. Below the HMM identity floor (0.80)
+    attribution is not meaningful -> KNOWN-LIMIT; in-envelope -> XPASS when detected and
+    attributed, else XFAIL. Returns ``(verdict, detail)``."""
+    if identity < 0.80:
+        return "KNOWN-LIMIT", f"identity {identity:.2f} below the 0.80 HMM floor"
+    if detected and backbone_ok and donor_ok:
+        return "XPASS", f"identity {identity:.2f}, detected + attributed"
+    return "XFAIL", f"identity {identity:.2f}, in-envelope but not attributed"
+
+
+def _load_species(path, clade_key, logger):
+    """Resolve one Nextclade dataset -> (genomes, reference, tips)."""
+    dataset = resolve_dataset(Path("/dev/null"), path, email=None, logger=logger)
+    genomes = build_pool(dataset, cache_dir=nextclade_cache(dataset.path, dataset.tag),
+                         logger=logger)
+    reference = read_reference(_download_text(dataset, "reference", logger))
+    tree = json.loads(_download_text(dataset, "treeJson", logger))["tree"]
+    return genomes, reference, collect_tips(tree, clade_key)
+
+
+def _largest_clade(tips):
+    """The largest eligible (non-recombinant, >= MIN_MEMBERS) clade and its central genome."""
+    elig = {c: m for c, m in clade_members(tips, exclude_recombinant=True).items()
+            if len(m) >= MIN_MEMBERS}
+    if not elig:
+        raise CaseSkipped("no eligible clade for a frontier species")
+    clade = max(elig, key=lambda c: len(elig[c]))
+    return clade, clade_representative(elig[clade], tips)
+
+
+def _species_pool(genomes, tips, prefix, drop_src):
+    """Source-removed pool with clades prefixed by species -> (pool, tips', members')."""
+    base_to_tip = {acc.split(".")[0]: acc for acc in tips}
+    drop = drop_src.split(".")[0]
+    pool, ptips, members = [], {}, {}
+    for g in genomes:
+        key = strip_sequence_extension(g.name).split(".")[0]
+        tipkey = base_to_tip.get(key)
+        if tipkey is None or key == drop:
+            continue
+        clade0 = tips[tipkey][0]
+        if not clade0 or clade0 in ("?", "NA") or is_recombinant_clade(clade0):
+            continue
+        clade = f"{prefix}:{clade0}"
+        pool.append(g)
+        ptips[tipkey] = (clade, tips[tipkey][1])
+        members.setdefault(clade, []).append(tipkey)
+    return pool, ptips, members
+
+
+def _prepare_frontier_species(case, logger):
+    """Cross-species hybrid (A backbone x B donor) + combined two-species panel. Their
+    references differ, so splice reconstructed genomes by fraction. Returns (setup, identity)."""
+    name = case["name"]
+    out = DATA / name
+    out.mkdir(parents=True, exist_ok=True)
+    ga, ref_a, tips_a = _load_species(case["dataset"], case.get("clade_key"), logger)
+    gb, ref_b, tips_b = _load_species(case["second_dataset"], case.get("clade_key"), logger)
+
+    clade_a0, src_a = _largest_clade(tips_a)
+    clade_b0, src_b = _largest_clade(tips_b)
+    genome_a = reconstruct_gapped(ref_a, tips_a[src_a][1]).replace("-", "").upper()
+    genome_b = reconstruct_gapped(ref_b, tips_b[src_b][1]).replace("-", "").upper()
+    # Genome-wide ANI via skani: the two species' genomes are unaligned and of different
+    # lengths, so a position-wise pct_identity is meaningless. skani reports (0, 0) when
+    # they do not align at all -> identity 0 -> KNOWN-LIMIT, which is honest.
+    ga_f, gb_f = out / "_src_a.fasta", out / "_src_b.fasta"
+    for f, s in ((ga_f, genome_a), (gb_f, genome_b)):
+        with open(f, "w") as fo:
+            write_fasta_record(fo, f.stem, s)
+    identity = skani_query_ani(ga_f, [gb_f], logger).get(gb_f, (0.0, 0.0))[0] / 100.0
+    query_seq, q_start, q_end = make_cross_hybrid(genome_a, genome_b)
+    if len(query_seq) < MIN_GENOME:
+        raise CaseSkipped(f"cross-species query too short ({len(query_seq)} bp)")
+
+    clade_a, clade_b = f"A:{clade_a0}", f"B:{clade_b0}"
+    query = out / "hybrid.fasta"
+    with open(query, "w") as fo:
+        write_fasta_record(fo, f"hybrid_{clade_a0}_{clade_b0}", query_seq)
+
+    pool_a, ta, ma = _species_pool(ga, tips_a, "A", src_a)
+    pool_b, tb, mb = _species_pool(gb, tips_b, "B", src_b)
+    pool = pool_a + pool_b
+    merged_tips = {**ta, **tb}
+    members = {**ma, **mb}
+    if clade_a not in members or clade_b not in members:
+        raise CaseSkipped("backbone or donor clade unrepresented after source removal")
+
+    window, step, sel_window = window_params(len(query_seq))
+    setup = CaseSetup(
+        name=name, out=out, clade_a=clade_a, clade_b=clade_b,
+        divergence=(1 - identity) * 100.0, query=query,
+        query_label=strip_sequence_extension(query.name),
+        q_start=q_start, q_end=q_end, window=window, step=step, sel_window=sel_window,
+        aligner=case.get("aligner", "mafft"), reference=ref_a, tips=merged_tips, pool=pool,
+        members_by_clade=members, case_type="inter_species",
+        true_spans=[(q_start, q_end, clade_b)])
+    logger.info("[%s] inter-species %s x %s; genome-wide identity %.1f%%",
+                name, clade_a, clade_b, identity * 100.0)
+    return setup, identity
+
+
+def _score_frontier_reassortant(out_dir, junction):
+    """Detection-gated: XPASS iff a called region overlaps the HA|NA junction. The
+    whole-segment-swap labeling is a documented KNOWN-LIMIT (not scored)."""
+    regions = parse_regions(out_dir / "recombination_regions.tsv")
+    present = [r for r in regions if r.get("donor_absent") != "yes"]
+    hit = any(int(r["query_start"]) <= junction <= int(r["query_end"]) for r in present)
+    if hit:
+        return "XPASS", f"breakpoint called at the HA|NA junction (~{junction} bp)"
+    return "XFAIL", f"no breakpoint at the HA|NA junction (~{junction} bp)"
+
+
+def _segment_consensus(path, clade_key, logger):
+    """Per-clade majority consensus for one segment dataset -> ``{clade: sequence}``."""
+    _g, reference, tips = _load_species(path, clade_key, logger)
+    by_clade = {c: m for c, m in clade_members(tips, exclude_recombinant=True).items()
+                if len(m) >= MIN_MEMBERS}
+    cons = {}
+    for clade, members in by_clade.items():
+        seqs = [reconstruct_gapped(reference, tips[a][1]) for a in members]
+        s = consensus_sequence(seqs).replace("-", "").upper()
+        if s:
+            cons[clade] = s
+    if len(cons) < 2:
+        raise CaseSkipped("segment has fewer than two clades with a consensus")
+    return cons
+
+
+def _prepare_frontier_reassortant(case, logger):
+    """Reassortant probe: query = HA_consensus[X] ++ NA_consensus[Y]; panel = the individual
+    segment consensuses. Returns ``(out_dir, junction)``; detection-gated only."""
+    name = case["name"]
+    out = DATA / name
+    out.mkdir(parents=True, exist_ok=True)
+    ha = _segment_consensus(case["dataset"], case.get("clade_key"), logger)
+    na = _segment_consensus(case["second_dataset"], case.get("clade_key"), logger)
+    x = max(ha, key=lambda c: len(ha[c]))
+    y = max(na, key=lambda c: len(na[c]))
+    query_seq = ha[x] + na[y]
+    junction = len(ha[x])
+    query = out / "hybrid.fasta"
+    with open(query, "w") as fo:
+        write_fasta_record(fo, f"reassort_HA-{x}_NA-{y}", query_seq)
+    collection = out / "collection"
+    if collection.exists():
+        shutil.rmtree(collection)
+    collection.mkdir(parents=True)
+    for seg, cons in (("HA", ha), ("NA", na)):
+        for clade, seq in cons.items():
+            safe = re.sub(r"[^\w.-]+", "_", f"{seg}_{clade}")
+            with open(collection / f"{safe}.fasta", "w") as fo:
+                write_fasta_record(fo, safe, seq)
+    window, step, _sel = window_params(len(query_seq))
+    msa = out / "panel.msa.fasta"
+    build_msa(MsaParams(query=query, collection=collection, output=msa,
+                        aligner=case.get("aligner", "mafft"), threads=THREADS), logger)
+    run_recomb(RecombParams(msa=msa, output=out, query=strip_sequence_extension(query.name),
+                            window_size=window, window_step=step, organism=name,
+                            methods=parse_methods(",".join(DEFAULT_METHODS))), logger)
+    logger.info("[%s] reassortant HA:%s ++ NA:%s; junction at %d bp", name, x, y, junction)
+    return out, junction
 
 
 def pick_parents_n(tips, reference, n, *, floor=0.0):
@@ -1152,12 +1337,60 @@ def compare_case(case: dict, logger: logging.Logger) -> dict:
     }
 
 
+def _select_cases(cases, *, names, frontier):
+    """Filter HYBRIDS by name and by tier: frontier cases run only when ``frontier`` is
+    set, must_pass cases only when it is not."""
+    want = "frontier" if frontier else "must_pass"
+    return [c for c in cases
+            if (not names or c["name"] in names)
+            and c.get("tier", "must_pass") == want]
+
+
+def _run_frontier(cases: list[dict], logger: logging.Logger) -> int:
+    """Run the frontier (known-limitation) cases and print a separate XPASS/XFAIL/
+    KNOWN-LIMIT/SKIP table. Always returns 0: a frontier outcome is never a regression."""
+    print(f"\nTessera FRONTIER probes -- {len(cases)} case(s) (known limitations)\n" + "=" * 72)
+    for case in cases:
+        try:
+            rec = _run_frontier_case(case, logger)
+            print(f"[{rec['verdict']:11}] {case['name']:16} {rec.get('detail', '')}")
+        except CaseSkipped as exc:
+            print(f"[SKIP       ] {case['name']:16} {exc}")
+        except Exception as exc:  # noqa: BLE001 - report, never fail the batch
+            logger.exception("[%s] frontier ERROR", case["name"])
+            print(f"[ERROR      ] {case['name']:16} {type(exc).__name__}: {exc}")
+    print("\n(frontier probes measure the envelope; they never count as a regression)")
+    return 0
+
+
+def _run_frontier_case(case: dict, logger: logging.Logger) -> dict:
+    """Dispatch a frontier case to its prepare + score; returns ``{"verdict", "detail"}``."""
+    ct = case.get("case_type")
+    if ct == "inter_species":
+        setup, identity = _prepare_frontier_species(case, logger)
+        methods = parse_methods(os.environ.get("HARNESS_METHODS", ",".join(DEFAULT_METHODS)))
+        rec = _build_and_score(setup, "tip", methods, setup.out, logger)
+        verdict, detail = _score_frontier_envelope(
+            identity, rec["detected"], rec.get("backbone_ok", False), rec.get("donor_ok", False))
+        return {"verdict": verdict, "detail": detail}
+    if ct == "reassortant":
+        out_dir, junction = _prepare_frontier_reassortant(case, logger)
+        verdict, detail = _score_frontier_reassortant(out_dir, junction)
+        return {"verdict": verdict, "detail": detail}
+    raise CaseSkipped(f"unknown frontier case type {ct!r}")
+
+
 def main(argv: list[str]) -> int:
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
     logger = logging.getLogger("tessera")
     compare = "--compare" in argv
+    frontier = "--frontier" in argv
     names = [a for a in argv if not a.startswith("-")]
-    cases = [c for c in HYBRIDS if not names or c["name"] in names]
+    cases = _select_cases(HYBRIDS, names=names, frontier=frontier)
+    if frontier:
+        if compare:
+            logger.info("--frontier ignores --compare (frontier probes run their own pass).")
+        return _run_frontier(cases, logger)
     if compare:
         return _run_compare(cases, logger)
     return _run_default(cases, logger)
