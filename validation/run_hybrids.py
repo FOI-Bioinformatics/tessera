@@ -473,6 +473,113 @@ def make_mosaic(reference, segments):
     return mosaic.replace("-", "").upper(), true_spans
 
 
+def make_cross_hybrid(genome_a, genome_b, insert=INSERT):
+    """Splice two already-reconstructed, ungapped genomes by length fraction. Their
+    coordinate systems differ (e.g. two species' references), so a reference-relative
+    splice is invalid. Returns ``(query, q_start, q_end)`` in query coordinates."""
+    la, lb = len(genome_a), len(genome_b)
+    a1, a2 = int(la * insert[0]), int(la * insert[1])
+    b1, b2 = int(lb * insert[0]), int(lb * insert[1])
+    query = genome_a[:a1] + genome_b[b1:b2] + genome_a[a2:]
+    return query.upper(), a1, a1 + (b2 - b1)
+
+
+def _score_frontier_envelope(identity, detected, backbone_ok, donor_ok):
+    """Envelope verdict for an inter-species case. Below the HMM identity floor (0.80)
+    attribution is not meaningful -> KNOWN-LIMIT; in-envelope -> XPASS when detected and
+    attributed, else XFAIL. Returns ``(verdict, detail)``."""
+    if identity < 0.80:
+        return "KNOWN-LIMIT", f"identity {identity:.2f} below the 0.80 HMM floor"
+    if detected and backbone_ok and donor_ok:
+        return "XPASS", f"identity {identity:.2f}, detected + attributed"
+    return "XFAIL", f"identity {identity:.2f}, in-envelope but not attributed"
+
+
+def _load_species(path, clade_key, logger):
+    """Resolve one Nextclade dataset -> (genomes, reference, tips)."""
+    dataset = resolve_dataset(Path("/dev/null"), path, email=None, logger=logger)
+    genomes = build_pool(dataset, cache_dir=nextclade_cache(dataset.path, dataset.tag),
+                         logger=logger)
+    reference = read_reference(_download_text(dataset, "reference", logger))
+    tree = json.loads(_download_text(dataset, "treeJson", logger))["tree"]
+    return genomes, reference, collect_tips(tree, clade_key)
+
+
+def _largest_clade(tips):
+    """The largest eligible (non-recombinant, >= MIN_MEMBERS) clade and its central genome."""
+    elig = {c: m for c, m in clade_members(tips, exclude_recombinant=True).items()
+            if len(m) >= MIN_MEMBERS}
+    if not elig:
+        raise CaseSkipped("no eligible clade for a frontier species")
+    clade = max(elig, key=lambda c: len(elig[c]))
+    return clade, clade_representative(elig[clade], tips)
+
+
+def _species_pool(genomes, tips, prefix, drop_src):
+    """Source-removed pool with clades prefixed by species -> (pool, tips', members')."""
+    base_to_tip = {acc.split(".")[0]: acc for acc in tips}
+    drop = drop_src.split(".")[0]
+    pool, ptips, members = [], {}, {}
+    for g in genomes:
+        key = strip_sequence_extension(g.name).split(".")[0]
+        tipkey = base_to_tip.get(key)
+        if tipkey is None or key == drop:
+            continue
+        clade0 = tips[tipkey][0]
+        if not clade0 or clade0 in ("?", "NA") or is_recombinant_clade(clade0):
+            continue
+        clade = f"{prefix}:{clade0}"
+        pool.append(g)
+        ptips[tipkey] = (clade, tips[tipkey][1])
+        members.setdefault(clade, []).append(tipkey)
+    return pool, ptips, members
+
+
+def _prepare_frontier_species(case, logger):
+    """Cross-species hybrid (A backbone x B donor) + combined two-species panel. Their
+    references differ, so splice reconstructed genomes by fraction. Returns (setup, identity)."""
+    name = case["name"]
+    out = DATA / name
+    out.mkdir(parents=True, exist_ok=True)
+    ga, ref_a, tips_a = _load_species(case["dataset"], case.get("clade_key"), logger)
+    gb, ref_b, tips_b = _load_species(case["second_dataset"], case.get("clade_key"), logger)
+
+    clade_a0, src_a = _largest_clade(tips_a)
+    clade_b0, src_b = _largest_clade(tips_b)
+    genome_a = reconstruct_gapped(ref_a, tips_a[src_a][1]).replace("-", "").upper()
+    genome_b = reconstruct_gapped(ref_b, tips_b[src_b][1]).replace("-", "").upper()
+    identity = pct_identity(genome_a, genome_b) / 100.0
+    query_seq, q_start, q_end = make_cross_hybrid(genome_a, genome_b)
+    if len(query_seq) < MIN_GENOME:
+        raise CaseSkipped(f"cross-species query too short ({len(query_seq)} bp)")
+
+    clade_a, clade_b = f"A:{clade_a0}", f"B:{clade_b0}"
+    query = out / "hybrid.fasta"
+    with open(query, "w") as fo:
+        write_fasta_record(fo, f"hybrid_{clade_a0}_{clade_b0}", query_seq)
+
+    pool_a, ta, ma = _species_pool(ga, tips_a, "A", src_a)
+    pool_b, tb, mb = _species_pool(gb, tips_b, "B", src_b)
+    pool = pool_a + pool_b
+    merged_tips = {**ta, **tb}
+    members = {**ma, **mb}
+    if clade_a not in members or clade_b not in members:
+        raise CaseSkipped("backbone or donor clade unrepresented after source removal")
+
+    window, step, sel_window = window_params(len(query_seq))
+    setup = CaseSetup(
+        name=name, out=out, clade_a=clade_a, clade_b=clade_b,
+        divergence=(1 - identity) * 100.0, query=query,
+        query_label=strip_sequence_extension(query.name),
+        q_start=q_start, q_end=q_end, window=window, step=step, sel_window=sel_window,
+        aligner=case.get("aligner", "mafft"), reference=ref_a, tips=merged_tips, pool=pool,
+        members_by_clade=members, case_type="inter_species",
+        true_spans=[(q_start, q_end, clade_b)])
+    logger.info("[%s] inter-species %s x %s; genome-wide identity %.1f%%",
+                name, clade_a, clade_b, identity * 100.0)
+    return setup, identity
+
+
 def pick_parents_n(tips, reference, n, *, floor=0.0):
     """Greedily pick the ``n`` most mutually-divergent clades (>= ``MIN_MEMBERS`` genomes,
     pairwise divergence >= ``floor``). Returns ``[(clade, source_genome), ...]`` with the
@@ -1179,9 +1286,16 @@ def _run_frontier(cases: list[dict], logger: logging.Logger) -> int:
 
 
 def _run_frontier_case(case: dict, logger: logging.Logger) -> dict:
-    """Dispatch a frontier case to its prepare + score. Case types are added in later
-    tasks; returns ``{"verdict": ..., "detail": ...}``."""
-    raise CaseSkipped(f"unknown frontier case type {case.get('case_type')!r}")
+    """Dispatch a frontier case to its prepare + score; returns ``{"verdict", "detail"}``."""
+    ct = case.get("case_type")
+    if ct == "inter_species":
+        setup, identity = _prepare_frontier_species(case, logger)
+        methods = parse_methods(os.environ.get("HARNESS_METHODS", ",".join(DEFAULT_METHODS)))
+        rec = _build_and_score(setup, "tip", methods, setup.out, logger)
+        verdict, detail = _score_frontier_envelope(
+            identity, rec["detected"], rec.get("backbone_ok", False), rec.get("donor_ok", False))
+        return {"verdict": verdict, "detail": detail}
+    raise CaseSkipped(f"unknown frontier case type {ct!r}")
 
 
 def main(argv: list[str]) -> int:
