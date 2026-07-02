@@ -34,7 +34,7 @@ import re
 import shutil
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from tessera.core.cache import nextclade_cache
@@ -440,6 +440,63 @@ def make_hybrid(reference: str, src_a_muts, src_b_muts) -> tuple[str, int, int]:
     return hybrid_ref.replace("-", "").upper(), q_start, q_end
 
 
+def make_mosaic(reference, segments):
+    """Splice a mosaic from ``segments`` = list of (muts, frac_start, frac_end, donor_clade).
+
+    A segment with ``donor_clade`` None is backbone (not a true span). Returns
+    ``(query, true_spans)`` with ``true_spans`` = (q_start, q_end, donor_clade) in query
+    coordinates for the non-backbone segments, in order.
+    """
+    length = len(reference)
+    mosaic = ""
+    true_spans = []
+    for muts, f0, f1, clade in segments:
+        b0, b1 = int(length * f0), int(length * f1)
+        seg = reconstruct_gapped(reference, muts)[b0:b1]
+        q0 = len(mosaic.replace("-", ""))
+        mosaic += seg
+        q1 = len(mosaic.replace("-", ""))
+        if clade is not None:
+            true_spans.append((q0, q1, clade))
+    return mosaic.replace("-", "").upper(), true_spans
+
+
+def pick_parents_n(tips, reference, n, *, floor=0.0):
+    """Greedily pick the ``n`` most mutually-divergent clades (>= ``MIN_MEMBERS`` genomes,
+    pairwise divergence >= ``floor``). Returns ``[(clade, source_genome), ...]`` with the
+    largest clade first (backbone). Raises ``CaseSkipped`` when fewer than ``n`` qualify.
+    """
+    # Reuse the existing module-level clade_members (as pick_parents does): prefer
+    # non-recombinant clades, allow recombinant ones only if too few remain.
+    eligible = {c: m for c, m in clade_members(tips, exclude_recombinant=True).items()
+                if len(m) >= MIN_MEMBERS}
+    if len(eligible) < n:
+        eligible = {c: m for c, m in clade_members(tips, exclude_recombinant=False).items()
+                    if len(m) >= MIN_MEMBERS}
+    if len(eligible) < n:
+        raise CaseSkipped(f"fewer than {n} clades with >= {MIN_MEMBERS} genomes")
+    reps = {c: clade_representative(m, tips) for c, m in eligible.items()}
+    seq = {c: reconstruct_gapped(reference, tips[reps[c]][1]) for c in reps}
+
+    def div(a, b):
+        return 100.0 - pct_identity(seq[a], seq[b])
+
+    clades = sorted(reps)
+    first = max(((div(a, b), a, b) for i, a in enumerate(clades) for b in clades[i + 1:]),
+                default=None)
+    if first is None or first[0] < floor:
+        raise CaseSkipped("no clade pair meets the divergence floor")
+    chosen = [first[1], first[2]]
+    while len(chosen) < n:
+        rest = [c for c in clades if c not in chosen]
+        nxt = max(rest, key=lambda c: min(div(c, x) for x in chosen), default=None)
+        if nxt is None or min(div(nxt, x) for x in chosen) < floor:
+            raise CaseSkipped(f"fewer than {n} clades meet the divergence floor")
+        chosen.append(nxt)
+    chosen.sort(key=lambda c: len(eligible[c]), reverse=True)  # backbone = largest
+    return [(c, reps[c]) for c in chosen]
+
+
 def parse_regions(path: Path) -> list[dict]:
     lines = path.read_text().splitlines()
     if len(lines) < 2:
@@ -516,6 +573,7 @@ class CaseSetup:
     pool: list[Path]  # source-removed, clade-labelled tree tips
     members_by_clade: dict[str, list[str]]  # source-removed clade -> tip accessions
     case_type: str = "single_insert"
+    true_spans: list[tuple[int, int, str]] = field(default_factory=list)  # non-backbone donor spans
 
 
 def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
@@ -541,6 +599,7 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
         query_seq = reconstruct_gapped(reference, tips[src_a][1]).replace("-", "")
         q_start = q_end = 0
         divergence = 0.0
+        true_spans = []
         logger.info("[%s] neg_pure: clade %s (%s) unspliced query", name, clade_a, src_a)
     elif case_type == "neg_within":
         clade_a, src_a, src_b = _pick_within_clade(tips, reference, logger)
@@ -552,6 +611,7 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
         logger.info("[%s] neg_within: clade %s (%s x %s); intra-clade divergence %.1f%%",
                     name, clade_a, src_a, src_b, divergence)
         query_seq, q_start, q_end = make_hybrid(reference, tips[src_a][1], tips[src_b][1])
+        true_spans = []  # a within-clade splice has no cross-clade donor span
     else:  # single_insert, low_div, panel_donor_absent, panel_equidistant
         clade_a, clade_b, src_a, src_b = pick_parents(
             tips, reference, case.get("clades", []), logger,
@@ -573,6 +633,7 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
                 raise CaseSkipped(
                     f"divergence {divergence:.1f}% outside band [{lo}, {hi}]")
         query_seq, q_start, q_end = make_hybrid(reference, tips[src_a][1], tips[src_b][1])
+        true_spans = [(q_start, q_end, clade_b)]
 
     if len(query_seq) < MIN_GENOME:
         raise CaseSkipped(f"genome/segment too short to test ({len(query_seq)} bp)")
@@ -641,7 +702,7 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
         query=query, query_label=query_label, q_start=q_start, q_end=q_end,
         window=window, step=step, sel_window=sel_window, aligner=aligner,
         reference=reference, tips=tips, pool=pool, members_by_clade=members_by_clade,
-        case_type=case_type,
+        case_type=case_type, true_spans=true_spans,
     )
 
 
