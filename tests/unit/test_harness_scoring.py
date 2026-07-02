@@ -152,3 +152,61 @@ def test_equidistant_pass_when_B_wins(tmp_path):
     setup = _setup(out=tmp_path, case_type="panel_equidistant", clade_a="A", clade_b="B")
     res = rh._score_regions(tmp_path, {"gA": "A", "gB": "B", "gC": "C"}.get, setup, 5, "tip", 1.0)
     assert res["pass"] is True
+
+
+def test_mosaic_pass_all_spans_recovered(tmp_path):
+    _write_regions(tmp_path, [
+        {"minor_parent": "gB", "major_parent": "gA", "query_start": 300,
+         "query_end": 450, "methods": "hmm", "donor_absent": "no"},
+        {"minor_parent": "gC", "major_parent": "gA", "query_start": 700,
+         "query_end": 1000, "methods": "hmm", "donor_absent": "no"}])
+    setup = _setup(out=tmp_path, case_type="mosaic", clade_a="A",
+                   true_spans=[(300, 450, "B"), (700, 1000, "C")], pattern="ABAC")
+    res = rh._score_regions(tmp_path, {"gA": "A", "gB": "B", "gC": "C"}.get, setup, 5, "tip", 1.0)
+    assert res["pass"] is True and res["spans_hit"] == 2
+
+
+def test_mosaic_fail_when_a_span_missed(tmp_path):
+    _write_regions(tmp_path, [
+        {"minor_parent": "gB", "major_parent": "gA", "query_start": 300,
+         "query_end": 450, "methods": "hmm", "donor_absent": "no"}])
+    setup = _setup(out=tmp_path, case_type="mosaic", clade_a="A",
+                   true_spans=[(300, 450, "B"), (700, 1000, "C")], pattern="ABAC")
+    res = rh._score_regions(tmp_path, {"gA": "A", "gB": "B", "gC": "C"}.get, setup, 5, "tip", 1.0)
+    assert res["pass"] is False and res["spans_hit"] == 1
+
+
+def test_mosaic_short_is_detection_gated(tmp_path):
+    _write_regions(tmp_path, [  # a region exists but does not overlap the true span
+        {"minor_parent": "gB", "major_parent": "gA", "query_start": 10,
+         "query_end": 40, "methods": "hmm", "donor_absent": "no"}])
+    setup = _setup(out=tmp_path, case_type="mosaic", clade_a="A",
+                   true_spans=[(500, 560, "B")], pattern="AB_short")
+    res = rh._score_regions(tmp_path, {"gA": "A", "gB": "B"}.get, setup, 5, "tip", 1.0)
+    assert res["pass"] is True  # detection-gated: a call exists, span recovery only reported
+
+
+def test_mask_sibling_pass_on_exact_donor(tmp_path):
+    _write_regions(tmp_path, [
+        {"minor_parent": "gB", "major_parent": "gA", "query_start": 120,
+         "query_end": 180, "methods": "hmm", "donor_absent": "no"}])
+    setup = _setup(out=tmp_path, case_type="mask_sibling", clade_a="A.1", clade_b="A.D.1.8",
+                   true_spans=[(100, 200, "A.D.1.8")])
+    res = rh._score_regions(tmp_path, {"gA": "A.1", "gB": "A.D.1.8"}.get, setup, 5, "tip", 1.0)
+    assert res["pass"] is True
+
+
+def test_mask_sibling_fail_on_sibling_donor(tmp_path):
+    # backbone A, donor B.1, observed a cross-top sibling B.2: single_insert WOULD credit
+    # this (donor_match allows a sibling when donor/backbone differ at top level), but
+    # mask_sibling requires an EXACT donor attribution, so it FAILs -- proving it is stricter.
+    _write_regions(tmp_path, [
+        {"minor_parent": "gS", "major_parent": "gA", "query_start": 120,
+         "query_end": 180, "methods": "hmm", "donor_absent": "no"}])
+    clade_of = {"gA": "A", "gS": "B.2"}.get
+    setup = _setup(out=tmp_path, case_type="mask_sibling", clade_a="A", clade_b="B.1",
+                   true_spans=[(100, 200, "B.1")])
+    assert rh._score_regions(tmp_path, clade_of, setup, 5, "tip", 1.0)["pass"] is False
+    si = _setup(out=tmp_path, case_type="single_insert", clade_a="A", clade_b="B.1",
+                q_start=100, q_end=200)
+    assert rh._score_single_insert(tmp_path, clade_of, si, 5, "tip", 1.0)["pass"] is True

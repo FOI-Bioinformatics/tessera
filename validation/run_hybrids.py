@@ -34,7 +34,7 @@ import re
 import shutil
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from tessera.core.cache import nextclade_cache
@@ -116,6 +116,18 @@ HYBRIDS: list[dict] = [
      "divergence_band": [1.0, 4.0], "min_divergence": 1.0},
     {"name": "donorabsent_rsv", "dataset": "nextstrain/rsv/a/EPI_ISL_412866",
      "case_type": "panel_donor_absent"},
+    # Phase-2 hard topologies + masking sibling. Multi-parent / segmented patterns reuse
+    # existing datasets; datasets with too few clades CaseSkip.
+    {"name": "mosaic_dengue", "dataset": "nextstrain/dengue/all",
+     "case_type": "mosaic", "pattern": "ABAC"},
+    {"name": "asym_measles", "dataset": "nextstrain/measles/genome/WHO-2012",
+     "case_type": "mosaic", "pattern": "AB_9010"},
+    {"name": "short_wnv", "dataset": "nextstrain/wnv/all-lineages",
+     "case_type": "mosaic", "pattern": "AB_short"},
+    {"name": "terminal_mumps", "dataset": "nextstrain/mumps/genome",
+     "case_type": "mosaic", "pattern": "AB_terminal"},
+    {"name": "masksib_rsv", "dataset": "nextstrain/rsv/a/EPI_ISL_412866",
+     "case_type": "mask_sibling", "clades": ["A.1", "A.D.1.8"]},
 ]
 INSERT = (0.35, 0.65)  # donor (clade B) occupies this fraction of the genome
 MIN_GENOME = 400  # skip a dataset whose genome/segment is too short to splice
@@ -440,6 +452,63 @@ def make_hybrid(reference: str, src_a_muts, src_b_muts) -> tuple[str, int, int]:
     return hybrid_ref.replace("-", "").upper(), q_start, q_end
 
 
+def make_mosaic(reference, segments):
+    """Splice a mosaic from ``segments`` = list of (muts, frac_start, frac_end, donor_clade).
+
+    A segment with ``donor_clade`` None is backbone (not a true span). Returns
+    ``(query, true_spans)`` with ``true_spans`` = (q_start, q_end, donor_clade) in query
+    coordinates for the non-backbone segments, in order.
+    """
+    length = len(reference)
+    mosaic = ""
+    true_spans = []
+    for muts, f0, f1, clade in segments:
+        b0, b1 = int(length * f0), int(length * f1)
+        seg = reconstruct_gapped(reference, muts)[b0:b1]
+        q0 = len(mosaic.replace("-", ""))
+        mosaic += seg
+        q1 = len(mosaic.replace("-", ""))
+        if clade is not None:
+            true_spans.append((q0, q1, clade))
+    return mosaic.replace("-", "").upper(), true_spans
+
+
+def pick_parents_n(tips, reference, n, *, floor=0.0):
+    """Greedily pick the ``n`` most mutually-divergent clades (>= ``MIN_MEMBERS`` genomes,
+    pairwise divergence >= ``floor``). Returns ``[(clade, source_genome), ...]`` with the
+    largest clade first (backbone). Raises ``CaseSkipped`` when fewer than ``n`` qualify.
+    """
+    # Reuse the existing module-level clade_members (as pick_parents does): prefer
+    # non-recombinant clades, allow recombinant ones only if too few remain.
+    eligible = {c: m for c, m in clade_members(tips, exclude_recombinant=True).items()
+                if len(m) >= MIN_MEMBERS}
+    if len(eligible) < n:
+        eligible = {c: m for c, m in clade_members(tips, exclude_recombinant=False).items()
+                    if len(m) >= MIN_MEMBERS}
+    if len(eligible) < n:
+        raise CaseSkipped(f"fewer than {n} clades with >= {MIN_MEMBERS} genomes")
+    reps = {c: clade_representative(m, tips) for c, m in eligible.items()}
+    seq = {c: reconstruct_gapped(reference, tips[reps[c]][1]) for c in reps}
+
+    def div(a, b):
+        return 100.0 - pct_identity(seq[a], seq[b])
+
+    clades = sorted(reps)
+    first = max(((div(a, b), a, b) for i, a in enumerate(clades) for b in clades[i + 1:]),
+                default=None)
+    if first is None or first[0] < floor:
+        raise CaseSkipped("no clade pair meets the divergence floor")
+    chosen = [first[1], first[2]]
+    while len(chosen) < n:
+        rest = [c for c in clades if c not in chosen]
+        nxt = max(rest, key=lambda c: min(div(c, x) for x in chosen), default=None)
+        if nxt is None or min(div(nxt, x) for x in chosen) < floor:
+            raise CaseSkipped(f"fewer than {n} clades meet the divergence floor")
+        chosen.append(nxt)
+    chosen.sort(key=lambda c: len(eligible[c]), reverse=True)  # backbone = largest
+    return [(c, reps[c]) for c in chosen]
+
+
 def parse_regions(path: Path) -> list[dict]:
     lines = path.read_text().splitlines()
     if len(lines) < 2:
@@ -516,6 +585,8 @@ class CaseSetup:
     pool: list[Path]  # source-removed, clade-labelled tree tips
     members_by_clade: dict[str, list[str]]  # source-removed clade -> tip accessions
     case_type: str = "single_insert"
+    true_spans: list[tuple[int, int, str]] = field(default_factory=list)  # non-backbone donor spans
+    pattern: str = ""  # mosaic pattern (ABAC / AB_9010 / AB_short / AB_terminal)
 
 
 def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
@@ -541,6 +612,7 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
         query_seq = reconstruct_gapped(reference, tips[src_a][1]).replace("-", "")
         q_start = q_end = 0
         divergence = 0.0
+        true_spans = []
         logger.info("[%s] neg_pure: clade %s (%s) unspliced query", name, clade_a, src_a)
     elif case_type == "neg_within":
         clade_a, src_a, src_b = _pick_within_clade(tips, reference, logger)
@@ -552,6 +624,58 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
         logger.info("[%s] neg_within: clade %s (%s x %s); intra-clade divergence %.1f%%",
                     name, clade_a, src_a, src_b, divergence)
         query_seq, q_start, q_end = make_hybrid(reference, tips[src_a][1], tips[src_b][1])
+        true_spans = []  # a within-clade splice has no cross-clade donor span
+    elif case_type == "mosaic":
+        pattern = case["pattern"]
+        n = 3 if pattern == "ABAC" else 2
+        parents = pick_parents_n(tips, reference, n,
+                                 floor=case.get("min_divergence", MIN_DIVERGENCE))
+        clade_a, src_a = parents[0]  # backbone = the largest clade
+        clade_b, src_b = parents[1]
+        muts = {c: tips[s][1] for c, s in parents}
+        a_m, b_m = muts[clade_a], muts[clade_b]
+        if pattern == "ABAC":
+            clade_c = parents[2][0]
+            c_m = muts[clade_c]
+            segments = [(a_m, 0.0, 0.30, None), (b_m, 0.30, 0.45, clade_b),
+                        (a_m, 0.45, 0.70, None), (c_m, 0.70, 1.0, clade_c)]
+        elif pattern == "AB_9010":
+            segments = [(a_m, 0.0, 0.45, None), (b_m, 0.45, 0.55, clade_b),
+                        (a_m, 0.55, 1.0, None)]
+        elif pattern == "AB_terminal":
+            segments = [(b_m, 0.0, 0.15, clade_b), (a_m, 0.15, 1.0, None)]
+        elif pattern == "AB_short":
+            half = 0.5 * window_params(len(reference))[0] / len(reference)
+            segments = [(a_m, 0.0, 0.5 - half, None), (b_m, 0.5 - half, 0.5 + half, clade_b),
+                        (a_m, 0.5 + half, 1.0, None)]
+        else:
+            raise CaseSkipped(f"unknown mosaic pattern {pattern!r}")
+        query_seq, true_spans = make_mosaic(reference, segments)
+        divergence = max(
+            100.0 - pct_identity(reconstruct_gapped(reference, muts[a]),
+                                 reconstruct_gapped(reference, muts[b]))
+            for i, (a, _) in enumerate(parents) for (b, _) in parents[i + 1:])
+        q_start = min((s for s, _e, _c in true_spans), default=0)
+        q_end = max((e for _s, e, _c in true_spans), default=0)
+        logger.info("[%s] mosaic %s: backbone %s x donors %s; max divergence %.1f%%",
+                    name, pattern, clade_a, ", ".join(c for c, _ in parents[1:]), divergence)
+    elif case_type == "mask_sibling":
+        clade_a, clade_b, src_a, src_b = pick_parents(
+            tips, reference, case.get("clades", []), logger)
+        # The masking condition under test: a sibling sub-clade of the donor (same top-level,
+        # different sub-clade) must be present, so a near-neighbour can compete for the donor.
+        top_b = clade_b.split(".")[0]
+        siblings = {c for c in clade_members(tips, exclude_recombinant=True)
+                    if c.split(".")[0] == top_b and c != clade_b}
+        if not siblings:
+            raise CaseSkipped(f"donor clade {clade_b!r} has no sibling sub-clade present")
+        divergence = 100.0 - pct_identity(
+            reconstruct_gapped(reference, tips[src_a][1]),
+            reconstruct_gapped(reference, tips[src_b][1]))
+        query_seq, q_start, q_end = make_hybrid(reference, tips[src_a][1], tips[src_b][1])
+        true_spans = [(q_start, q_end, clade_b)]
+        logger.info("[%s] mask_sibling: backbone %s x donor %s (siblings present: %s); "
+                    "divergence %.1f%%", name, clade_a, clade_b, sorted(siblings), divergence)
     else:  # single_insert, low_div, panel_donor_absent, panel_equidistant
         clade_a, clade_b, src_a, src_b = pick_parents(
             tips, reference, case.get("clades", []), logger,
@@ -573,6 +697,7 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
                 raise CaseSkipped(
                     f"divergence {divergence:.1f}% outside band [{lo}, {hi}]")
         query_seq, q_start, q_end = make_hybrid(reference, tips[src_a][1], tips[src_b][1])
+        true_spans = [(q_start, q_end, clade_b)]
 
     if len(query_seq) < MIN_GENOME:
         raise CaseSkipped(f"genome/segment too short to test ({len(query_seq)} bp)")
@@ -641,7 +766,7 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
         query=query, query_label=query_label, q_start=q_start, q_end=q_end,
         window=window, step=step, sel_window=sel_window, aligner=aligner,
         reference=reference, tips=tips, pool=pool, members_by_clade=members_by_clade,
-        case_type=case_type,
+        case_type=case_type, true_spans=true_spans, pattern=case.get("pattern", ""),
     )
 
 
@@ -724,6 +849,14 @@ def _build_and_score(
             raise CaseSkipped(
                 f"donor clade {setup.clade_b!r} has no panel representative "
                 "after the source genome was removed")
+        # A mosaic scores every non-backbone span, so each of its donor clades (e.g. the
+        # third parent in ABAC) must remain represented; a dropped one is a SKIP, not a FAIL.
+        if setup.case_type == "mosaic":
+            for _q0, _q1, donor in setup.true_spans:
+                if not any(donor_match(c, donor, setup.clade_a) for c in panel_clades):
+                    raise CaseSkipped(
+                        f"mosaic donor clade {donor!r} has no panel representative "
+                        "after the source genome was removed")
 
         def clade_of(label: str) -> str:
             return clade_of_label(label, setup.tips)
@@ -766,6 +899,8 @@ def _score_regions(
         "low_div": _score_low_div,
         "panel_donor_absent": _score_panel_donor_absent,
         "panel_equidistant": _score_panel_equidistant,
+        "mosaic": _score_mosaic,
+        "mask_sibling": _score_mask_sibling,
     }.get(setup.case_type, _score_single_insert)
     return scorer(out_dir, clade_of, setup, n_refs, mode, runtime)
 
@@ -826,6 +961,55 @@ def _base(setup: CaseSetup, mode: str, runtime: float, present: list, **extra) -
     }
     row.update(extra)
     return row
+
+
+def _score_mask_sibling(out_dir, clade_of, setup, n_refs, mode, runtime) -> dict:
+    """Donor with a sibling sub-clade present: PASS requires the donor attributed EXACTLY
+    (attribution_tier == 'exact'), not merely to a sibling or a hierarchical parent. A
+    stricter regression guard for the plurality-major fix than the single-insert scorer."""
+    regions = parse_regions(out_dir / "recombination_regions.tsv")
+    present = [r for r in regions if r.get("donor_absent") != "yes"]
+    major_clade = clade_of(regions[0]["major_parent"]) if regions else "?"
+    q0, q1, donor = setup.true_spans[0]
+
+    def overlaps(r):
+        return int(r["query_start"]) <= q1 and int(r["query_end"]) >= q0
+
+    exact = any(overlaps(r) and attribution_tier(clade_of(r["minor_parent"]), donor) == "exact"
+                for r in present)
+    passed = len(present) >= 1 and clade_match(major_clade, setup.clade_a) and exact
+    return _base(setup, mode, runtime, present, n_refs=n_refs, major_clade=major_clade,
+                 donor_exact=exact, **{"pass": passed})
+
+
+def _score_mosaic(out_dir, clade_of, setup, n_refs, mode, runtime) -> dict:
+    """Multi-span mosaic: each non-backbone span must be recovered with the right donor
+    clade, backbone must be clade_a. AB_short is detection-gated (span recovery reported,
+    not required); AB_terminal additionally requires the recovered region near query 0."""
+    regions = parse_regions(out_dir / "recombination_regions.tsv")
+    present = [r for r in regions if r.get("donor_absent") != "yes"]
+    major_clade = clade_of(regions[0]["major_parent"]) if regions else "?"
+    detected = len(present) >= 1
+    backbone_ok = clade_match(major_clade, setup.clade_a)
+
+    def hit(q0, q1, donor):
+        return any(
+            int(r["query_start"]) <= q1 and int(r["query_end"]) >= q0
+            and donor_match(clade_of(r["minor_parent"]), donor, setup.clade_a)
+            for r in present)
+
+    spans_hit = sum(hit(q0, q1, d) for q0, q1, d in setup.true_spans)
+    spans_total = len(setup.true_spans)
+    if setup.pattern == "AB_short":
+        passed = detected                      # a miss is reported, not failed
+    elif setup.pattern == "AB_terminal":
+        near0 = any(int(r["query_start"]) <= setup.window for r in present)
+        passed = detected and backbone_ok and spans_hit == spans_total and near0
+    else:                                       # ABAC, AB_9010
+        passed = detected and backbone_ok and spans_hit == spans_total
+    return _base(setup, mode, runtime, present, n_refs=n_refs, major_clade=major_clade,
+                 backbone_ok=backbone_ok, spans_hit=spans_hit, spans_total=spans_total,
+                 **{"pass": passed})
 
 
 def _score_neg_pure(
