@@ -227,3 +227,23 @@ until a later cycle supplies a fairer panel. Its scorer and helper are kept (uni
 given a live `HYBRIDS` entry -- its clade + decoy pins need a probe run to choose two equidistant
 donors, deferred with `neg_within`. Phase 2 (multi-breakpoint / short-tract topologies) and Phase 3
 (frontier inter-species / reassortment, XFAIL) remain separate cycles.
+
+### Donor-absent finding closed (donor_undercovered caveat)
+
+The `donorabsent_rsv` FAIL above was a genuine attribution limitation: with the true donor clade
+removed, the caller attributed the region to a present, close sibling and the "donor may be
+missing" signal was lost. Diagnosis: the coverage scan *did* detect the divergent stretch (a
+`coverage_gaps` entry below the adaptive floor), but the bridge that turns gaps into donor-absent
+regions **dropped** the gap whenever a confident donor-present region overlapped it, and that
+overlapping region was not flagged because its region-mean similarity stayed above the floor (the
+gap was diluted by well-matched flanks).
+
+Fix: `reconcile_gaps` (`recomb/coverage.py`) now **caveats** the overlapping region
+(`donor_undercovered=True`) instead of discarding the gap -- the confident, closest-available
+attribution is kept but honestly annotated that the true donor for part of the span may be absent.
+The signal survives to the report and the harness.
+
+Re-ran `python validation/run_hybrids.py` on the aligner env: **sensitivity 20/20, specificity
+1/1**, no case FAILs. `donorabsent_rsv` now PASSes (its region is flagged `donor_undercovered`),
+with no regression to the 18 positives, `lowdiv_rsv`, or `neg_measles` (the positives keep their
+true donor, so no coverage gap arises over the donor region and no new caveat is added).
