@@ -340,7 +340,21 @@ full-length region is co-called over HA and attributed to distant clades (the ne
 consensuses give the caller little to separate, so it also emits a genome-spanning region); (2) the
 single-clade NA control is itself flagged with one region (a specificity limit at low divergence).
 Splicing two *adjacent* clades instead (J.2.2 + its child J.2) localizes nothing -- too little
-between-parent divergence -- the same limit the main harness documents for low-divergence pairs. So
-`--scan-segments` demonstrably detects and localizes intragenic recombination given divergent parents;
-its specificity and attribution at low divergence inherit the single-backbone scan's known limits. A
-cleaner probe would use a real recombinant genome rather than a consensus splice.
+between-parent divergence -- the same limit the main harness documents for low-divergence pairs.
+
+The cleaner, durable probe (`validation/run_reassort_scan.py`, opt-in) replaces the consensus splice
+with a **real-tip** insert: a clade-K segment (fraction 0.35-0.65) spliced into a clade-C.1 backbone
+from actual H3N2 HA tree-tip genomes, with an exact known breakpoint, plus a clonal NA control. It
+drives the shipped `assign_segments(scan_segments=True)`. Measured:
+
+```
+[XPASS ] HA localization  insert clade K (true span 601-1116); a region overlaps it
+[report] HA attribution   donor clade K named in a region: yes
+[report] NA specificity   clonal control (B.4.2): 1 region(s) called
+```
+
+The HA scan calls a single tight region at query 604-1132 (`K_consensus` minor / `C.1_consensus`
+major), overlapping the true insert 601-1116 and naming **both** true parents -- clean localization
+and attribution with real genomes and divergent parents. The clonal NA control is still flagged with
+one genome-spanning region (`B.4.2` vs adjacent `B.4.3`), the same low-divergence specificity limit
+recorded above and inherited from the single-backbone caller. Recorded as measured; not retuned.
