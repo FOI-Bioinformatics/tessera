@@ -882,8 +882,9 @@ def _score_low_div(
 def _score_panel_donor_absent(
     out_dir: Path, clade_of, setup: CaseSetup, n_refs: int, mode: str, runtime: float,
 ) -> dict:
-    """True donor removed from the panel: PASS iff the span is flagged donor-absent and
-    not confidently mis-attributed to a present cross-clade donor."""
+    """True donor removed from the panel: PASS iff the span is flagged donor-absent or a
+    span-overlapping region carries the donor_undercovered caveat, and not confidently
+    mis-attributed to a present, uncaveated cross-clade donor."""
     regions = parse_regions(out_dir / "recombination_regions.tsv")
 
     def overlaps(r):
@@ -891,17 +892,24 @@ def _score_panel_donor_absent(
 
     absent_hit = any(r.get("donor_absent") == "yes" and overlaps(r) for r in regions)
     present = [r for r in regions if r.get("donor_absent") != "yes"]
+
     def cross_clade(r):
         top = base_clade(clade_of(r["minor_parent"]) or "").split(".")[0]
         return top != setup.clade_a.split(".")[0]
 
+    # A confident, cross-clade region that is NOT caveated is a silent mis-attribution.
     misattr = any(
-        overlaps(r) and "," in (r.get("methods") or "") and cross_clade(r)
+        overlaps(r) and "," in (r.get("methods") or "")
+        and r.get("donor_undercovered") != "yes" and cross_clade(r)
         for r in present
     )
-    passed = absent_hit and not misattr
+    # The caller acknowledged the missing donor if the span is flagged donor-absent or a
+    # span-overlapping region is caveated donor_undercovered.
+    caveated = any(overlaps(r) and r.get("donor_undercovered") == "yes" for r in present)
+    passed = (absent_hit or caveated) and not misattr
     return _base(setup, mode, runtime, present, n_refs=n_refs,
-                 absent_hit=absent_hit, misattributed=misattr, **{"pass": passed})
+                 absent_hit=absent_hit, caveated=caveated, misattributed=misattr,
+                 **{"pass": passed})
 
 
 def _score_panel_equidistant(

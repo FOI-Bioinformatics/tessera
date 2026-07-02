@@ -16,6 +16,7 @@ from .coverage import (
     call_coverage_gaps,
     flag_undercovered_regions,
     gaps_as_regions,
+    reconcile_gaps,
 )
 from .diagnostics import recombination_signal
 from .ensemble import consensus_regions, reconcile_major
@@ -288,12 +289,13 @@ def run_recomb(
         )
 
     # Bridge: a divergent coverage gap (query far from every reference) is a
-    # putative recombination whose donor is absent from the collection. Report
-    # those that a confident donor-present region does not already cover.
-    absent = [
-        r for r in gaps_as_regions(coverage_gaps, result, major_parent)
-        if not any(r.msa_start < p.msa_end and p.msa_start < r.msa_end for p in regions)
-    ]
+    # putative recombination whose donor is absent from the collection. A gap
+    # overlapping a confident region caveats it as donor_undercovered (the
+    # reported donor is the closest available, not necessarily the real one);
+    # a gap covering no called region is reported as a donor-absent region.
+    absent = reconcile_gaps(
+        regions, gaps_as_regions(coverage_gaps, result, major_parent)
+    )
     regions = sorted(regions + absent, key=lambda r: r.msa_start)
     if absent:
         logger.info("Added %d donor-absent region(s) (likely a missing reference).",
