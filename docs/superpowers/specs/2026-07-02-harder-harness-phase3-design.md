@@ -48,12 +48,14 @@ envelope ends.
 
 **Build (`_prepare_frontier_case`, "reassortant").** Resolve the HA dataset and the NA dataset
 (`case["second_dataset"]`). For each segment, group tips by clade and take a per-clade majority
-consensus (`consensus_sequence`, as `consensus_panel` does). Choose a backbone clade X and a donor
-clade Y (per segment; the two segments' clade systems differ, so X/Y are chosen independently as
-the two most-divergent clades within each segment's own consensus set). The panel references are the
-**concatenated** per-clade consensuses `HA_consensus[c] ++ NA_consensus[c]` (compound label
-`HA:<c>|NA:<c>`); the reassortant **query** is `HA_consensus[X] ++ NA_consensus[Y]` -- a mosaic whose
-single breakpoint is the HA|NA junction.
+consensus (`consensus_sequence`, as `consensus_panel` does). Choose a backbone clade X (HA) and a
+donor clade Y (NA). The reassortant **query** is `HA_consensus[X] ++ NA_consensus[Y]` -- a mosaic
+whose single breakpoint is the HA|NA junction (`junction = len(HA_consensus[X])`). The panel is the
+**individual per-segment consensuses** written as separate references (`HA_<clade>` and `NA_<clade>`):
+the query's HA half then matches an HA reference and its NA half an NA reference, so the junction is
+a boundary between two segment references. (An earlier design sketched *concatenated* `HA[c]++NA[c]`
+references, but the two segments' clade systems are disjoint -- there is no shared clade `c` and no
+strain-level pairing across the datasets -- so the individual-segment panel is the honest probe.)
 
 **Scoring (`_score_frontier`, "reassortant") -- detection-gated only.** PASS/XPASS = a recombinant
 region is called overlapping the junction (query coordinate = `len(HA_consensus[X])`). The

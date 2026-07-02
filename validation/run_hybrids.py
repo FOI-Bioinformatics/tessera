@@ -1388,6 +1388,8 @@ def main(argv: list[str]) -> int:
     names = [a for a in argv if not a.startswith("-")]
     cases = _select_cases(HYBRIDS, names=names, frontier=frontier)
     if frontier:
+        if compare:
+            logger.info("--frontier ignores --compare (frontier probes run their own pass).")
         return _run_frontier(cases, logger)
     if compare:
         return _run_compare(cases, logger)
