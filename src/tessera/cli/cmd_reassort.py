@@ -42,6 +42,12 @@ def reassort(
         DEFAULT_MARGIN, "--margin",
         help="ANI window (percentage points) for a segment's near-best parents.",
     ),
+    scan_segments: bool = typer.Option(
+        False, "--scan-segments",
+        help="Also scan each assigned segment for intragenic recombination (needs an aligner).",
+    ),
+    aligner: str = typer.Option(
+        "mafft", "--aligner", help="Aligner backend for --scan-segments."),
 ) -> None:
     """Detect reassortment: assign each segment to its nearest reference lineage and
     report the per-segment genotype plus a clonal/reassortant verdict."""
@@ -57,7 +63,8 @@ def reassort(
         result = assign_segments(
             query, dataset_overrides=overrides,
             email=email or os.environ.get("NCBI_EMAIL"),
-            ani_floor=ani_floor, margin=margin, logger=logger,
+            ani_floor=ani_floor, margin=margin, output=output,
+            scan_segments=scan_segments, aligner=aligner, logger=logger,
         )
 
         output.mkdir(parents=True, exist_ok=True)
@@ -86,3 +93,14 @@ def reassort(
         if result.verdict == "undetermined" and result.pair_notes:
             logger.info("Why undetermined: %s", "; ".join(result.pair_notes))
         logger.info("Wrote %s and %s", tsv, ctsv)
+
+        if result.scans:
+            stsv = output / "segment_scan.tsv"
+            with open(stsv, "w") as fo:
+                fo.write("segment\tintragenic_recombination\tn_regions\tnote\n")
+                for sc in result.scans:
+                    flag = "yes" if sc.recombinant else ("no" if sc.scanned else "n/a")
+                    fo.write(f"{sc.segment}\t{flag}\t{sc.n_regions}\t{sc.note}\n")
+            rollup = " | ".join(f"{sc.segment}: {sc.note}" for sc in result.scans)
+            logger.info("Intragenic scan: %s", rollup)
+            logger.info("Wrote %s", stsv)

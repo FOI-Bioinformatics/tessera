@@ -218,6 +218,49 @@ def test_build_pool_examples_failure_is_nonfatal(monkeypatch, tmp_path, logger):
     assert "ACC2" in names
 
 
+def test_reconstruct_gapped_keeps_deletion_gaps_and_length():
+    # Same inputs as the ungapped reconstruction, but the deletion stays a gap so the length
+    # is preserved (reference coordinates) -- the property the consensus path relies on.
+    assert nc._reconstruct_gapped("ACGT", ["A1G", "T4-"]) == "GCG-"
+    assert nc._reconstruct_sequence("ACGT", ["A1G", "T4-"]) == "GCG"
+
+
+def test_build_pool_consensus_handles_within_clade_indels(monkeypatch, tmp_path, logger):
+    # Two tips of ONE clade where one carries a deletion: their ungapped reconstructions differ
+    # in length, which used to crash consensus_sequence. Gapped reconstruction fixes it.
+    tree = {
+        "tree": {
+            "name": "root",
+            "branch_attrs": {"mutations": {"nuc": []}},
+            "children": [
+                {"name": "T1", "branch_attrs": {"mutations": {"nuc": ["C2T"]}},
+                 "node_attrs": {"accession": "A1", "clade_membership": "Z"}, "children": []},
+                {"name": "T2", "branch_attrs": {"mutations": {"nuc": ["T4-"]}},
+                 "node_attrs": {"accession": "A2", "clade_membership": "Z"}, "children": []},
+            ],
+        },
+    }
+    from urllib.error import URLError as _URLError
+
+    payloads = {"reference.fasta": _REF.encode(), "tree.json": _json.dumps(tree).encode()}
+
+    def fake_urlopen(url, timeout=0):
+        for name, data in payloads.items():
+            if url.endswith(name):
+                return _Resp(data)
+        if url.endswith("sequences.fasta"):
+            raise _URLError("no examples")  # non-fatal in build_pool
+        raise AssertionError(f"unexpected url {url}")
+
+    monkeypatch.setattr(nc, "urlopen", fake_urlopen)
+    genomes = nc.build_pool(_dataset(), cache_dir=tmp_path / "c", logger=logger,
+                            per_clade_consensus=True)
+    assert len(genomes) == 1  # one consensus for clade Z
+    body = genomes[0].read_text()
+    assert ">Z_consensus Z" in body
+    assert "-" not in body.split("\n", 1)[1]  # gaps stripped in the written consensus
+
+
 def test_build_pool_handles_deep_tree(monkeypatch, tmp_path, logger):
     """Iterative tree walk must not raise RecursionError on a 1200-node linear chain.
 

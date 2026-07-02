@@ -28,3 +28,13 @@ def test_reassort_exposes_query_option():
 def test_reassort_exposes_margin_option():
     names = {opt for p in _reassort_command().params for opt in getattr(p, "opts", [])}
     assert "--margin" in names
+
+
+def test_reassort_exposes_scan_segments_option():
+    names = {opt for p in _reassort_command().params for opt in getattr(p, "opts", [])}
+    assert "--scan-segments" in names
+
+
+def test_reassort_exposes_aligner_option():
+    names = {opt for p in _reassort_command().params for opt in getattr(p, "opts", [])}
+    assert "--aligner" in names

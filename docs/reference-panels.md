@@ -295,6 +295,15 @@ below `--ani-floor` to every tip, or aligning over too little of their length, o
 dataset, are reported `unassigned` and excluded from the call. Because there is no influenza taxon
 alias, flu auto-typing needs the `nextclade` CLI (for `nextclade sort`) or explicit `--dataset
 SEGMENT=path` overrides; without either, each flu segment resolves to nothing and is left
-unassigned. Needs skani; the typing step fetches each Nextclade dataset on first use. This is
-assignment-only -- it reports which parent each segment came from, not intragenic recombination
-within a segment.
+unassigned. Needs skani; the typing step fetches each Nextclade dataset on first use.
+
+By default `reassort` reports which parent each whole segment came from, not intragenic
+recombination within a segment. Pass `--scan-segments` to additionally look *inside* each segment:
+after assignment, each assigned segment is aligned to its own per-clade-consensus panel and run
+through the ordinary recombination scan, writing the full `run_recomb` output to `out/<segment>/` and
+a rollup to `out/segment_scan.tsv` (`segment`, `intragenic_recombination`, `n_regions`, `note`). This
+asks a different question from the reassortment verdict: not which parent each whole segment came
+from, but whether a single segment is itself a within-segment mosaic of two lineages. It needs an
+aligner (`--aligner`, default `mafft`); a missing or unknown aligner is reported up front. A segment
+whose panel has fewer than two clades, or that is unassigned, is reported as not scanned rather than
+dropped.
