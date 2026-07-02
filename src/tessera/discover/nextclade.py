@@ -315,8 +315,9 @@ def build_pool(
         else:
             logger.info("Reconstructed %d Nextclade tree-tip genome(s).", len(written))
 
-        # Add example sequences; the header's first token (often subtype.country...)
-        # gives a label and clade-ish note, deduped against the reconstructed tips.
+        # Add example sequences; the header's first token labels the genome. Example
+        # headers are not clade-typed by the tree, so they carry the ``example`` marker in
+        # the clade slot rather than a mined prefix that would masquerade as a real clade.
         # A download failure here is non-fatal: the tips-only pool is still valid.
         if "examples" in dataset.files:
             try:
@@ -326,8 +327,7 @@ def build_pool(
                     if not acc or acc in seen:
                         continue
                     seen.add(acc)
-                    note = header.split(".")[0] if "." in header else "example"
-                    out = _write_genome(build_dir, acc, note, seq.upper(), floor)
+                    out = _write_genome(build_dir, acc, "example", seq.upper(), floor)
                     if out is not None:
                         written.append(out)
                         examples += 1

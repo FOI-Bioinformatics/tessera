@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..core.cache import nextclade_cache
-from ..core.errors import UserInputError
+from ..core.errors import ToolExecutionError, UserInputError
 from ..core.io import read_fasta, strip_sequence_extension, write_fasta_record
 from ..discover.nextclade import build_pool, resolve_dataset
 from ..discover.panel import skani_available, skani_query_ani
@@ -47,11 +47,15 @@ class ReassortmentResult:
     scans: list[SegmentScan] = field(default_factory=list)
 
 
+_NON_CLADE = {"", "example", "NA", "?"}  # header markers that are not a tree-derived clade
+
+
 def _clade_of_tip(tip: Path) -> str | None:
-    """The clade from a reconstructed tip's header ``>{strain} {clade}`` (2nd token)."""
+    """The clade from a reconstructed tip's header ``>{strain} {clade}`` (2nd token), or None
+    when the tip is not clade-typed (an example genome or an untyped tip)."""
     parts = first_header(tip).split(None, 1)
     clade = parts[1].strip() if len(parts) > 1 else ""
-    return clade or None
+    return None if clade in _NON_CLADE else clade
 
 
 def _type_segment(seg, seq, overrides, ani_floor, email, cache_dir, tmp, logger):
@@ -64,14 +68,22 @@ def _type_segment(seg, seq, overrides, ani_floor, email, cache_dir, tmp, logger)
         write_fasta_record(fo, seg, seq)
     try:
         dataset = resolve_dataset(seg_fasta, overrides.get(seg), email=email, logger=logger)
+    except UserInputError as exc:  # no Nextclade dataset maps to this segment (a genuine skip)
+        logger.info("[%s] no Nextclade dataset resolved (%s); unassigned.", seg, exc)
+        return SegmentAssignment(seg, "?", None, None, 0.0, "unassigned"), [], set(), None
+    try:
         tips = build_pool(
             dataset, cache_dir=nextclade_cache(dataset.path, dataset.tag, override=cache_dir),
             logger=logger,
         )
         ani = skani_query_ani(seg_fasta, tips, logger)
-    except Exception as exc:  # noqa: BLE001 - a per-segment failure is non-fatal
-        logger.info("[%s] could not type segment (%s); unassigned.", seg, exc)
-        return SegmentAssignment(seg, "?", None, None, 0.0, "unassigned"), [], set(), None
+    except ToolExecutionError as exc:  # skani rejects a very short / odd segment (a genuine skip)
+        logger.info("[%s] could not type against %s (%s); unassigned.", seg, dataset.path, exc)
+        skipped = SegmentAssignment(seg, dataset.path, None, None, 0.0, "unassigned")
+        return skipped, [], set(), dataset
+    # A download / network failure (raised as UserInputError) or any unexpected error is NOT
+    # swallowed here: it propagates so a transient failure surfaces loudly instead of being
+    # reported as a biological "unassigned".
 
     eligible = [t for t in tips
                 if ani.get(t, (0.0, 0.0))[0] >= ani_floor and ani.get(t, (0.0, 0.0))[1] >= MIN_AF]

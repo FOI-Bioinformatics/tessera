@@ -60,9 +60,11 @@ def require_aligner(aligner: str) -> None:
 
 
 def _clade_of_header(path: Path) -> str:
-    """The clade token from a consensus genome's ``>{label} {clade}`` header."""
+    """The clade token from a consensus genome's ``>{label} {clade}`` header, or ``?`` when
+    it is not a tree-derived clade (an example genome or an untyped tip)."""
     parts = first_header(path).split(None, 1)
-    return parts[1].strip() if len(parts) > 1 and parts[1].strip() else "?"
+    clade = parts[1].strip() if len(parts) > 1 else ""
+    return clade if clade and clade not in {"example", "NA", "?"} else "?"
 
 
 def _summarize_regions(path: Path) -> tuple[int, bool]:

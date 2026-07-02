@@ -179,6 +179,9 @@ def test_build_pool_reconstructs_tips_examples_and_labels(monkeypatch, tmp_path,
     assert "GTGTACGTAC" in by_name["ACC1"].replace("\n", "")
     # TIP2: A1G then T4 deleted -> GCGACGTAC (gap stripped), clade Y
     assert ">ACC2 Y" in by_name["ACC2"]
+    # Example genomes are not clade-typed by the tree -> the clade slot carries "example",
+    # not a mined prefix that would masquerade as a real clade (audit #9).
+    assert ">EX1 example" in by_name["EX1"]
 
 
 def test_build_pool_uses_cache_on_second_call(monkeypatch, tmp_path, logger):
