@@ -285,7 +285,10 @@ sparse to decide. Treating missing cross-typing as "cannot tell" rather than as 
 keeps a clonal whole-genome isolate from reading `reassortant` as segment count grows.
 
 Segments are grouped into parent constellations (written to `out/constellation.tsv`, one row per
-group); a `parent_group` column in `out/reassortment.tsv` records each segment's group. Segments
+group); a `parent_group` column in `out/reassortment.tsv` records each segment's group. A group whose
+segments are linked only transitively (segment A shares a strain with B, B with C, but A and C share
+none) has no single spanning strain, so its `parent_strains` is empty and the text mosaic shows `?`
+for it; the verdict is still `clonal` because no pair disagrees. Segments
 below `--ani-floor` to every tip, or aligning over too little of their length, or with no resolvable
 dataset, are reported `unassigned` and excluded from the call. Because there is no influenza taxon
 alias, flu auto-typing needs the `nextclade` CLI (for `nextclade sort`) or explicit `--dataset
