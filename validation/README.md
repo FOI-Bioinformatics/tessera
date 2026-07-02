@@ -166,11 +166,14 @@ and is not part of CI.
 
 ```
 export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"   # skani + mafft on PATH
-python validation/run_reassort_scan.py
+python validation/run_reassort_scan.py            # ephemeral (artifacts in a temp dir)
+python validation/run_reassort_scan.py scan-out/  # keep the query + per-segment TSVs
 ```
 
-The pure localization scorer (`region_overlaps_span`) is unit-tested in CI; the end-to-end run is
-opt-in. The measured result is recorded in `attribution-results.md`.
+With no argument the artifacts are written to a temporary directory removed on exit (only the
+printed report survives); pass an output path to keep the query and per-segment tables. The pure
+localization scorer (`region_overlaps_span`) is unit-tested in CI; the end-to-end run is opt-in. The
+measured result is recorded in `attribution-results.md`.
 
 A dataset is **SKIP**ped (not failed) when it cannot supply a valid test: the
 most-divergent clade pair is below ~4 % divergence (too few discriminating sites:

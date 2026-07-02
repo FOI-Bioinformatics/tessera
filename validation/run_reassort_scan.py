@@ -10,7 +10,11 @@ the true insert span (localization, the XPASS gate), whether the donor clade is 
 Needs skani, an aligner, and network access to the Nextclade datasets. Not part of CI. Run:
 
     export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"
-    python validation/run_reassort_scan.py
+    python validation/run_reassort_scan.py            # ephemeral: artifacts in a temp dir
+    python validation/run_reassort_scan.py scan-out/  # keep the query + per-segment TSVs
+
+With no argument the query and per-segment outputs are written under a temporary directory that
+is removed on exit (only the printed report survives); pass an output path to keep them.
 """
 
 from __future__ import annotations
@@ -72,11 +76,24 @@ def _run_probe(out_dir: Path, logger: logging.Logger) -> int:
     logger.info("HA insert: clade %s in clade %s backbone (true span %d-%d); NA clonal %s",
                 clade_b, clade_a, q_start, q_end, na_clade)
 
-    assign_segments(query, dataset_overrides={"HA": HA_DATASET, "NA": NA_DATASET},
-                    scan_segments=True, output=out_dir, logger=logger)
+    result = assign_segments(query, dataset_overrides={"HA": HA_DATASET, "NA": NA_DATASET},
+                             scan_segments=True, output=out_dir, logger=logger)
+    scans = {s.segment: s for s in result.scans}
 
-    ha_regions = rh.parse_regions(out_dir / "HA" / "recombination_regions.tsv")
-    na_regions = rh.parse_regions(out_dir / "NA" / "recombination_regions.tsv")
+    def _regions(segment: str) -> list[dict]:
+        # A segment whose scan was skipped (single-clade panel, error) writes no TSV.
+        path = out_dir / segment / "recombination_regions.tsv"
+        return rh.parse_regions(path) if path.exists() else []
+
+    if not scans.get("HA") or not scans["HA"].scanned:
+        note = scans["HA"].note if scans.get("HA") else "not assigned"
+        print("\nTessera reassort --scan-segments probe (opt-in; needs the aligner env)")
+        print("=" * 70)
+        print(f"[SKIP  ] HA localization  HA segment not scanned ({note})")
+        return 0
+
+    ha_regions = _regions("HA")
+    na_regions = _regions("NA")
     localized = region_overlaps_span(ha_regions, q_start, q_end)
     attributed = any(clade_b in r.get("minor_parent", "") or clade_b in r.get("major_parent", "")
                      for r in ha_regions)
@@ -89,8 +106,10 @@ def _run_probe(out_dir: Path, logger: logging.Logger) -> int:
           f"{'a region overlaps it' if localized else 'no region overlaps it'}")
     print(f"[report] HA attribution   donor clade {clade_b} named in a region: "
           f"{'yes' if attributed else 'no'}")
-    print(f"[report] NA specificity   clonal control ({na_clade}): "
-          f"{len(na_present)} region(s) called")
+    na_scanned = scans.get("NA") and scans["NA"].scanned
+    na_detail = (f"{len(na_present)} region(s) called" if na_scanned
+                 else f"not scanned ({scans['NA'].note if scans.get('NA') else 'not assigned'})")
+    print(f"[report] NA specificity   clonal control ({na_clade}): {na_detail}")
     print("\n(opt-in probe; localization is the gate, attribution/specificity are reported)")
     return 0
 
