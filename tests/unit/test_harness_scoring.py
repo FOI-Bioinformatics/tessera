@@ -152,3 +152,35 @@ def test_equidistant_pass_when_B_wins(tmp_path):
     setup = _setup(out=tmp_path, case_type="panel_equidistant", clade_a="A", clade_b="B")
     res = rh._score_regions(tmp_path, {"gA": "A", "gB": "B", "gC": "C"}.get, setup, 5, "tip", 1.0)
     assert res["pass"] is True
+
+
+def test_mosaic_pass_all_spans_recovered(tmp_path):
+    _write_regions(tmp_path, [
+        {"minor_parent": "gB", "major_parent": "gA", "query_start": 300,
+         "query_end": 450, "methods": "hmm", "donor_absent": "no"},
+        {"minor_parent": "gC", "major_parent": "gA", "query_start": 700,
+         "query_end": 1000, "methods": "hmm", "donor_absent": "no"}])
+    setup = _setup(out=tmp_path, case_type="mosaic", clade_a="A",
+                   true_spans=[(300, 450, "B"), (700, 1000, "C")], pattern="ABAC")
+    res = rh._score_regions(tmp_path, {"gA": "A", "gB": "B", "gC": "C"}.get, setup, 5, "tip", 1.0)
+    assert res["pass"] is True and res["spans_hit"] == 2
+
+
+def test_mosaic_fail_when_a_span_missed(tmp_path):
+    _write_regions(tmp_path, [
+        {"minor_parent": "gB", "major_parent": "gA", "query_start": 300,
+         "query_end": 450, "methods": "hmm", "donor_absent": "no"}])
+    setup = _setup(out=tmp_path, case_type="mosaic", clade_a="A",
+                   true_spans=[(300, 450, "B"), (700, 1000, "C")], pattern="ABAC")
+    res = rh._score_regions(tmp_path, {"gA": "A", "gB": "B", "gC": "C"}.get, setup, 5, "tip", 1.0)
+    assert res["pass"] is False and res["spans_hit"] == 1
+
+
+def test_mosaic_short_is_detection_gated(tmp_path):
+    _write_regions(tmp_path, [  # a region exists but does not overlap the true span
+        {"minor_parent": "gB", "major_parent": "gA", "query_start": 10,
+         "query_end": 40, "methods": "hmm", "donor_absent": "no"}])
+    setup = _setup(out=tmp_path, case_type="mosaic", clade_a="A",
+                   true_spans=[(500, 560, "B")], pattern="AB_short")
+    res = rh._score_regions(tmp_path, {"gA": "A", "gB": "B"}.get, setup, 5, "tip", 1.0)
+    assert res["pass"] is True  # detection-gated: a call exists, span recovery only reported

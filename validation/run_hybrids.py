@@ -574,6 +574,7 @@ class CaseSetup:
     members_by_clade: dict[str, list[str]]  # source-removed clade -> tip accessions
     case_type: str = "single_insert"
     true_spans: list[tuple[int, int, str]] = field(default_factory=list)  # non-backbone donor spans
+    pattern: str = ""  # mosaic pattern (ABAC / AB_9010 / AB_short / AB_terminal)
 
 
 def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
@@ -612,6 +613,39 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
                     name, clade_a, src_a, src_b, divergence)
         query_seq, q_start, q_end = make_hybrid(reference, tips[src_a][1], tips[src_b][1])
         true_spans = []  # a within-clade splice has no cross-clade donor span
+    elif case_type == "mosaic":
+        pattern = case["pattern"]
+        n = 3 if pattern == "ABAC" else 2
+        parents = pick_parents_n(tips, reference, n, floor=case.get("min_divergence", 0.0))
+        clade_a, src_a = parents[0]  # backbone = the largest clade
+        clade_b, src_b = parents[1]
+        muts = {c: tips[s][1] for c, s in parents}
+        a_m, b_m = muts[clade_a], muts[clade_b]
+        if pattern == "ABAC":
+            clade_c = parents[2][0]
+            c_m = muts[clade_c]
+            segments = [(a_m, 0.0, 0.30, None), (b_m, 0.30, 0.45, clade_b),
+                        (a_m, 0.45, 0.70, None), (c_m, 0.70, 1.0, clade_c)]
+        elif pattern == "AB_9010":
+            segments = [(a_m, 0.0, 0.45, None), (b_m, 0.45, 0.55, clade_b),
+                        (a_m, 0.55, 1.0, None)]
+        elif pattern == "AB_terminal":
+            segments = [(b_m, 0.0, 0.15, clade_b), (a_m, 0.15, 1.0, None)]
+        elif pattern == "AB_short":
+            half = 0.5 * window_params(len(reference))[0] / len(reference)
+            segments = [(a_m, 0.0, 0.5 - half, None), (b_m, 0.5 - half, 0.5 + half, clade_b),
+                        (a_m, 0.5 + half, 1.0, None)]
+        else:
+            raise CaseSkipped(f"unknown mosaic pattern {pattern!r}")
+        query_seq, true_spans = make_mosaic(reference, segments)
+        divergence = max(
+            100.0 - pct_identity(reconstruct_gapped(reference, muts[a]),
+                                 reconstruct_gapped(reference, muts[b]))
+            for i, (a, _) in enumerate(parents) for (b, _) in parents[i + 1:])
+        q_start = min((s for s, _e, _c in true_spans), default=0)
+        q_end = max((e for _s, e, _c in true_spans), default=0)
+        logger.info("[%s] mosaic %s: backbone %s x donors %s; max divergence %.1f%%",
+                    name, pattern, clade_a, ", ".join(c for c, _ in parents[1:]), divergence)
     else:  # single_insert, low_div, panel_donor_absent, panel_equidistant
         clade_a, clade_b, src_a, src_b = pick_parents(
             tips, reference, case.get("clades", []), logger,
@@ -702,7 +736,7 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
         query=query, query_label=query_label, q_start=q_start, q_end=q_end,
         window=window, step=step, sel_window=sel_window, aligner=aligner,
         reference=reference, tips=tips, pool=pool, members_by_clade=members_by_clade,
-        case_type=case_type, true_spans=true_spans,
+        case_type=case_type, true_spans=true_spans, pattern=case.get("pattern", ""),
     )
 
 
@@ -827,6 +861,7 @@ def _score_regions(
         "low_div": _score_low_div,
         "panel_donor_absent": _score_panel_donor_absent,
         "panel_equidistant": _score_panel_equidistant,
+        "mosaic": _score_mosaic,
     }.get(setup.case_type, _score_single_insert)
     return scorer(out_dir, clade_of, setup, n_refs, mode, runtime)
 
@@ -887,6 +922,36 @@ def _base(setup: CaseSetup, mode: str, runtime: float, present: list, **extra) -
     }
     row.update(extra)
     return row
+
+
+def _score_mosaic(out_dir, clade_of, setup, n_refs, mode, runtime) -> dict:
+    """Multi-span mosaic: each non-backbone span must be recovered with the right donor
+    clade, backbone must be clade_a. AB_short is detection-gated (span recovery reported,
+    not required); AB_terminal additionally requires the recovered region near query 0."""
+    regions = parse_regions(out_dir / "recombination_regions.tsv")
+    present = [r for r in regions if r.get("donor_absent") != "yes"]
+    major_clade = clade_of(regions[0]["major_parent"]) if regions else "?"
+    detected = len(present) >= 1
+    backbone_ok = clade_match(major_clade, setup.clade_a)
+
+    def hit(q0, q1, donor):
+        return any(
+            int(r["query_start"]) <= q1 and int(r["query_end"]) >= q0
+            and donor_match(clade_of(r["minor_parent"]), donor, setup.clade_a)
+            for r in present)
+
+    spans_hit = sum(hit(q0, q1, d) for q0, q1, d in setup.true_spans)
+    spans_total = len(setup.true_spans)
+    if setup.pattern == "AB_short":
+        passed = detected                      # a miss is reported, not failed
+    elif setup.pattern == "AB_terminal":
+        near0 = any(int(r["query_start"]) <= setup.window for r in present)
+        passed = detected and backbone_ok and spans_hit == spans_total and near0
+    else:                                       # ABAC, AB_9010
+        passed = detected and backbone_ok and spans_hit == spans_total
+    return _base(setup, mode, runtime, present, n_refs=n_refs, major_clade=major_clade,
+                 backbone_ok=backbone_ok, spans_hit=spans_hit, spans_total=spans_total,
+                 **{"pass": passed})
 
 
 def _score_neg_pure(
