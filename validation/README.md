@@ -154,6 +154,27 @@ It SKIPs (does not fail) when skani is absent, the collection has not been fetch
 the Nextclade fetch is unavailable. The `ncbi-datasets` source tag -- the other half of
 `--deep-typing` -- is covered by the unit tests rather than a fetch-based end-to-end.
 
+## Intragenic scan probe (`run_reassort_scan.py`)
+
+An opt-in probe for `reassort --scan-segments` (the per-segment intragenic scan). It builds a
+real-tip insert-shaped HA recombinant -- a clade-B segment (fraction 0.35-0.65) spliced into a
+clade-A backbone from two divergent H3N2 HA tree-tip genomes, with an exact known breakpoint --
+plus a clonal NA control, and drives the shipped `assign_segments(scan_segments=True)`. It reports
+`XPASS`/`XFAIL` gated on **localization** (a called HA region overlaps the true insert span); donor
+attribution and the clonal-control specificity are reported, not gating. Needs skani and an aligner
+and is not part of CI.
+
+```
+export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"   # skani + mafft on PATH
+python validation/run_reassort_scan.py            # ephemeral (artifacts in a temp dir)
+python validation/run_reassort_scan.py scan-out/  # keep the query + per-segment TSVs
+```
+
+With no argument the artifacts are written to a temporary directory removed on exit (only the
+printed report survives); pass an output path to keep the query and per-segment tables. The pure
+localization scorer (`region_overlaps_span`) is unit-tested in CI; the end-to-end run is opt-in. The
+measured result is recorded in `attribution-results.md`.
+
 A dataset is **SKIP**ped (not failed) when it cannot supply a valid test: the
 most-divergent clade pair is below ~4 % divergence (too few discriminating sites:
 mpox, VZV, ebola, SARS-CoV-2 within Omicron), or it has fewer than two clades with
