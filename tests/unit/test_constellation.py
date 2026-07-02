@@ -66,6 +66,22 @@ def test_partial_linkage_without_disagreement_is_undetermined():
     assert c.verdict == "undetermined"
 
 
+def test_transitively_linked_segments_are_one_clonal_group():
+    # HA-NA concordant on S1; NA-PB2 concordant on S2; HA-PB2 share nothing. Union-find must
+    # still merge all three into one component -> clonal, with an empty spanning strain set.
+    candidates = {
+        "HA": [("S1", 99.0)],
+        "NA": [("S1", 99.0), ("S2", 99.0)],
+        "PB2": [("S2", 99.0)],
+    }
+    universes = {"HA": {"S1"}, "NA": {"S1", "S2"}, "PB2": {"S2"}}
+    c = call_constellation(candidates, universes, margin=0.5)
+    assert c.verdict == "clonal"
+    assert len(c.groups) == 1
+    assert set(c.groups[0].segments) == {"HA", "NA", "PB2"}
+    assert c.groups[0].parent_strains == []  # transitively linked, no single spanning strain
+
+
 def test_fewer_than_two_segments_is_undetermined():
     c = call_constellation({"HA": [("S1", 99.0)]}, {"HA": {"S1"}}, margin=0.5)
     assert c.verdict == "undetermined"

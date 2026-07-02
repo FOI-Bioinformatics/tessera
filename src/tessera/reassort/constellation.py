@@ -52,7 +52,7 @@ def call_constellation(
         shared = near[i] & near[j]
         if shared:
             concordant.append((i, j))
-            notes.append(f"{i}~{j} concordant on {sorted(shared)}")
+            notes.append(f"{i}~{j} concordant on {', '.join(sorted(shared))}")
         elif (near[i] & universes[j]) or (near[j] & universes[i]):
             discordant = True
             notes.append(f"{i}!{j} discordant (cross-typed, different parents)")
@@ -90,6 +90,6 @@ def _components(
 
     groups = []
     for comp in members.values():
-        shared: set[str] = set.intersection(*(near[s] for s in comp)) if comp else set()
+        shared: set[str] = set.intersection(*(near[s] for s in comp))
         groups.append(ParentGroup(segments=sorted(comp), parent_strains=sorted(shared)))
     return sorted(groups, key=lambda g: (-len(g.segments), g.segments))
