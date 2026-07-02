@@ -270,7 +270,9 @@ reoviruses) also reassort: they swap whole segments between parents. A concatena
 query has no single backbone, so that phenomenon is invisible to the single-backbone scan.
 
 `tessera reassort -q segments.fasta -o out/` handles it per segment. The query is a multi-FASTA
-with one record per segment; each segment is typed independently against its own Nextclade dataset
+with one record per segment, each with a distinct name (the first header token; a duplicate segment
+name is rejected, since it would otherwise be a homolog rather than a separate segment). Each segment
+is typed independently against its own Nextclade dataset
 (auto-detected, or pinned with `--dataset SEGMENT=path`), and its nearest reference tips give a
 `(strain, clade, ANI)`.
 

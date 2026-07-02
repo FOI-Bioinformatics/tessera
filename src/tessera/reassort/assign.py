@@ -106,6 +106,13 @@ def assign_segments(
     records = read_fasta(query)
     if not records:
         raise UserInputError(f"Query FASTA {query} has no sequence.")
+    names = [name for name, _ in records if name]
+    dupes = sorted({n for n in names if names.count(n) > 1})
+    if dupes:
+        raise UserInputError(
+            f"Query has duplicate segment names ({', '.join(dupes)}); each record must be a "
+            f"distinct segment with a unique name."
+        )
 
     result = ReassortmentResult()
     candidates: dict[str, list[tuple[str, float]]] = {}

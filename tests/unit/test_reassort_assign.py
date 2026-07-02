@@ -115,6 +115,16 @@ def test_resolve_dataset_failure_is_non_fatal(tmp_path, monkeypatch):
     assert status["NA"] == "assigned"
 
 
+def test_duplicate_segment_names_raise(tmp_path, monkeypatch):
+    # Two records both named HA would collide on the temp file and candidate key; reject them
+    # up front rather than silently drop one (which could manufacture a false reassortant).
+    from tessera.core.errors import UserInputError
+    monkeypatch.setattr(assign, "skani_available", lambda: True)
+    q = _write_query(tmp_path, [("HA", "AAAA"), ("HA", "CCCC")])
+    with pytest.raises(UserInputError, match="duplicate segment name"):
+        assign_segments(q, logger=LOG)
+
+
 def test_missing_skani_raises(tmp_path, monkeypatch):
     from tessera.core.errors import UserInputError
     monkeypatch.setattr(assign, "skani_available", lambda: False)
