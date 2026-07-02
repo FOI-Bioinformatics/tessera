@@ -48,6 +48,7 @@ from tessera.discover.nextclade import (
     build_pool,
     resolve_dataset,
 )
+from tessera.discover.panel import skani_query_ani
 from tessera.discover.pool import select_regional
 from tessera.msa.build import MsaParams, build_msa
 from tessera.recomb.consensus import consensus_sequence
@@ -556,7 +557,14 @@ def _prepare_frontier_species(case, logger):
     clade_b0, src_b = _largest_clade(tips_b)
     genome_a = reconstruct_gapped(ref_a, tips_a[src_a][1]).replace("-", "").upper()
     genome_b = reconstruct_gapped(ref_b, tips_b[src_b][1]).replace("-", "").upper()
-    identity = pct_identity(genome_a, genome_b) / 100.0
+    # Genome-wide ANI via skani: the two species' genomes are unaligned and of different
+    # lengths, so a position-wise pct_identity is meaningless. skani reports (0, 0) when
+    # they do not align at all -> identity 0 -> KNOWN-LIMIT, which is honest.
+    ga_f, gb_f = out / "_src_a.fasta", out / "_src_b.fasta"
+    for f, s in ((ga_f, genome_a), (gb_f, genome_b)):
+        with open(f, "w") as fo:
+            write_fasta_record(fo, f.stem, s)
+    identity = skani_query_ani(ga_f, [gb_f], logger).get(gb_f, (0.0, 0.0))[0] / 100.0
     query_seq, q_start, q_end = make_cross_hybrid(genome_a, genome_b)
     if len(query_seq) < MIN_GENOME:
         raise CaseSkipped(f"cross-species query too short ({len(query_seq)} bp)")
