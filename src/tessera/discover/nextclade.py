@@ -70,8 +70,11 @@ def _accession_of(node: dict) -> str:
     return re.sub(r"[^\w.]", "_", str(acc))
 
 
-def _reconstruct_sequence(reference: str, nuc_muts: list[str]) -> str:
-    """Apply substitutions and deletions to ``reference``; return the ungapped genome."""
+def _reconstruct_gapped(reference: str, nuc_muts: list[str]) -> str:
+    """Apply substitutions and deletions in reference coordinates, keeping deletion gaps.
+
+    The result stays the reference length (a deletion is a ``-``), so tips of one clade are
+    mutually aligned and can be column-consensused before the gaps are stripped."""
     chars = list(reference)
     for mut in nuc_muts:
         m = _MUT.match(mut)
@@ -81,7 +84,12 @@ def _reconstruct_sequence(reference: str, nuc_muts: list[str]) -> str:
         i = pos - 1
         if 0 <= i < len(chars):
             chars[i] = alt  # '-' for a deletion
-    return "".join(chars).replace("-", "").upper()
+    return "".join(chars).upper()
+
+
+def _reconstruct_sequence(reference: str, nuc_muts: list[str]) -> str:
+    """Apply substitutions and deletions to ``reference``; return the ungapped genome."""
+    return _reconstruct_gapped(reference, nuc_muts).replace("-", "")
 
 
 # Keyword (lower-cased organism substring) -> Nextclade dataset path, for the
@@ -282,11 +290,14 @@ def build_pool(
                 continue
             seen.add(acc)
             clade = _clade_of(node.get("node_attrs", {}) or {})
-            seq = _reconstruct_sequence(reference, path_muts)
             if per_clade_consensus:
-                clade_tips.setdefault(clade, []).append(seq)
+                # Gapped (reference-length) so a clade's tips are mutually aligned; the
+                # consensus is taken column-wise, then gaps are stripped when written.
+                clade_tips.setdefault(clade, []).append(
+                    _reconstruct_gapped(reference, path_muts))
                 continue
-            out = _write_genome(build_dir, acc, clade, seq, floor)
+            out = _write_genome(build_dir, acc, clade, _reconstruct_sequence(reference, path_muts),
+                                 floor)
             if out is not None:
                 written.append(out)
 
@@ -295,7 +306,8 @@ def build_pool(
                 if not clade or clade == "NA":
                     continue  # untyped tips cannot form a clade consensus
                 label = re.sub(r"[^\w.]", "_", clade) + "_consensus"
-                out = _write_genome(build_dir, label, clade, consensus_sequence(seqs), floor)
+                cons = consensus_sequence(seqs).replace("-", "")  # equal-length gapped -> ungapped
+                out = _write_genome(build_dir, label, clade, cons, floor)
                 if out is not None:
                     written.append(out)
             logger.info("Built %d per-clade consensus genome(s) from %d tree tip(s).",
