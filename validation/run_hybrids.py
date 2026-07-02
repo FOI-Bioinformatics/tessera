@@ -646,6 +646,23 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
         q_end = max((e for _s, e, _c in true_spans), default=0)
         logger.info("[%s] mosaic %s: backbone %s x donors %s; max divergence %.1f%%",
                     name, pattern, clade_a, ", ".join(c for c, _ in parents[1:]), divergence)
+    elif case_type == "mask_sibling":
+        clade_a, clade_b, src_a, src_b = pick_parents(
+            tips, reference, case.get("clades", []), logger)
+        # The masking condition under test: a sibling sub-clade of the donor (same top-level,
+        # different sub-clade) must be present, so a near-neighbour can compete for the donor.
+        top_b = clade_b.split(".")[0]
+        siblings = {c for c in clade_members(tips, exclude_recombinant=True)
+                    if c.split(".")[0] == top_b and c != clade_b}
+        if not siblings:
+            raise CaseSkipped(f"donor clade {clade_b!r} has no sibling sub-clade present")
+        divergence = 100.0 - pct_identity(
+            reconstruct_gapped(reference, tips[src_a][1]),
+            reconstruct_gapped(reference, tips[src_b][1]))
+        query_seq, q_start, q_end = make_hybrid(reference, tips[src_a][1], tips[src_b][1])
+        true_spans = [(q_start, q_end, clade_b)]
+        logger.info("[%s] mask_sibling: backbone %s x donor %s (siblings present: %s); "
+                    "divergence %.1f%%", name, clade_a, clade_b, sorted(siblings), divergence)
     else:  # single_insert, low_div, panel_donor_absent, panel_equidistant
         clade_a, clade_b, src_a, src_b = pick_parents(
             tips, reference, case.get("clades", []), logger,
@@ -862,6 +879,7 @@ def _score_regions(
         "panel_donor_absent": _score_panel_donor_absent,
         "panel_equidistant": _score_panel_equidistant,
         "mosaic": _score_mosaic,
+        "mask_sibling": _score_mask_sibling,
     }.get(setup.case_type, _score_single_insert)
     return scorer(out_dir, clade_of, setup, n_refs, mode, runtime)
 
@@ -922,6 +940,25 @@ def _base(setup: CaseSetup, mode: str, runtime: float, present: list, **extra) -
     }
     row.update(extra)
     return row
+
+
+def _score_mask_sibling(out_dir, clade_of, setup, n_refs, mode, runtime) -> dict:
+    """Donor with a sibling sub-clade present: PASS requires the donor attributed EXACTLY
+    (attribution_tier == 'exact'), not merely to a sibling or a hierarchical parent. A
+    stricter regression guard for the plurality-major fix than the single-insert scorer."""
+    regions = parse_regions(out_dir / "recombination_regions.tsv")
+    present = [r for r in regions if r.get("donor_absent") != "yes"]
+    major_clade = clade_of(regions[0]["major_parent"]) if regions else "?"
+    q0, q1, donor = setup.true_spans[0]
+
+    def overlaps(r):
+        return int(r["query_start"]) <= q1 and int(r["query_end"]) >= q0
+
+    exact = any(overlaps(r) and attribution_tier(clade_of(r["minor_parent"]), donor) == "exact"
+                for r in present)
+    passed = len(present) >= 1 and clade_match(major_clade, setup.clade_a) and exact
+    return _base(setup, mode, runtime, present, n_refs=n_refs, major_clade=major_clade,
+                 donor_exact=exact, **{"pass": passed})
 
 
 def _score_mosaic(out_dir, clade_of, setup, n_refs, mode, runtime) -> dict:
