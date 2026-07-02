@@ -148,6 +148,28 @@ def flag_undercovered_regions(regions: list[Region], threshold: float) -> None:
         )
 
 
+def reconcile_gaps(regions: list[Region], gap_regions: list[Region]) -> list[Region]:
+    """Reconcile coverage-gap regions with the called regions.
+
+    A gap that overlaps a called region caveats that region (``donor_undercovered``):
+    the true donor for part of the region may be absent, so the reported donor is the
+    closest available reference, not necessarily the real one. A gap that overlaps no
+    called region is a genuine donor-absent region and is returned to be added to the
+    output.
+    """
+    absent: list[Region] = []
+    for gap in gap_regions:
+        overlapping = [
+            p for p in regions if gap.msa_start < p.msa_end and p.msa_start < gap.msa_end
+        ]
+        if overlapping:
+            for p in overlapping:
+                p.donor_undercovered = True
+        else:
+            absent.append(gap)
+    return absent
+
+
 def gaps_as_regions(
     gaps: list[CoverageGap], result: WindowSimilarity, major: str | None
 ) -> list[Region]:
