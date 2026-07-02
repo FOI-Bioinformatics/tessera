@@ -316,3 +316,19 @@ must-pass regression (`_run_frontier` always returns 0). The must-pass headline 
   one per segment, and the verdict remains `reassortant`. Reported as a probe outcome, not a
   regression. The per-segment model sidesteps the single-backbone limit rather than removing it; the
   intragenic scan still assumes one backbone.
+
+### `reassort --scan-segments` (intragenic per-segment scan) -- opt-in probe
+
+The `--scan-segments` flag runs the ordinary `run_recomb` scan inside each assigned segment against
+its per-clade-consensus panel. Measured on the aligner env with a synthetic query (an HA record
+spliced from two H3N2 HA clade consensuses -- J.2.2 first half, J.2 second half -- plus a clonal NA):
+the command completed, assigned both segments (HA -> J.2.2, NA -> B.4.2), and wrote
+`segment_scan.tsv`, but **both segments' scans were reported `n/a` (scan failed), not detected**. The
+failure is a pre-existing bug in the shared consensus-pool builder, surfaced here: `build_pool(
+per_clade_consensus=True)` reconstructs within-clade tips with `_reconstruct_sequence`, which strips
+deletion gaps, so the tips are unequal length and `consensus_sequence` (which requires equal length)
+raises `consensus_sequence needs equal-length sequences`. The scan module handled this faithfully --
+non-fatal, each segment recorded `scan failed: ...` rather than crashing the run -- but intragenic
+detection cannot be demonstrated until the consensus builder is fixed (reconstruct in gapped
+reference coordinates before taking the consensus, as the harness's own `consensus_panel` does).
+Recorded as measured; not retuned.
