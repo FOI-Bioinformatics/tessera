@@ -121,7 +121,7 @@ HYBRIDS: list[dict] = [
     # existing datasets; datasets with too few clades CaseSkip.
     {"name": "mosaic_dengue", "dataset": "nextstrain/dengue/all",
      "case_type": "mosaic", "pattern": "ABAC"},
-    {"name": "asym_measles", "dataset": "nextstrain/measles/genome/WHO-2012",
+    {"name": "asym_zika", "dataset": "community/itps/zikav",
      "case_type": "mosaic", "pattern": "AB_9010"},
     {"name": "short_wnv", "dataset": "nextstrain/wnv/all-lineages",
      "case_type": "mosaic", "pattern": "AB_short"},
