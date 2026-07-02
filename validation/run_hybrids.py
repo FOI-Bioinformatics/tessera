@@ -102,6 +102,20 @@ HYBRIDS: list[dict] = [
     {"name": "chikv", "dataset": "community/v-gen-lab/chikV/genotypes"},
     {"name": "enterovirus_d68", "dataset": "enpen/enterovirus/ev-d68"},
     {"name": "prrsv2", "dataset": "community/isuvdl/mazeller/prrsv2/orf5/yimim2023"},
+    # Phase-1 hard cases: specificity (negatives), low-divergence attribution, and a
+    # panel-adversarial donor-absent case. These reuse existing datasets; the equidistant
+    # case is added below once its clade pins are read from a probe run.
+    {"name": "neg_measles", "dataset": "nextstrain/measles/genome/WHO-2012",
+     "case_type": "neg_pure"},
+    # neg_within (a within-clade splice that should not read as cross-clade) is deferred:
+    # the panel reduction under test collapses a clade to one representative, so the
+    # mosaic's two same-clade sources cannot both be represented at detection time. Its
+    # scorer and helper are kept (unit-tested) for a later cycle with a fairer panel.
+    {"name": "lowdiv_rsv", "dataset": "nextstrain/rsv/a/EPI_ISL_412866",
+     "case_type": "low_div", "pair_objective": "min",
+     "divergence_band": [1.0, 4.0], "min_divergence": 1.0},
+    {"name": "donorabsent_rsv", "dataset": "nextstrain/rsv/a/EPI_ISL_412866",
+     "case_type": "panel_donor_absent"},
 ]
 INSERT = (0.35, 0.65)  # donor (clade B) occupies this fraction of the genome
 MIN_GENOME = 400  # skip a dataset whose genome/segment is too short to splice
@@ -336,7 +350,7 @@ def clade_representative(members: list[str], tips: dict[str, tuple[str, list[str
 
 def pick_parents(
     tips: dict[str, tuple[str, list[str]]], reference: str, pinned: list[str],
-    logger: logging.Logger,
+    logger: logging.Logger, *, objective: str = "max", floor: float = MIN_DIVERGENCE,
 ) -> tuple[str, str, str, str]:
     """Return ``(clade_a, clade_b, source_a, source_b)``.
 
@@ -347,6 +361,10 @@ def pick_parents(
     Recombinant clades are excluded as parents, but if that leaves fewer than two
     eligible clades (e.g. the SARS-CoV-2 XBB dataset, which is entirely XBB
     sub-lineages) they are allowed back in. Too few clades either way is a SKIP.
+
+    ``objective`` controls pair selection when not pinned: ``"max"`` picks the
+    most-divergent pair (default); ``"min"`` picks the least-divergent pair whose
+    divergence is still at or above ``MIN_DIVERGENCE``.
     """
     def eligible_of(exclude_recombinant: bool) -> dict[str, list[str]]:
         by_clade = clade_members(tips, exclude_recombinant=exclude_recombinant)
@@ -372,12 +390,42 @@ def pick_parents(
         for i, ca in enumerate(clades):
             for cb in clades[i + 1:]:
                 div = 100.0 - pct_identity(rep_seq[ca], rep_seq[cb])
-                if best is None or div > best[0]:
-                    best = (div, ca, cb)
+                if objective == "min":
+                    if div >= floor and (best is None or div < best[0]):
+                        best = (div, ca, cb)
+                else:
+                    if best is None or div > best[0]:
+                        best = (div, ca, cb)
+        if best is None:
+            raise CaseSkipped("no clade pair meets the minimum divergence threshold")
         _, ca, cb = best
     if len(eligible[cb]) > len(eligible[ca]):  # backbone = the better-represented clade
         ca, cb = cb, ca
     return ca, cb, reps[ca], reps[cb]
+
+
+def _pick_within_clade(
+    tips: dict[str, tuple[str, list[str]]], reference: str, logger: logging.Logger,
+) -> tuple[str, str, str]:
+    """Return ``(clade, src_a, src_b)``: the largest non-recombinant clade and its two
+    most-divergent members, for constructing a within-clade negative splice."""
+    by_clade: dict[str, list[str]] = {}
+    for acc, (clade, _muts) in tips.items():
+        if clade and clade not in ("?", "NA") and not is_recombinant_clade(clade):
+            by_clade.setdefault(clade, []).append(acc)
+    ranked = sorted(by_clade.items(), key=lambda kv: len(kv[1]), reverse=True)
+    for clade, members in ranked:
+        if len(members) < 2:
+            continue
+        seqs = {a: reconstruct_gapped(reference, tips[a][1]) for a in members}
+        best = max(
+            ((100.0 - pct_identity(seqs[a], seqs[b]), a, b)
+             for i, a in enumerate(members) for b in members[i + 1:]),
+            default=None,
+        )
+        if best:
+            return clade, best[1], best[2]
+    raise CaseSkipped("no clade has two divergent members for a within-clade splice")
 
 
 def make_hybrid(reference: str, src_a_muts, src_b_muts) -> tuple[str, int, int]:
@@ -467,6 +515,7 @@ class CaseSetup:
     tips: dict[str, tuple[str, list[str]]]
     pool: list[Path]  # source-removed, clade-labelled tree tips
     members_by_clade: dict[str, list[str]]  # source-removed clade -> tip accessions
+    case_type: str = "single_insert"
 
 
 def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
@@ -484,17 +533,47 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
     tree = json.loads(_download_text(dataset, "treeJson", logger))["tree"]
     tips = collect_tips(tree, case.get("clade_key"))
 
-    clade_a, clade_b, src_a, src_b = pick_parents(tips, reference, case.get("clades", []), logger)
-    divergence = 100.0 - pct_identity(
-        reconstruct_gapped(reference, tips[src_a][1]),
-        reconstruct_gapped(reference, tips[src_b][1]),
-    )
-    logger.info("[%s] backbone clade %s (%s) x donor clade %s (%s); inter-clade divergence %.1f%%",
-                name, clade_a, src_a, clade_b, src_b, divergence)
-    if divergence < case.get("min_divergence", MIN_DIVERGENCE):
-        raise CaseSkipped(f"clades too similar ({divergence:.1f}% divergence)")
+    case_type = case.get("case_type", "single_insert")
+    if case_type == "neg_pure":
+        clade_a, _, src_a, _ = pick_parents(tips, reference, case.get("clades", []), logger)
+        clade_b = ""
+        src_b = src_a
+        query_seq = reconstruct_gapped(reference, tips[src_a][1]).replace("-", "")
+        q_start = q_end = 0
+        divergence = 0.0
+        logger.info("[%s] neg_pure: clade %s (%s) unspliced query", name, clade_a, src_a)
+    elif case_type == "neg_within":
+        clade_a, src_a, src_b = _pick_within_clade(tips, reference, logger)
+        clade_b = clade_a
+        divergence = 100.0 - pct_identity(
+            reconstruct_gapped(reference, tips[src_a][1]),
+            reconstruct_gapped(reference, tips[src_b][1]),
+        )
+        logger.info("[%s] neg_within: clade %s (%s x %s); intra-clade divergence %.1f%%",
+                    name, clade_a, src_a, src_b, divergence)
+        query_seq, q_start, q_end = make_hybrid(reference, tips[src_a][1], tips[src_b][1])
+    else:  # single_insert, low_div, panel_donor_absent, panel_equidistant
+        clade_a, clade_b, src_a, src_b = pick_parents(
+            tips, reference, case.get("clades", []), logger,
+            objective=case.get("pair_objective", "max"),
+            floor=case.get("min_divergence", MIN_DIVERGENCE))
+        divergence = 100.0 - pct_identity(
+            reconstruct_gapped(reference, tips[src_a][1]),
+            reconstruct_gapped(reference, tips[src_b][1]),
+        )
+        logger.info(
+            "[%s] backbone clade %s (%s) x donor clade %s (%s); inter-clade divergence %.1f%%",
+            name, clade_a, src_a, clade_b, src_b, divergence)
+        if divergence < case.get("min_divergence", MIN_DIVERGENCE):
+            raise CaseSkipped(f"clades too similar ({divergence:.1f}% divergence)")
+        band = case.get("divergence_band")
+        if band is not None:
+            lo, hi = band
+            if not (lo <= divergence <= hi):
+                raise CaseSkipped(
+                    f"divergence {divergence:.1f}% outside band [{lo}, {hi}]")
+        query_seq, q_start, q_end = make_hybrid(reference, tips[src_a][1], tips[src_b][1])
 
-    query_seq, q_start, q_end = make_hybrid(reference, tips[src_a][1], tips[src_b][1])
     if len(query_seq) < MIN_GENOME:
         raise CaseSkipped(f"genome/segment too short to test ({len(query_seq)} bp)")
     window, step, sel_window = window_params(len(query_seq))
@@ -506,8 +585,11 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
 
     # Pool = clade-labelled tree tips only (drop Nextclade example sequences, which
     # carry no clade and would otherwise win the backbone unlabelled), minus the two
-    # exact source genomes (their clades remain represented by other tips).
-    drop = {src_a.split(".")[0], src_b.split(".")[0]}
+    # exact source genomes (their clades remain represented by other tips). A
+    # within-clade negative keeps its two same-clade sources, so the mosaic's true
+    # parents are present: the test is that the caller attributes both halves to that
+    # one clade rather than manufacturing a cross-clade event.
+    drop = set() if case_type == "neg_within" else {src_a.split(".")[0], src_b.split(".")[0]}
     base_to_tip = {acc.split(".")[0]: acc for acc in tips}
     pool = [
         g for g in genomes
@@ -527,11 +609,39 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
             continue
         members_by_clade.setdefault(clade, []).append(tipkey)
 
+    # Panel-adversarial case types: manipulate pool/members_by_clade after standard build.
+    if case_type == "panel_donor_absent":
+        # Remove every genome whose clade matches the true donor (clade_b) to simulate an
+        # absent donor; the pipeline should flag the span as donor-absent, not mis-attribute.
+        members_by_clade = {c: m for c, m in members_by_clade.items()
+                            if not clade_match(c, clade_b)}
+        retained_tips = {acc for accs in members_by_clade.values() for acc in accs}
+        pool = [g for g in pool
+                if base_to_tip.get(strip_sequence_extension(g.name).split(".")[0])
+                in retained_tips]
+        if not pool:
+            raise CaseSkipped(
+                f"panel_donor_absent: removing donor clade {clade_b!r} emptied the pool")
+    elif case_type == "panel_equidistant":
+        # Verify both the true donor (clade_b) and the decoy clade (C) remain in the panel,
+        # so the scorer can test that B is preferred over the equidistant decoy.
+        decoy_clade = case.get("decoy_clade")
+        if decoy_clade is None:
+            raise CaseSkipped("panel_equidistant: no decoy_clade configured")
+        if not any(clade_match(c, clade_b) for c in members_by_clade):
+            raise CaseSkipped(
+                f"panel_equidistant: donor clade {clade_b!r} absent from panel "
+                "after source removal")
+        if not any(clade_match(c, decoy_clade) for c in members_by_clade):
+            raise CaseSkipped(
+                f"panel_equidistant: decoy clade {decoy_clade!r} absent from panel")
+
     return CaseSetup(
         name=name, out=out, clade_a=clade_a, clade_b=clade_b, divergence=divergence,
         query=query, query_label=query_label, q_start=q_start, q_end=q_end,
         window=window, step=step, sel_window=sel_window, aligner=aligner,
         reference=reference, tips=tips, pool=pool, members_by_clade=members_by_clade,
+        case_type=case_type,
     )
 
 
@@ -554,7 +664,8 @@ def _build_and_score(
             raise CaseSkipped(
                 f"backbone clade {setup.clade_a!r} has no panel representative "
                 "after the source genome was removed")
-        if not any(donor_match(c, setup.clade_b, setup.clade_a) for c in avail):
+        if setup.case_type not in ("neg_pure", "panel_donor_absent") and not any(
+            donor_match(c, setup.clade_b, setup.clade_a) for c in avail):
             raise CaseSkipped(
                 f"donor clade {setup.clade_b!r} has no panel representative "
                 "after the source genome was removed")
@@ -605,7 +716,11 @@ def _build_and_score(
             raise CaseSkipped(
                 f"backbone clade {setup.clade_a!r} has no panel representative "
                 "after the source genome was removed")
-        if not any(donor_match(c, setup.clade_b, setup.clade_a) for c in panel_clades):
+        # The donor invariant does not apply to case types with no donor to represent:
+        # neg_pure (a non-recombinant query) and panel_donor_absent (donor removed on
+        # purpose, so its absence is the test, not a skip condition).
+        if setup.case_type not in ("neg_pure", "panel_donor_absent") and not any(
+            donor_match(c, setup.clade_b, setup.clade_a) for c in panel_clades):
             raise CaseSkipped(
                 f"donor clade {setup.clade_b!r} has no panel representative "
                 "after the source genome was removed")
@@ -641,6 +756,21 @@ def _build_and_score(
 
 
 def _score_regions(
+    out_dir: Path, clade_of, setup: CaseSetup, n_refs: int, mode: str, runtime: float,
+) -> dict:
+    """Score a completed run by the case's type (default: single-insert hybrid)."""
+    scorer = {
+        "single_insert": _score_single_insert,
+        "neg_pure": _score_neg_pure,
+        "neg_within": _score_neg_within,
+        "low_div": _score_low_div,
+        "panel_donor_absent": _score_panel_donor_absent,
+        "panel_equidistant": _score_panel_equidistant,
+    }.get(setup.case_type, _score_single_insert)
+    return scorer(out_dir, clade_of, setup, n_refs, mode, runtime)
+
+
+def _score_single_insert(
     out_dir: Path, clade_of, setup: CaseSetup, n_refs: int, mode: str, runtime: float,
 ) -> dict:
     """Score a completed detection run: detection, backbone/donor attribution, ensemble
@@ -684,6 +814,105 @@ def _score_regions(
         "backbone_tier": attribution_tier(major_clade, setup.clade_a),
         "backbone_depth": shared_clade_depth(major_clade, setup.clade_a),
     }
+
+
+def _base(setup: CaseSetup, mode: str, runtime: float, present: list, **extra) -> dict:
+    """Reporting fields shared by every scorer."""
+    row = {
+        "name": setup.name, "clade_a": setup.clade_a, "clade_b": setup.clade_b,
+        "divergence": setup.divergence, "mode": mode, "runtime": runtime,
+        "detected": len(present) >= 1, "n_regions": len(present),
+        "case_type": setup.case_type,
+    }
+    row.update(extra)
+    return row
+
+
+def _score_neg_pure(
+    out_dir: Path, clade_of, setup: CaseSetup, n_refs: int, mode: str, runtime: float,
+) -> dict:
+    """Non-recombinant query: PASS iff no (donor-present) region is called."""
+    regions = parse_regions(out_dir / "recombination_regions.tsv")
+    present = [r for r in regions if r.get("donor_absent") != "yes"]
+    row = _base(setup, mode, runtime, present, n_refs=n_refs, n_false_regions=len(present))
+    row["pass"] = len(present) == 0
+    return row
+
+
+def _score_neg_within(
+    out_dir: Path, clade_of, setup: CaseSetup, n_refs: int, mode: str, runtime: float,
+) -> dict:
+    """Within-clade splice: PASS iff no region attributes a cross-top-level-clade donor."""
+    regions = parse_regions(out_dir / "recombination_regions.tsv")
+    present = [r for r in regions if r.get("donor_absent") != "yes"]
+    cross = [
+        r for r in present
+        if base_clade(clade_of(r["minor_parent"])).split(".")[0]
+        != base_clade(clade_of(r["major_parent"])).split(".")[0]
+    ]
+    row = _base(setup, mode, runtime, present, n_refs=n_refs, n_false_regions=len(cross))
+    row["pass"] = len(cross) == 0
+    return row
+
+
+def _score_low_div(
+    out_dir: Path, clade_of, setup: CaseSetup, n_refs: int, mode: str, runtime: float,
+) -> dict:
+    """Low-divergence attribution: require detection + donor top-level + backbone
+    top-level clade (no <4% free pass). Exact-vs-sibling is reported, not gating."""
+    regions = parse_regions(out_dir / "recombination_regions.tsv")
+    present = [r for r in regions if r.get("donor_absent") != "yes"]
+    major_clade = clade_of(regions[0]["major_parent"]) if regions else "?"
+    span = [r for r in present
+            if int(r["query_start"]) <= setup.q_end and int(r["query_end"]) >= setup.q_start]
+    donor_hits = [r for r in span
+                  if attribution_tier(clade_of(r["minor_parent"]), setup.clade_b) != "mismatch"]
+    detected = len(present) >= 1
+    backbone_ok = attribution_tier(major_clade, setup.clade_a) != "mismatch"
+    passed = detected and len(donor_hits) >= 1 and backbone_ok
+    donor_obs = max((clade_of(r["minor_parent"]) for r in span),
+                    key=lambda c: shared_clade_depth(c, setup.clade_b), default="?")
+    return _base(setup, mode, runtime, present, n_refs=n_refs, major_clade=major_clade,
+                 backbone_ok=backbone_ok, donor_ok=len(donor_hits) >= 1,
+                 backbone_tier=attribution_tier(major_clade, setup.clade_a),
+                 donor_tier=attribution_tier(donor_obs, setup.clade_b),
+                 **{"pass": passed})
+
+
+def _score_panel_donor_absent(
+    out_dir: Path, clade_of, setup: CaseSetup, n_refs: int, mode: str, runtime: float,
+) -> dict:
+    """True donor removed from the panel: PASS iff the span is flagged donor-absent and
+    not confidently mis-attributed to a present cross-clade donor."""
+    regions = parse_regions(out_dir / "recombination_regions.tsv")
+
+    def overlaps(r):
+        return int(r["query_start"]) <= setup.q_end and int(r["query_end"]) >= setup.q_start
+
+    absent_hit = any(r.get("donor_absent") == "yes" and overlaps(r) for r in regions)
+    present = [r for r in regions if r.get("donor_absent") != "yes"]
+    def cross_clade(r):
+        top = base_clade(clade_of(r["minor_parent"]) or "").split(".")[0]
+        return top != setup.clade_a.split(".")[0]
+
+    misattr = any(
+        overlaps(r) and "," in (r.get("methods") or "") and cross_clade(r)
+        for r in present
+    )
+    passed = absent_hit and not misattr
+    return _base(setup, mode, runtime, present, n_refs=n_refs,
+                 absent_hit=absent_hit, misattributed=misattr, **{"pass": passed})
+
+
+def _score_panel_equidistant(
+    out_dir: Path, clade_of, setup: CaseSetup, n_refs: int, mode: str, runtime: float,
+) -> dict:
+    """Two equidistant candidate donors (B pinned as truth): PASS iff donor attributed to
+    B, not the decoy C. Guards the plurality_major tie-break."""
+    res = _score_single_insert(out_dir, clade_of, setup, n_refs, mode, runtime)
+    # _score_single_insert already requires donor_match(observed, clade_b, clade_a); a C
+    # attribution fails donor_ok. Reuse its verdict directly.
+    return res
 
 
 def run_case(case: dict, logger: logging.Logger) -> dict:
@@ -768,11 +997,13 @@ def _run_default(cases: list[dict], logger: logging.Logger) -> int:
             print(f"{r['name']:16} ERROR: {r.get('error', '')[:50]}")
             continue
         verdict = "PASS" if r["pass"] else "FAIL"
+        # Single-insert rows carry major_clade/backbone_ok/donor_ok; the negative and
+        # panel case types return the lean _base row, so fall back gracefully.
         print(f"{r['name']:16} {r['clade_a']+' x '+r['clade_b']:24.24} "
-              f"{r['divergence']:4.1f}% {r['major_clade']:>10.10} "
-              f"{'Y' if r['detected'] else 'n':>3} {'Y' if r['backbone_ok'] else 'n':>3} "
-              f"{'Y' if r['donor_ok'] else 'n':>3} {'Y' if r.get('agree') else '.':>3} "
-              f"{r['mode']:>9} "
+              f"{r['divergence']:4.1f}% {r.get('major_clade', '-'):>10.10} "
+              f"{'Y' if r['detected'] else 'n':>3} {'Y' if r.get('backbone_ok') else 'n':>3} "
+              f"{'Y' if r.get('donor_ok') else 'n':>3} {'Y' if r.get('agree') else '.':>3} "
+              f"{r.get('mode', '-'):>9} "
               f"{r.get('phi_p', '-'):>8.8} {r.get('rmin', '-'):>4} "
               f"{r['runtime']:5.0f}s  {verdict}")
     passed = sum(1 for r in results if r.get("pass"))
@@ -780,6 +1011,15 @@ def _run_default(cases: list[dict], logger: logging.Logger) -> int:
     skipped = sum(1 for r in results if r.get("skip") is not None)
     errored = sum(1 for r in results if r.get("pass") is None and r.get("skip") is None)
     print(f"\n{passed}/{ran} passed  ({skipped} skipped, {errored} error)")
+    scored = [r for r in results if r.get("pass") is not None]
+    negs = [r for r in scored if r.get("case_type") in ("neg_pure", "neg_within")]
+    pos = [r for r in scored if r not in negs]
+    sens_pass = sum(1 for r in pos if r["pass"])
+    spec_pass = sum(1 for r in negs if r["pass"])
+    false_calls = sum(r.get("n_false_regions", 0) for r in negs)
+    print(f"sensitivity {sens_pass}/{len(pos)}  "
+          f"specificity {spec_pass}/{len(negs)} ({false_calls} false call(s))  "
+          f"({skipped} skipped, {errored} error)")
     return 1 if errored else 0
 
 
