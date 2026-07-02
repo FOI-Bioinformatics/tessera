@@ -15,6 +15,7 @@ import typer
 
 from ..reassort import assign_segments
 from ..reassort.assign import DEFAULT_ANI_FLOOR
+from ..reassort.constellation import DEFAULT_MARGIN
 from .main import app, get_logger, stage_errors
 
 
@@ -37,6 +38,10 @@ def reassort(
         DEFAULT_ANI_FLOOR, "--ani-floor",
         help="A segment below this ANI to every reference tip is left unassigned.",
     ),
+    margin: float = typer.Option(
+        DEFAULT_MARGIN, "--margin",
+        help="ANI window (percentage points) for a segment's near-best parents.",
+    ),
 ) -> None:
     """Detect reassortment: assign each segment to its nearest reference lineage and
     report the per-segment genotype plus a clonal/reassortant verdict."""
@@ -52,22 +57,32 @@ def reassort(
         result = assign_segments(
             query, dataset_overrides=overrides,
             email=email or os.environ.get("NCBI_EMAIL"),
-            ani_floor=ani_floor, logger=logger,
+            ani_floor=ani_floor, margin=margin, logger=logger,
         )
 
         output.mkdir(parents=True, exist_ok=True)
+        group_of = {seg: i for i, g in enumerate(result.groups) for seg in g.segments}
+
         tsv = output / "reassortment.tsv"
         with open(tsv, "w") as fo:
-            fo.write("segment\tdataset\tnearest_strain\tclade\tani\tstatus\n")
+            fo.write("segment\tdataset\tnearest_strain\tclade\tani\tstatus\tparent_group\n")
             for s in result.segments:
+                grp = group_of.get(s.segment, "")
                 fo.write(f"{s.segment}\t{s.dataset}\t{s.strain or ''}\t{s.clade or ''}\t"
-                         f"{s.ani:.1f}\t{s.status}\n")
+                         f"{s.ani:.1f}\t{s.status}\t{grp}\n")
+
+        ctsv = output / "constellation.tsv"
+        with open(ctsv, "w") as fo:
+            fo.write("group_index\tsegments\tparent_strains\n")
+            for i, g in enumerate(result.groups):
+                fo.write(f"{i}\t{','.join(g.segments)}\t{','.join(g.parent_strains)}\n")
 
         mosaic = " | ".join(
-            f"{s.segment}:{s.clade} ({s.strain})" if s.status == "assigned"
-            else f"{s.segment}:unassigned"
-            for s in result.segments
+            f"group {i} {{{','.join(g.segments)}}} = {','.join(g.parent_strains) or '?'}"
+            for i, g in enumerate(result.groups)
         )
         logger.info("Reassortment verdict: %s", result.verdict.upper())
-        logger.info("Per-segment genotype: %s", mosaic)
-        logger.info("Wrote %s", tsv)
+        logger.info("Parent constellation: %s", mosaic or "(no segments assigned)")
+        if result.verdict == "undetermined" and result.pair_notes:
+            logger.info("Why undetermined: %s", "; ".join(result.pair_notes))
+        logger.info("Wrote %s and %s", tsv, ctsv)

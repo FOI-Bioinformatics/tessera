@@ -311,5 +311,8 @@ must-pass regression (`_run_frontier` always returns 0). The must-pass headline 
   two-record query (HA consensus of one clade, NA consensus of another), runs `assign_segments`, and
   **XPASSes** when the segments trace to different parents: HA -> strain `A_Abudhabi_19563_2025`
   (clade J.2.2), NA -> strain `A_AbuDhabi_932_2024` (clade B.4.2), disjoint parents -> `reassortant`.
-  Reported as a probe outcome, not a regression. The per-segment model sidesteps the single-backbone
-  limit rather than removing it; the intragenic scan still assumes one backbone.
+  Under the v1.1 coverage-aware call the two segments are discordant (each near-best strain is
+  cross-typed in the other's tree but not near-best there), so the constellation is two parent groups,
+  one per segment, and the verdict remains `reassortant`. Reported as a probe outcome, not a
+  regression. The per-segment model sidesteps the single-backbone limit rather than removing it; the
+  intragenic scan still assumes one backbone.
