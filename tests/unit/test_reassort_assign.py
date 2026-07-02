@@ -60,26 +60,72 @@ def test_low_af_tip_is_dropped_from_ranking(tmp_path, monkeypatch):
     assert result.verdict == "undetermined"
 
 
-def test_build_pool_failure_is_non_fatal(tmp_path, monkeypatch):
-    # build_pool raises for HA; the run must continue and mark HA unassigned, not abort.
+def test_build_pool_error_propagates(tmp_path, monkeypatch):
+    # A build_pool failure is a download/environment error, not a per-segment biological skip:
+    # it must surface (propagate), not be silently reported as "unassigned" (audit #10).
     na_tip = tmp_path / "NA_pool" / "strainB.fasta"
     na_tip.parent.mkdir(parents=True, exist_ok=True)
     na_tip.write_text(">x\nACGT\n")
 
+    def build_pool(ds, *, cache_dir, logger):
+        raise RuntimeError("pool build blew up")
+
+    monkeypatch.setattr(assign, "skani_available", lambda: True)
+    monkeypatch.setattr(assign, "resolve_dataset",
+                        lambda fasta, override, *, email, logger: _DS("HA_ds"))
+    monkeypatch.setattr(assign, "nextclade_cache", lambda p, t, override=None: Path("/x"))
+    monkeypatch.setattr(assign, "build_pool", build_pool)
+
+    q = _write_query(tmp_path, [("HA", "HAxx")])
+    with pytest.raises(RuntimeError, match="pool build blew up"):
+        assign_segments(q, logger=LOG)
+
+
+def test_build_pool_download_error_propagates(tmp_path, monkeypatch):
+    # The real download-failure mode is UserInputError from _download_text; it must surface,
+    # not be caught by the ToolExecutionError (short-segment) handler (audit #10).
+    from tessera.core.errors import UserInputError
+
+    def build_pool(ds, *, cache_dir, logger):
+        raise UserInputError("Could not download https://.../tree.json: timed out")
+
+    monkeypatch.setattr(assign, "skani_available", lambda: True)
+    monkeypatch.setattr(assign, "resolve_dataset",
+                        lambda fasta, override, *, email, logger: _DS("HA_ds"))
+    monkeypatch.setattr(assign, "nextclade_cache", lambda p, t, override=None: Path("/x"))
+    monkeypatch.setattr(assign, "build_pool", build_pool)
+
+    q = _write_query(tmp_path, [("HA", "HAxx")])
+    with pytest.raises(UserInputError, match="Could not download"):
+        assign_segments(q, logger=LOG)
+
+
+def test_skani_short_segment_is_non_fatal(tmp_path, monkeypatch):
+    # skani rejects a very short / odd segment with ToolExecutionError -> a genuine per-segment
+    # skip: HA unassigned, NA still assigned, run continues.
+    from tessera.core.errors import ToolExecutionError
+    ha_tip = tmp_path / "HA_pool" / "strainA.fasta"
+    na_tip = tmp_path / "NA_pool" / "strainB.fasta"
+    for t in (ha_tip, na_tip):
+        t.parent.mkdir(parents=True, exist_ok=True)
+        t.write_text(">x\nACGT\n")
+
     def resolve(fasta, override, *, email, logger):
         return _DS("HA_ds") if "HA" in fasta.read_text() else _DS("NA_ds")
 
+    def skani(q, refs, logger):
+        if refs[0].parent.name == "HA_pool":
+            raise ToolExecutionError(["skani", "dist"], 1, "sequence too short")
+        return {na_tip: (99.0, 0.99)}
+
     def build_pool(ds, *, cache_dir, logger):
-        if ds.path == "HA_ds":
-            raise RuntimeError("pool build blew up")
-        return [na_tip]
+        return [ha_tip] if ds.path == "HA_ds" else [na_tip]
 
     monkeypatch.setattr(assign, "skani_available", lambda: True)
     monkeypatch.setattr(assign, "resolve_dataset", resolve)
     monkeypatch.setattr(assign, "nextclade_cache", lambda p, t, override=None: Path("/x"))
     monkeypatch.setattr(assign, "build_pool", build_pool)
-    monkeypatch.setattr(assign, "skani_query_ani",
-                        lambda q, refs, logger: {na_tip: (99.0, 0.99)})
+    monkeypatch.setattr(assign, "skani_query_ani", skani)
     monkeypatch.setattr(assign, "_clade_of_tip", lambda tip: "cladeX")
 
     q = _write_query(tmp_path, [("HA", "HAxx"), ("NA", "NAyy")])
@@ -90,14 +136,15 @@ def test_build_pool_failure_is_non_fatal(tmp_path, monkeypatch):
 
 
 def test_resolve_dataset_failure_is_non_fatal(tmp_path, monkeypatch):
-    # resolve_dataset raises for HA (no dataset maps); HA -> unassigned, NA still assigned.
+    # resolve_dataset raises UserInputError for HA (no dataset maps); HA -> unassigned, NA assigned.
+    from tessera.core.errors import UserInputError
     na_tip = tmp_path / "NA_pool" / "strainB.fasta"
     na_tip.parent.mkdir(parents=True, exist_ok=True)
     na_tip.write_text(">x\nACGT\n")
 
     def resolve(fasta, override, *, email, logger):
         if "HA" in fasta.read_text():
-            raise RuntimeError("no dataset maps to this segment")
+            raise UserInputError("no dataset maps to this segment")
         return _DS("NA_ds")
 
     monkeypatch.setattr(assign, "skani_available", lambda: True)
@@ -113,6 +160,20 @@ def test_resolve_dataset_failure_is_non_fatal(tmp_path, monkeypatch):
     status = {s.segment: s.status for s in result.segments}
     assert status["HA"] == "unassigned"
     assert status["NA"] == "assigned"
+
+
+def test_clade_of_tip_ignores_non_clade_markers(tmp_path):
+    # A tree tip's 2nd header token is its clade; an example genome carries "example" and an
+    # untyped tip "NA" -> neither is a real clade, so _clade_of_tip returns None (audit #9).
+    def _tip(text):
+        p = tmp_path / f"{abs(hash(text))}.fasta"
+        p.write_text(text)
+        return p
+
+    assert assign._clade_of_tip(_tip(">A_Darwin_6_2021 J.2.2\nACGT\n")) == "J.2.2"
+    assert assign._clade_of_tip(_tip(">EPI_1 example\nACGT\n")) is None
+    assert assign._clade_of_tip(_tip(">tipx NA\nACGT\n")) is None
+    assert assign._clade_of_tip(_tip(">tipx\nACGT\n")) is None
 
 
 def test_duplicate_segment_names_raise(tmp_path, monkeypatch):

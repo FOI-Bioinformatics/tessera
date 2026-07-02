@@ -29,6 +29,20 @@ def _regions_tsv(tmp_path, rows):
     return p
 
 
+def test_clade_of_header_ignores_non_clade_markers(tmp_path):
+    from tessera.reassort.scan import _clade_of_header
+
+    def _g(text):
+        p = tmp_path / f"{abs(hash(text))}.fasta"
+        p.write_text(text)
+        return p
+
+    assert _clade_of_header(_g(">J.2.2_consensus J.2.2\nACGT\n")) == "J.2.2"
+    assert _clade_of_header(_g(">EPI_1 example\nACGT\n")) == "?"
+    assert _clade_of_header(_g(">tipx NA\nACGT\n")) == "?"
+    assert _clade_of_header(_g(">tipx\nACGT\n")) == "?"
+
+
 def test_summarize_counts_present_regions(tmp_path):
     p = _regions_tsv(tmp_path, ["100\t200\tno", "300\t400\tno"])
     assert _summarize_regions(p) == (2, True)

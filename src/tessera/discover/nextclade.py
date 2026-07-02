@@ -43,6 +43,11 @@ NEXTCLADE = ToolCapabilities(
 
 # A nuc mutation: ref-base, 1-based position, alt-base ('-' = deletion).
 _MUT = re.compile(r"^([A-Za-z])(\d+)([A-Za-z-])$")
+
+# Clade-slot header tokens that are not a real tree-derived clade: an example genome
+# (``example``), an untyped tip (``NA``/``?``), or an absent token (``""``). Consumers that
+# read a pool genome's clade should treat these as "no clade".
+NON_CLADE_MARKERS = frozenset({"", "example", "NA", "?"})
 # Clade-label node attributes in priority order. The dataset-specific informative
 # labels come first -- Nextclade_pango / clade_nextstrain (SARS-CoV-2), LANL_subtype
 # (HIV) -- then clade_membership, the universal key present in most datasets but often
@@ -315,8 +320,9 @@ def build_pool(
         else:
             logger.info("Reconstructed %d Nextclade tree-tip genome(s).", len(written))
 
-        # Add example sequences; the header's first token (often subtype.country...)
-        # gives a label and clade-ish note, deduped against the reconstructed tips.
+        # Add example sequences; the header's first token labels the genome. Example
+        # headers are not clade-typed by the tree, so they carry the ``example`` marker in
+        # the clade slot rather than a mined prefix that would masquerade as a real clade.
         # A download failure here is non-fatal: the tips-only pool is still valid.
         if "examples" in dataset.files:
             try:
@@ -326,8 +332,7 @@ def build_pool(
                     if not acc or acc in seen:
                         continue
                     seen.add(acc)
-                    note = header.split(".")[0] if "." in header else "example"
-                    out = _write_genome(build_dir, acc, note, seq.upper(), floor)
+                    out = _write_genome(build_dir, acc, "example", seq.upper(), floor)
                     if out is not None:
                         written.append(out)
                         examples += 1
