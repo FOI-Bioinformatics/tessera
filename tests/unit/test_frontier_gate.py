@@ -46,22 +46,32 @@ def test_envelope_xfail_in_envelope_not_attributed():
     assert v == "XFAIL"
 
 
-def _reassort_regions(tmp_path, start, end):
-    cols = ["minor_parent", "major_parent", "query_start", "query_end", "methods",
-            "donor_absent", "donor_undercovered"]
-    row = ["m", "M", str(start), str(end), "hmm", "no", "no"]
-    (tmp_path / "recombination_regions.tsv").write_text(
-        "\t".join(cols) + "\n" + "\t".join(row) + "\n")
-    (tmp_path / "recombination_profile.tsv").write_text("phi_p\trmin\n-\t0\n")
+def _reassort_result(verdict, segs):
+    from tessera.reassort.assign import ReassortmentResult, SegmentAssignment
+    segments = [SegmentAssignment(seg, "ds", strain, clade, ani, status)
+                for seg, strain, clade, ani, status in segs]
+    return ReassortmentResult(segments=segments, verdict=verdict)
 
 
-def test_reassortant_junction_hit(tmp_path):
-    _reassort_regions(tmp_path, 1400, 1700)
-    v, _d = rh._score_frontier_reassortant(tmp_path, junction=1500)
+def test_reassortant_verdict_xpasses(tmp_path):
+    result = _reassort_result("reassortant", [
+        ("HA", "A/X", "J.2.2", 100.0, "assigned"),
+        ("NA", "A/Y", "B.4.2", 100.0, "assigned")])
+    v, _d = rh._score_frontier_reassortant(result)
     assert v == "XPASS"
 
 
-def test_reassortant_junction_miss(tmp_path):
-    _reassort_regions(tmp_path, 100, 300)
-    v, _d = rh._score_frontier_reassortant(tmp_path, junction=1500)
+def test_clonal_verdict_xfails(tmp_path):
+    result = _reassort_result("clonal", [
+        ("HA", "A/X", "J.2.2", 100.0, "assigned"),
+        ("NA", "A/X", "J.2.2", 100.0, "assigned")])
+    v, _d = rh._score_frontier_reassortant(result)
     assert v == "XFAIL"
+
+
+def test_undetermined_verdict_is_known_limit(tmp_path):
+    result = _reassort_result("undetermined", [
+        ("HA", "A/X", "J.2.2", 100.0, "assigned"),
+        ("NA", None, None, 0.0, "unassigned")])
+    v, _d = rh._score_frontier_reassortant(result)
+    assert v == "KNOWN-LIMIT"

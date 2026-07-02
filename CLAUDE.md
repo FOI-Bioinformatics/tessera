@@ -21,11 +21,14 @@ For the user-facing overview see [README.md](README.md). For depth:
 ## Layout
 
 - `src/tessera/cli/` -- Typer app; one `cmd_*.py` per command (`detect`, `build-panel`,
-  `msa`, `recomb`, `find-references`, `fill-references`, `curate-panel`). Importing a
-  `cmd_*` module registers its command as a side effect.
+  `msa`, `recomb`, `find-references`, `fill-references`, `curate-panel`, `type-lineages`,
+  `reassort`). Importing a `cmd_*` module registers its command as a side effect.
 - `src/tessera/recomb/` -- the scan: `similarity` (windowed distances), `hmm`,
   `threeseq`, `diagnostics` (PHI + Rmin), `regions`, `coverage`, `typing`, `report`,
   `run` (orchestration).
+- `src/tessera/reassort/` -- per-segment reassortment detection (the `reassort` command):
+  type each segment against its Nextclade dataset, call reassortment by nearest-strain
+  consistency. Orthogonal to the single-backbone intragenic scan.
 - `src/tessera/discover/` -- panel recruitment (BLAST, NCBI Virus, Nextclade, curation).
 - `src/tessera/aligners/` -- aligner adapters, discovered via the `tessera.aligners`
   entry-point group (`pyproject.toml`); core never imports a specific adapter.

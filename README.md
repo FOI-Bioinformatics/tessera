@@ -76,7 +76,8 @@ and `tessera recomb --help`.
 
 Run `tessera --help` (or `tessera <command> --help`) for the full set of commands and
 options: `detect`, `build-panel`, `msa`, `recomb`, `find-references`,
-`fill-references`, `curate-panel`.
+`fill-references`, `curate-panel`, `type-lineages`, and `reassort` (per-segment
+reassortment detection for segmented viruses).
 
 ## Example dataset
 
