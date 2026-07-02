@@ -253,8 +253,8 @@ true donor, so no coverage gap arises over the donor region and no new caveat is
 Phase 2 generalises the single splice to a mosaic (`make_mosaic` / `true_spans`) and adds
 multi-breakpoint, asymmetric, short-tract, and terminal-breakpoint patterns plus a masking-sibling
 attribution case. Additive: the Phase-1 cases and scorers are unchanged. Measured on the aligner
-env: **sensitivity 24/25, specificity 1/1**, no regression to any Phase-1 case. Of the five new
-cases, four PASS and one is a recorded finding:
+env: **sensitivity 25/25, specificity 1/1**, no regression to any Phase-1 case (after the
+`asym` re-target below). The five new cases:
 
 - **`mosaic_dengue`** (ABAC, 3-parent multi-breakpoint, DENV2 backbone x DENV1 + DENV4 donors,
   33.1%): PASS -- every non-backbone span recovered with the correct donor serotype and the
@@ -267,11 +267,19 @@ cases, four PASS and one is a recorded finding:
 - **`masksib_rsv`** (mask_sibling, donor `A.D.1.8` with sibling `A.D.5.2` present, 6.6%): PASS --
   the donor is attributed **exactly** (not the sibling). This is a direct regression guard for the
   plurality-major major-parent fix: the masking sibling does not win.
-- **`asym_measles`** (AB_9010, a 10% asymmetric donor tract, H1 x B3, 7.5%): **FAIL (recorded
-  finding)** -- the event is detected and the backbone is correct, but the small 10% donor span is
-  not recovered/attributed. A genuine sensitivity limit at small asymmetric tract sizes, surfaced
-  by the harder harness (the same way `donorabsent` was). It is not tuned away; it is a candidate
-  next fix-target (or a reclassification of AB_9010 to detection-gated in a later cycle).
+- **`asym_zika`** (AB_9010, a 10% asymmetric donor tract, Asian x African, 10.9%): PASS -- the 10%
+  donor span is recovered and attributed to the correct African clade over the Asian backbone.
+
+  **Diagnosis of the original `asym_measles` FAIL (resolved by re-targeting, not a caller bug).**
+  The first AB_9010 case used measles (H1 backbone x B3 donor) and FAILed. Diagnosis showed the
+  10% tract *was* detected (a region at the exact donor span), but attributed to genotype `E`, not
+  the true `B3`. The decisive check: in the spliced donor region the panel's B3 and E references
+  have **zero** discordant sites -- they are *identical* there (their 47 genome-wide differences all
+  fall in the backbone region), so the B3 insert is genuinely indistinguishable from E and the
+  caller had no signal to prefer B3. This is a **data ambiguity, not a caller bug**: the AB_9010
+  pattern is sound; measles B3 was simply an unsuitable donor because it is identical to a sibling
+  in-region. Re-targeting to Zika (Asian/African -- distinguishable and well-represented) makes the
+  asymmetric-attribution test pass on its merits.
 
 `panel_equidistant` and `neg_within` remain scaffolding without live entries (deferred as in
 Phase 1).
