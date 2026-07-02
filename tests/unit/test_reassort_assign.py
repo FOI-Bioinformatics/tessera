@@ -131,3 +131,74 @@ def test_missing_skani_raises(tmp_path, monkeypatch):
     q = _write_query(tmp_path, [("HA", "AAAA")])
     with pytest.raises(UserInputError):
         assign_segments(q, logger=LOG)
+
+
+def test_scan_segments_scans_assigned_only(tmp_path, monkeypatch):
+    # HA and NA both assign; scan_segments=True -> each assigned segment gets a SegmentScan;
+    # scan_segment is stubbed so no aligner is needed. require_aligner is stubbed to a no-op.
+    ha_tip = tmp_path / "HA_pool" / "strainA.fasta"
+    na_tip = tmp_path / "NA_pool" / "strainB.fasta"
+    for t in (ha_tip, na_tip):
+        t.parent.mkdir(parents=True, exist_ok=True)
+        t.write_text(">x\nACGT\n")
+
+    def resolve(fasta, override, *, email, logger):
+        return _DS("HA_ds") if "HA" in fasta.read_text() else _DS("NA_ds")
+
+    _patch(monkeypatch, resolve=resolve,
+           tips_by_path={"HA_ds": [ha_tip], "NA_ds": [na_tip]},
+           ani_by_path={"HA_pool": {ha_tip: (99.0, 0.99)},
+                        "NA_pool": {na_tip: (99.0, 0.99)}})
+    monkeypatch.setattr(assign, "require_aligner", lambda aligner: None)
+    seen = []
+
+    def fake_scan(segment, seq, dataset, out_dir, *, aligner, cache_dir, logger):
+        from tessera.reassort.scan import SegmentScan
+        seen.append(segment)
+        return SegmentScan(segment, True, segment == "HA", 1 if segment == "HA" else 0,
+                           "1 region(s)" if segment == "HA" else "none")
+    monkeypatch.setattr(assign, "scan_segment", fake_scan)
+
+    q = _write_query(tmp_path, [("HA", "HAxx"), ("NA", "NAyy")])
+    result = assign_segments(q, output=tmp_path / "out", scan_segments=True, logger=LOG)
+    assert seen == ["HA", "NA"]
+    scans = {s.segment: s for s in result.scans}
+    assert scans["HA"].recombinant is True and scans["NA"].recombinant is False
+
+
+def test_scan_segments_marks_unassigned(tmp_path, monkeypatch):
+    # HA unassigned (no eligible tip); scan_segments=True -> HA gets a not-scanned row, no scan.
+    ha_tip = tmp_path / "HA_pool" / "strainA.fasta"
+    na_tip = tmp_path / "NA_pool" / "strainB.fasta"
+    for t in (ha_tip, na_tip):
+        t.parent.mkdir(parents=True, exist_ok=True)
+        t.write_text(">x\nACGT\n")
+
+    def resolve(fasta, override, *, email, logger):
+        return _DS("HA_ds") if "HA" in fasta.read_text() else _DS("NA_ds")
+
+    _patch(monkeypatch, resolve=resolve,
+           tips_by_path={"HA_ds": [ha_tip], "NA_ds": [na_tip]},
+           ani_by_path={"HA_pool": {ha_tip: (10.0, 0.99)},   # below ani_floor -> unassigned
+                        "NA_pool": {na_tip: (99.0, 0.99)}})
+    monkeypatch.setattr(assign, "require_aligner", lambda aligner: None)
+
+    def fake_scan(segment, seq, dataset, out_dir, *, aligner, cache_dir, logger):
+        from tessera.reassort.scan import SegmentScan
+        return SegmentScan(segment, True, False, 0, "none")
+    monkeypatch.setattr(assign, "scan_segment", fake_scan)
+
+    q = _write_query(tmp_path, [("HA", "HAxx"), ("NA", "NAyy")])
+    result = assign_segments(q, output=tmp_path / "out", scan_segments=True, logger=LOG)
+    scans = {s.segment: s for s in result.scans}
+    assert scans["HA"].scanned is False and scans["HA"].note == "unassigned"
+    assert scans["NA"].scanned is True
+
+
+def test_scan_segments_needs_output(tmp_path, monkeypatch):
+    from tessera.core.errors import UserInputError
+    monkeypatch.setattr(assign, "skani_available", lambda: True)
+    monkeypatch.setattr(assign, "require_aligner", lambda aligner: None)
+    q = _write_query(tmp_path, [("HA", "AAAA")])
+    with pytest.raises(UserInputError, match="output"):
+        assign_segments(q, scan_segments=True, logger=LOG)
