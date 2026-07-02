@@ -580,6 +580,68 @@ def _prepare_frontier_species(case, logger):
     return setup, identity
 
 
+def _score_frontier_reassortant(out_dir, junction):
+    """Detection-gated: XPASS iff a called region overlaps the HA|NA junction. The
+    whole-segment-swap labeling is a documented KNOWN-LIMIT (not scored)."""
+    regions = parse_regions(out_dir / "recombination_regions.tsv")
+    present = [r for r in regions if r.get("donor_absent") != "yes"]
+    hit = any(int(r["query_start"]) <= junction <= int(r["query_end"]) for r in present)
+    if hit:
+        return "XPASS", f"breakpoint called at the HA|NA junction (~{junction} bp)"
+    return "XFAIL", f"no breakpoint at the HA|NA junction (~{junction} bp)"
+
+
+def _segment_consensus(path, clade_key, logger):
+    """Per-clade majority consensus for one segment dataset -> ``{clade: sequence}``."""
+    _g, reference, tips = _load_species(path, clade_key, logger)
+    by_clade = {c: m for c, m in clade_members(tips, exclude_recombinant=True).items()
+                if len(m) >= MIN_MEMBERS}
+    cons = {}
+    for clade, members in by_clade.items():
+        seqs = [reconstruct_gapped(reference, tips[a][1]) for a in members]
+        s = consensus_sequence(seqs).replace("-", "").upper()
+        if s:
+            cons[clade] = s
+    if len(cons) < 2:
+        raise CaseSkipped("segment has fewer than two clades with a consensus")
+    return cons
+
+
+def _prepare_frontier_reassortant(case, logger):
+    """Reassortant probe: query = HA_consensus[X] ++ NA_consensus[Y]; panel = the individual
+    segment consensuses. Returns ``(out_dir, junction)``; detection-gated only."""
+    name = case["name"]
+    out = DATA / name
+    out.mkdir(parents=True, exist_ok=True)
+    ha = _segment_consensus(case["dataset"], case.get("clade_key"), logger)
+    na = _segment_consensus(case["second_dataset"], case.get("clade_key"), logger)
+    x = max(ha, key=lambda c: len(ha[c]))
+    y = max(na, key=lambda c: len(na[c]))
+    query_seq = ha[x] + na[y]
+    junction = len(ha[x])
+    query = out / "hybrid.fasta"
+    with open(query, "w") as fo:
+        write_fasta_record(fo, f"reassort_HA-{x}_NA-{y}", query_seq)
+    collection = out / "collection"
+    if collection.exists():
+        shutil.rmtree(collection)
+    collection.mkdir(parents=True)
+    for seg, cons in (("HA", ha), ("NA", na)):
+        for clade, seq in cons.items():
+            safe = re.sub(r"[^\w.-]+", "_", f"{seg}_{clade}")
+            with open(collection / f"{safe}.fasta", "w") as fo:
+                write_fasta_record(fo, safe, seq)
+    window, step, _sel = window_params(len(query_seq))
+    msa = out / "panel.msa.fasta"
+    build_msa(MsaParams(query=query, collection=collection, output=msa,
+                        aligner=case.get("aligner", "mafft"), threads=THREADS), logger)
+    run_recomb(RecombParams(msa=msa, output=out, query=strip_sequence_extension(query.name),
+                            window_size=window, window_step=step, organism=name,
+                            methods=parse_methods(",".join(DEFAULT_METHODS))), logger)
+    logger.info("[%s] reassortant HA:%s ++ NA:%s; junction at %d bp", name, x, y, junction)
+    return out, junction
+
+
 def pick_parents_n(tips, reference, n, *, floor=0.0):
     """Greedily pick the ``n`` most mutually-divergent clades (>= ``MIN_MEMBERS`` genomes,
     pairwise divergence >= ``floor``). Returns ``[(clade, source_genome), ...]`` with the
@@ -1294,6 +1356,10 @@ def _run_frontier_case(case: dict, logger: logging.Logger) -> dict:
         rec = _build_and_score(setup, "tip", methods, setup.out, logger)
         verdict, detail = _score_frontier_envelope(
             identity, rec["detected"], rec.get("backbone_ok", False), rec.get("donor_ok", False))
+        return {"verdict": verdict, "detail": detail}
+    if ct == "reassortant":
+        out_dir, junction = _prepare_frontier_reassortant(case, logger)
+        verdict, detail = _score_frontier_reassortant(out_dir, junction)
         return {"verdict": verdict, "detail": detail}
     raise CaseSkipped(f"unknown frontier case type {ct!r}")
 
