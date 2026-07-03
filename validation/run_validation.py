@@ -30,6 +30,12 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 DATA = HERE / "data"
 
+# Aligner key -> the executable that must be on PATH for that aligner to run.
+_ALIGNER_BINARIES = {
+    "mafft": "mafft", "minimap2": "minimap2", "sibeliaz": "sibeliaz",
+    "cactus": "cactus", "progressivemauve": "progressiveMauve",
+}
+
 
 def _load_datasets() -> list[dict]:
     return json.loads((HERE / "datasets.json").read_text())["datasets"]
@@ -165,13 +171,15 @@ def main() -> int:
     logger = logging.getLogger("tessera.validation")
 
     datasets = [d for d in _load_datasets() if d.get("enabled", True)]
-    have_aligner = shutil.which("sibeliaz") is not None
 
     print(f"\nTessera validation -- {len(datasets)} enabled dataset(s)\n" + "=" * 60)
     results: list[tuple[str, str]] = []
     for ds in datasets:
-        if not have_aligner:
-            status, msgs = "SKIP", ["sibeliaz not on PATH"]
+        binary = _ALIGNER_BINARIES.get(ds.get("aligner", "sibeliaz"), ds.get("aligner", "sibeliaz"))
+        if shutil.which(binary) is None:
+            # Gate each dataset on the aligner it actually uses, not one hard-coded binary,
+            # so a mafft/minimap2 case still runs when the whole-genome aligners are absent.
+            status, msgs = "SKIP", [f"{binary} not on PATH"]
         else:
             try:
                 status, msgs = _run_one(ds, logger)

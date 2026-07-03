@@ -13,6 +13,7 @@ validation/
   datasets.json        one entry per dataset (inputs, aligner, expected outcome)
   fetch.py             download the fetch-based datasets from NCBI (efetch)
   run_validation.py    build MSA + run recomb per dataset, check, print a table
+  run_benchmark.py     PHI/Rmin power+specificity on a published simulated set
   run_deep_typing.py   run the real --deep-typing lineage ladder, check nextclade-nn
   data/                downloaded sequences + run artifacts (gitignored)
 ```
@@ -48,10 +49,17 @@ have not been fetched, so a partial setup still reports cleanly.
 | `sarscov2_xbb` | SARS-CoV-2 ~30 kb | XBB = BA.2.10.1 x BA.2.75 | minimap2 | major BA.2.10.1; BA.2.75 region over spike (query ~21.8-26.6 kb) |
 | `hiv1_crf` | HIV-1 ~10 kb | CRF01_AE (CM240): A backbone + E env | mafft | major A1; donor-present **AE_env** region over gp120 (~query 5.7-8.2 kb, breakpoint ~5.8 kb). Pure subtype E exists only as the CRF01_AE env, so an env-only E reference (JN388230) is in the panel; without it the env is a donor-absent region instead. |
 | `norovirus_gii` | norovirus ~7.5 kb | GII.P16-GII.1, ORF1/ORF2 junction | mafft | major GII.P16-GII.4 (polymerase); GII.1 capsid region from ~nt 4.9 kb |
+| `enterovirus_e11` | enterovirus ~7.3 kb | Echovirus-11 x Coxsackievirus-B1, breakpoint in P2 | mafft | recombination detected; both parents named (checks parents-present, not the ambiguous backbone direction) |
+| `hiv_crf02ag` | HIV-1 ~9.2 kb | CRF02_AG (IbNG): A backbone + subtype-G segments | mafft | major A; G donor region(s) over the pol/vif and vpu-env inserts |
 
-All four reproduce their published recombination event end-to-end (verified
-with `minimap2`/`mafft` installed). Accessions are listed per dataset in
-`datasets.json` (`provenance` field) and were confirmed against NCBI nuccore.
+Each reproduces its published recombination event end-to-end (verified with
+`minimap2`/`mafft` installed); the current run is **5 PASS, 0 FAIL**
+(`orthopox_example` SKIPs until its 7-genome collection is built). Accessions are
+listed per dataset in `datasets.json` (`provenance` field) and were confirmed
+against NCBI nuccore. A `sarscov2_xe` (BA.1 x BA.2) stub is present but
+`enabled:false` until a public GenBank XE genome is confirmed (most are
+GISAID-only). Each dataset is gated on the aligner it actually uses, so the
+mafft/minimap2 cases run even when the whole-genome aligners are absent.
 
 ### Aligner note (orthopoxvirus)
 
@@ -174,6 +182,32 @@ With no argument the artifacts are written to a temporary directory removed on e
 printed report survives); pass an output path to keep the query and per-segment tables. The pure
 localization scorer (`region_overlaps_span`) is unit-tested in CI; the end-to-end run is opt-in. The
 measured result is recorded in `attribution-results.md`.
+
+## Simulated detection benchmark (`run_benchmark.py`)
+
+A published, quantitative benchmark using the SANTA-SIM alignments from Jaya, Brito & Darling
+(2023, *Virus Evolution* 9(2):vead066; Dryad doi:10.5061/dryad.d7wm37q6f). The archive files are
+named `msa_m<mut>_rc<rec>_n<seqs>_dual<d>_rep<k>.fasta` with the recombination rate in the filename
+but **no explicit breakpoint coordinates**, so this harness scores *alignment-level* detection --
+which maps directly onto Tessera's parent-free **PHI + Hudson-Kaplan Rmin** test (no query, panel,
+or aligner needed, since the files are already aligned). It reports **power** (fraction of
+recombining alignments, `rc>0`, with PHI p < alpha) and **specificity** (fraction of non-recombining
+alignments, `rc=0`, with PHI p >= alpha) across the mutation x recombination grid -- directly
+comparable to the PhiPack/Profile column of that study.
+
+Dryad gates its downloads behind a login, so fetch `performance.tar.gz` (and optionally
+`scale.tar.gz`) from the Dryad page in a browser and extract the `.fasta` files into the cache
+(`validation/data/benchmark/`, or set `$TESSERA_BENCHMARK_DIR`); the harness SKIPs when none are
+present.
+
+```
+python validation/run_benchmark.py                    # power / specificity table
+python validation/run_benchmark.py --alpha 0.05 --window 100 --max 200
+```
+
+The pure filename parser and power/specificity aggregation are unit-tested in CI; the end-to-end
+run is opt-in and needs no aligner. Breakpoint-position accuracy is out of scope here (the archive
+has no breakpoint annotations); it would need our own SANTA-SIM runs with breakpoint logging.
 
 A dataset is **SKIP**ped (not failed) when it cannot supply a valid test: the
 most-divergent clade pair is below ~4 % divergence (too few discriminating sites:
