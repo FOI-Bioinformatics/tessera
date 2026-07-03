@@ -40,6 +40,7 @@ from pathlib import Path
 from tessera.core.cache import nextclade_cache
 from tessera.core.errors import ToolExecutionError
 from tessera.core.io import strip_sequence_extension, write_fasta_record
+from tessera.discover.lineage_assign import _ani_edges, cluster_by_ani
 from tessera.discover.nextclade import (
     _MUT,
     _accession_of,
@@ -77,7 +78,7 @@ HYBRIDS: list[dict] = [
     # --- core (Nextstrain-maintained) ---
     # XBB's Pango lineages are too fine to group; use the coarse Nextstrain clade.
     {"name": "sars_cov_2", "dataset": "nextstrain/sars-cov-2/XBB",
-     "clade_key": "clade_nextstrain"},
+     "clade_key": "clade_nextstrain", "min_divergence": 0.0},
     {"name": "dengue", "dataset": "nextstrain/dengue/all"},
     {"name": "measles", "dataset": "nextstrain/measles/genome/WHO-2012"},
     {"name": "mumps", "dataset": "nextstrain/mumps/genome"},
@@ -87,7 +88,8 @@ HYBRIDS: list[dict] = [
     {"name": "wnv", "dataset": "nextstrain/wnv/all-lineages"},
     {"name": "yellow_fever", "dataset": "nextstrain/yellow-fever/prM-E"},
     {"name": "ebola", "dataset": "nextstrain/orthoebolavirus/ebov", "min_divergence": 0.0},
-    {"name": "hantavirus", "dataset": "nextstrain/orthohantavirus/andv/l"},
+    {"name": "hantavirus", "dataset": "nextstrain/orthohantavirus/andv/l",
+     "cluster_ani": 90.0},
     {"name": "flu_h3n2_ha", "dataset": "nextstrain/flu/h3n2/ha/EPI1857216"},
     {"name": "mpox", "dataset": "nextstrain/mpox/all-clades", "aligner": "minimap2",
      "min_divergence": 0.0},
@@ -96,14 +98,24 @@ HYBRIDS: list[dict] = [
     # --- community ---
     {"name": "hiv1", "dataset": "community/neherlab/hiv-1/hxb2"},
     {"name": "marburg", "dataset": "community/genspectrum/marburg/HK1980/all-lineages"},
+    # oropouche: the L-segment genomes are all > 98% ANI to one another (264 tips, one ANI
+    # cluster at every threshold), so no de-novo lineage split is possible -- a data limit,
+    # documented rather than forced. It remains a SKIP (no clade attribute, no de-novo split).
     {"name": "oropouche", "dataset": "community/itps/orov/L/refseq"},
     {"name": "zika", "dataset": "community/itps/zikav"},
     {"name": "hepatitis_a", "dataset": "community/masphl-bioinformatics/hav/whole-genome"},
-    {"name": "iav_h5_ha", "dataset": "community/moncla-lab/iav-h5/ha/all-clades"},
-    {"name": "cchfv", "dataset": "community/pathoplexus/cchfv/L"},
+    # The most-divergent pair auto-selects the basal Am-nonGsGD clade, which loses its
+    # panel stand-in after source removal; pin two well-represented Gs/GD sub-clades instead.
+    {"name": "iav_h5_ha", "dataset": "community/moncla-lab/iav-h5/ha/all-clades",
+     "clades": ["2.3.4.4h", "2.3.2.1f"]},
+    {"name": "cchfv", "dataset": "community/pathoplexus/cchfv/L",
+     "cluster_ani": 90.0},
     {"name": "chikv", "dataset": "community/v-gen-lab/chikV/genotypes"},
     {"name": "enterovirus_d68", "dataset": "enpen/enterovirus/ev-d68"},
-    {"name": "prrsv2", "dataset": "community/isuvdl/mazeller/prrsv2/orf5/yimim2023"},
+    # The most-divergent pair auto-selects L1C.2, whose donor loses its panel stand-in after
+    # source removal; pin two large, divergent (~18%) lineages that keep stand-ins.
+    {"name": "prrsv2", "dataset": "community/isuvdl/mazeller/prrsv2/orf5/yimim2023",
+     "clades": ["L1H", "L8D"]},
     # Phase-1 hard cases: specificity (negatives), low-divergence attribution, and a
     # panel-adversarial donor-absent case. These reuse existing datasets; the equidistant
     # case is added below once its clade pins are read from a probe run.
@@ -208,6 +220,33 @@ def collect_tips(
         if acc and acc not in tips:
             tips[acc] = (node_clade(node.get("node_attrs", {}) or {}, clade_key), path_muts)
     return tips
+
+
+def _denovo_type_tips(genomes, tips, cluster_ani, logger):
+    """Assign de-novo ANI lineages to a dataset whose tree carries no clade attribute.
+
+    Clusters the reconstructed tip genomes by ANI (>= ``cluster_ani``) into ``denovo_N``
+    lineages (:func:`cluster_by_ani`) and relabels each tip's clade with its lineage, keeping
+    the mutation path so ``pick_parents`` can still compute divergence between lineages. Only
+    tip-backed genomes are clustered (example sequences in the pool are ignored)."""
+    tip_bases = {acc.split(".")[0] for acc in tips}
+    tip_genomes = [g for g in genomes
+                   if strip_sequence_extension(g.name).split(".")[0] in tip_bases]
+    edges = _ani_edges(tip_genomes, threshold=cluster_ani, logger=logger)
+    clusters = cluster_by_ani(tip_genomes, edges)
+    base_to_lineage: dict[str, str] = {}
+    for label, members in clusters.items():
+        for g in members:
+            base_to_lineage[strip_sequence_extension(g.name).split(".")[0]] = label
+    typed = {acc: (base_to_lineage.get(acc.split(".")[0], ""), muts)
+             for acc, (_clade, muts) in tips.items()}
+    sizes = {}
+    for lab in base_to_lineage.values():
+        sizes[lab] = sizes.get(lab, 0) + 1
+    ge3 = sum(1 for n in sizes.values() if n >= MIN_MEMBERS)
+    logger.info("de-novo ANI clustering (>= %.1f%%): %d tips -> %d lineage(s), %d with >= %d",
+                cluster_ani, len(tip_genomes), len(sizes), ge3, MIN_MEMBERS)
+    return typed
 
 
 def read_reference(text: str) -> str:
@@ -785,6 +824,9 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
     reference = read_reference(_download_text(dataset, "reference", logger))
     tree = json.loads(_download_text(dataset, "treeJson", logger))["tree"]
     tips = collect_tips(tree, case.get("clade_key"))
+    if case.get("cluster_ani"):
+        # Datasets with no clade attribute are typed de-novo by ANI clustering the tips.
+        tips = _denovo_type_tips(genomes, tips, case["cluster_ani"], logger)
 
     case_type = case.get("case_type", "single_insert")
     if case_type == "neg_pure":
