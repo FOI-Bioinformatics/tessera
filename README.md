@@ -21,6 +21,14 @@ the reference panel for you, types references by lineage, and writes a self-cont
 HTML report. It is a small, dependency-free Python package; alignment is delegated to
 a pluggable [aligner backend](docs/aligners.md).
 
+Segmented viruses (influenza, bunyaviruses, reoviruses) also **reassort** -- they swap
+whole segments between parents, which the single-backbone scan cannot represent. The
+`tessera reassort` command handles this per segment: it types each segment of a
+multi-FASTA query against its own Nextclade dataset and calls reassortment when the
+segments trace to different parents, with an optional `--scan-segments` pass that also
+looks for intragenic recombination within each segment. See
+[docs/reference-panels.md](docs/reference-panels.md#detect-reassortment-across-segments-reassort).
+
 ## Installation
 
 Tessera needs Python (>= 3.11) and at least one aligner backend, most easily installed
