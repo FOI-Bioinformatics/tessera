@@ -218,10 +218,10 @@ without the flag the must-pass headline is unchanged.
 | `dengue` | DENV1 x DENV4 | 33.1 % | PASS |
 | `marburg` | MARV.B.2 x RAVV.2 | 21.5 % | PASS |
 | `yellow_fever` | Clade VII x Clade III | 21.0 % | PASS |
-| `iav_h5_ha` | Am-nonGsGD x 2.2.1.1a | 20.3 % | SKIP -- backbone clade has no panel stand-in once the source is removed |
+| `iav_h5_ha` | 2.3.4.4h x 2.3.2.1f | 11.0 % | PASS -- pinned a well-represented divergent pair (the basal Am-nonGsGD auto-pick had no stand-in) |
 | `wnv` | 2 x 1B | 20.2 % | PASS |
 | `hmpv` | B1 x A2.2.1 | 19.0 % | PASS |
-| `prrsv2` | L8D x L1C.2 | 18.6 % | SKIP -- donor lineage L1C absent from the panel (ORF5) |
+| `prrsv2` | L1H x L8D | 17.6 % | PASS -- pinned two large lineages (the L1C.2 auto-pick had no stand-in) |
 | `hepatitis_a` | IIIA x IIA | 16.6 % | PASS |
 | `chikv` | III-Asian x I-WestAfrica | 15.5 % | PASS |
 | `hiv1` | A1 x B | 15.1 % | PASS |
@@ -230,23 +230,29 @@ without the flag the must-pass headline is unchanged.
 | `rubella` | 2B x 1G | 9.0 % | PASS |
 | `measles` | H1 x B3 | 7.5 % | PASS |
 | `mumps` | A x K | 6.9 % | PASS |
-| `flu_h3n2_ha` | C.1 x K | 6.8 % | FAIL -- HA segment; near-tied subclades, backbone recovered as `G.1.3` |
-| `rsv_a` | A.1 x A.D.1.8 | 6.6 % | FAIL -- donor recovered as a different `A`-sublineage than `A.D.1.8` |
+| `flu_h3n2_ha` | C.1 x K | 6.8 % | PASS |
+| `rsv_a` | A.1 x A.D.1.8 | 6.6 % | PASS |
 | `ebola` | Ebov-2013 x Ebov-2018b | 3.7 % | PASS |
 | `mpox` | Ib x IIa | 0.5 % | PASS -- below the 4 % floor: scored on detection + donor |
-| `sars_cov_2` | 22B x ... | 0.4 % | SKIP -- Omicron clades too similar (< 4 %) |
+| `sars_cov_2` | 24H x outgroup | 0.4 % | PASS -- below the 4 % floor: scored on detection + donor |
 | `vzv` | clade 2 x clade 9 | 0.2 % | PASS -- below the 4 % floor: scored on detection + donor |
-| `hantavirus` | -- | -- | SKIP -- < 2 clades with >= 3 genomes |
-| `oropouche` | -- | -- | SKIP -- < 2 clades with >= 3 genomes |
-| `cchfv` | -- | -- | SKIP -- < 2 clades with >= 3 genomes |
+| `hantavirus` | denovo_1 x denovo_4 | 20.3 % | PASS -- de-novo ANI lineages (no clade attribute) |
+| `cchfv` | denovo_1 x denovo_3 | 22.6 % | PASS -- de-novo ANI lineages (no clade attribute) |
+| `oropouche` | -- | -- | SKIP -- L-segment genomes all > 98 % ANI; no lineage split possible (data limit) |
 
-**16 PASS, 2 FAIL, 6 SKIP** (0 errors). All 18 cases that run detect a recombinant
-region; under the default four-caller ensemble (hmm, 3seq, MaxChi, Bootscan) **17 of the
-18 recover the donor by more than one caller** (the `agr` column; only `rsv_a`, whose
-donor is mis-attributed, does not). Agreement is lineage-aware -- two callers that pick
-different representative genomes of one lineage still count. Tessera recovers the
-recombinant across the full divergence range that has both parents represented, from
-dengue serotypes (33 %) down to the mpox clade-I/II recombination at 0.5 %.
+**23 PASS, 0 FAIL, 1 SKIP** (0 errors). All 23 cases that run detect the recombinant and
+recover both parents; agreement is lineage-aware (two callers that pick different
+representative genomes of one lineage still count). Tessera recovers the recombinant across
+the full divergence range that has both parents represented, from dengue serotypes (33 %)
+down to the mpox clade-I/II recombination at 0.5 %. The five previously-skipped datasets now
+made runnable are fixed in ways that keep scoring honest: `sars_cov_2` joins `mpox`/`vzv` under the
+sub-4 % detection+donor rule; `iav_h5_ha` and `prrsv2` pin a well-represented divergent
+clade pair (the auto-selected most-divergent clade had no panel stand-in after source
+removal); and `hantavirus` and `cchfv`, which carry no clade attribute, are typed de-novo
+by ANI clustering their tips (`cluster_ani`, reusing the `type-lineages` clustering).
+`oropouche` remains a documented data limit -- its 264 L-segment genomes are all > 98 %
+ANI, so no >= 2 lineages of >= 3 members can be formed at any threshold; it is reported
+SKIP rather than forced.
 
 #### Scoring rules
 
@@ -275,21 +281,21 @@ decide PASS / FAIL / SKIP:
    lineage and are excluded from parent selection.
 
 MaxChi and Bootscan are part of the default ensemble because they raise confidence at no
-cost: restricting to `hmm,3seq` (`HARNESS_METHODS=hmm,3seq`) gives the same 16/2/6 verdict
-set but corroborates the donor in only 12 of 18 cases, whereas the four-caller default
-reaches 17 -- the two extra independent callers add agreement with no regression and no
-new false positives. Adding the legacy heuristic (`HARNESS_METHODS=all`) does not change
+cost: on the earlier 18-run set, restricting to `hmm,3seq` (`HARNESS_METHODS=hmm,3seq`) gave
+the same verdicts but corroborated the donor in only 12 of 18 cases, whereas the four-caller
+default reached 17 -- the two extra independent callers add agreement with no regression and
+no new false positives. Adding the legacy heuristic (`HARNESS_METHODS=all`) does not change
 either number. `--method hmm,3seq` is the lighter option for large genomes (Bootscan's
 bootstrap is the main added cost).
 
-The two remaining **FAIL**s are genuine detection-quality limits, kept honest rather than
-skipped: `flu_h3n2_ha` (a ~1.7 kb HA segment with finely-split subclades, where the
-backbone is a near-tie recovered as `G.1.3`) and `rsv_a` (the donor's parent clade `A.D`
-*is* in the panel, so the test is fair, but the caller attributes the region to a
-neighbouring `A`-sublineage rather than `A.D.1.8`). Both are short-divergence /
-fine-subclade attribution misses, not detection misses. The pass set is a performance
+There are no attribution FAILs on the current Nextclade trees. `flu_h3n2_ha` and `rsv_a`
+were previously the two attribution misses (a fine-subclade near-tie on the ~1.7 kb HA
+segment, and a donor attributed to a neighbouring `A`-sublineage rather than `A.D.1.8`); on
+the current trees both recover the correct backbone and donor. The pass set is a performance
 characterisation, not a fixed contract -- the clades chosen follow from each dataset's
-current Nextclade tree.
+current Nextclade tree, so a tree update can move a fine-subclade case either way. The
+`--compare` analysis below was measured earlier, when those two were the FAILs; its numbers
+are anchored to that run.
 
 #### Attribution comparison (`--compare`)
 

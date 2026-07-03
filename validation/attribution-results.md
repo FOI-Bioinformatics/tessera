@@ -10,6 +10,17 @@ The numbers below are a one-off measurement on the current Nextclade trees, not 
 The raw per-case table is `validation/data/attribution_compare.tsv` (git-ignored, regenerate
 with `--compare`).
 
+> **Update (unskip pass).** This `--compare` grid was measured when the run set was **18 run,
+> 6 SKIP** with two attribution FAILs. Five of the six skips have since been made into fair,
+> runnable cases, and on the current Nextclade trees the two former FAILs (`rsv_a`,
+> `flu_h3n2_ha`) now pass -- the 24-pathogen headline is now **23 PASS, 0 FAIL, 1 SKIP** (see
+> `README.md`). The unskip fixes: `sars_cov_2` scores under the sub-4 % detection+donor rule
+> (`min_divergence: 0.0`); `iav_h5_ha` and `prrsv2` pin a well-represented divergent clade pair
+> (their most-divergent auto-pick had no panel stand-in after source removal); and `hantavirus`
+> and `cchfv`, which carry no clade attribute, are typed **de-novo** by ANI clustering their
+> tips. Only `oropouche` remains SKIP -- its L-segment genomes are all > 98 % ANI, so no
+> distinct lineages can be formed (a documented data limit, not forced).
+
 ## Result
 
 | config | PASS | donor attribution improved vs baseline |
