@@ -97,6 +97,74 @@
         "breakpoint": {"coord": "query", "lo": 4800, "hi": 5300}
       },
       "provenance": "All accessions confirmed on NCBI nuccore. Query MG572182 (Norovirus GII isolate SDJN170450, the GII.P16-GII.1 recombinant; PMC5805878, 7518 bp). Polymerase (ORF1, ~nt 1-5.1 kb) matches a GII.P16 strain -> MK773584 (GII.P16-GII.4 Sydney, 7559 bp); capsid (ORF2/3) matches GII.1 -> U07611 (Hawaii calicivirus, GII.1, 7513 bp). Breakpoint at the ORF1/ORF2 junction (~nt 5.0 kb)."
+    },
+    {
+      "name": "enterovirus_e11",
+      "enabled": true,
+      "description": "Echovirus 11 / Coxsackievirus B1 recombinant: an E-11 capsid (P1) with a CV-B1 P2/P3, breakpoint in P2 (an enterovirus recombination hotspot).",
+      "aligner": "mafft",
+      "reference": "E11",
+      "threads": 4,
+      "recomb": {"window_size": 300, "window_step": 30},
+      "fetch": {
+        "query": {"accession": "KX527626", "label": "E11_recomb"},
+        "collection": [
+          {"accession": "AY167103", "label": "E11"},
+          {"accession": "MG845887", "label": "CVB1"}
+        ]
+      },
+      "expected": {
+        "parents_present": ["E11", "CVB1"],
+        "min_regions": 1
+      },
+      "provenance": "All accessions confirmed on NCBI nuccore. Recombinant query E-11 ISO_VR_Echo11 = KX527626 (7347 bp; Virology Journal 2022, PMC9166486). Parents: E-11 = AY167103 (echovirus 11 Hun/90), CV-B1 = MG845887 (coxsackievirus B1 B1L071615). Published breakpoint at nt 4083-4201 of the recombinant (P2 region). The genome-wide backbone-vs-donor DIRECTION is left unasserted: the isolate is E-11 by VP1 typing, but which parent is the genome-wide major depends on the reference divergence, so this case checks only the unambiguous ground truth -- a recombinant involving BOTH E-11 and CV-B1, with at least one region called. Measured: Tessera detects one region and names both parents (it calls CV-B1 the major and E-11 the donor)."
+    },
+    {
+      "name": "hiv_crf02ag",
+      "enabled": true,
+      "description": "HIV-1 CRF02_AG (IbNG): subtype-A backbone with subtype-G segments (pol/vif and vpu-env), vs pure A, G and B references.",
+      "aligner": "mafft",
+      "reference": "B_HXB2",
+      "threads": 4,
+      "recomb": {"window_size": 400, "window_step": 40},
+      "fetch": {
+        "query": {"accession": "L39106", "label": "CRF02_AG"},
+        "collection": [
+          {"accession": "K03455", "label": "B_HXB2"},
+          {"accession": "U51190", "label": "A"},
+          {"accession": "AF061642", "label": "G"}
+        ]
+      },
+      "expected": {
+        "major_parent": "A",
+        "region_minor_any": ["G"],
+        "min_regions": 1
+      },
+      "provenance": "All accessions confirmed on NCBI nuccore. Query CRF02_AG = IbNG L39106 (9201 bp, the CRF02_AG prototype). Pure references: A = 92UG037 U51190, G = SE6165 AF061642, B = HXB2 K03455 (coordinate anchor). CRF02_AG is a subtype-A backbone with subtype-G segments (inter-subtype breakpoints near HXB2 nt 4218-5518 in pol/vif and 5957-8250 in vpu/rev/tat/env; Front. Cell. Infect. Microbiol. 2023, PMC10642767). The multi-breakpoint mosaic is scored on detection + A-backbone / G-donor attribution rather than a single tight breakpoint."
+    },
+    {
+      "name": "sarscov2_xe",
+      "enabled": false,
+      "description": "SARS-CoV-2 XE: recombinant of BA.1 (5') and BA.2 (3'), breakpoint in nsp6 (ORF1a).",
+      "aligner": "minimap2",
+      "reference": "Wuhan-Hu-1",
+      "threads": 4,
+      "recomb": {"window_size": 500, "window_step": 50},
+      "fetch": {
+        "query": {"accession": "TODO_XE_genome", "label": "XE"},
+        "collection": [
+          {"accession": "TODO_BA.1_genome", "label": "BA.1"},
+          {"accession": "TODO_BA.2_genome", "label": "BA.2"},
+          {"accession": "NC_045512.2", "label": "Wuhan-Hu-1"}
+        ]
+      },
+      "expected": {
+        "major_parent": "BA.1",
+        "region_minor_any": ["BA.2"],
+        "min_regions": 1,
+        "breakpoint": {"coord": "query", "lo": 9400, "hi": 13900}
+      },
+      "provenance": "TODO: confirm a public GenBank XE genome and BA.1/BA.2 parent accessions before enabling (most XE genomes are GISAID-only). XE breakpoint ~nt 11556 (99% CI 9460-13866), in nsp6/ORF1a (Eurosurveillance; PMC9497488). Set enabled=true once accessions are confirmed on NCBI."
     }
   ]
 }
