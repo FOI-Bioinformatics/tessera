@@ -17,6 +17,7 @@ validation/
   run_coalescent_benchmark.py   Posada & Crandall coalescent design (msprime)
   run_recombinhunt_benchmark.py RecombinHunt noise-robustness of breakpoint detection
   run_reassort_benchmark.py     reassort verdict precision/recall/F1 (flu HA+NA)
+  run_method_comparison.py      per-caller detection on the real recombinants
   run_deep_typing.py   run the real --deep-typing lineage ladder, check nextclade-nn
   data/                downloaded sequences + run artifacts (gitignored)
 ```
@@ -281,6 +282,42 @@ F1 0.91** -- every reassortant is caught, and the two false positives quantify t
 cross-typing-coverage limit (a clonal isolate whose exact strain is not in both segments' nearest
 top-k can read `reassortant`; see `docs/reference-panels.md`). The pure confusion/F1 scorer is
 unit-tested in CI. Recorded as measured, not tuned.
+
+## Method comparison (`run_method_comparison.py`)
+
+Runs each of Tessera's four recombination callers -- HMM, 3SEQ, MaxChi, Bootscan -- on the same
+published-recombinant alignments (the `datasets.json` positives) and tabulates, per caller, whether
+it detects the known recombination; the default four-caller ensemble is shown alongside. This is the
+internal-method comparison: it shows how much each caller contributes and where the ensemble is
+carried by a subset. Needs an aligner + the fetched data; opt-in.
+
+```
+export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"
+python validation/fetch.py && python validation/run_method_comparison.py
+```
+
+An **external** head-to-head against RDP4/OpenRDP was intended (the Jaya set, one alignment both
+tools see). It is deferred: OpenRDP does not build on modern Python -- it pins `numpy==1.17.3` and
+needs `cblas.h`/`pybind11` that are absent here -- and no reference PhiPack/3seq/GENECONV binary is
+available in the `recomfi-aln` env. The harness keeps a `--openrdp` hook that activates if the
+package ever becomes importable; until then that path is skipped with a note, not silently. The
+per-caller aggregation helper is unit-tested in CI.
+
+Measured (six positives; orthopox `SKIP`s until its query is fetched, ~200 kb):
+
+| dataset | hmm | 3seq | maxchi | bootscan | ensemble |
+|---|---|---|---|---|---|
+| sarscov2_xbb    | yes | yes | yes | yes | yes |
+| hiv1_crf        | yes | yes | yes | yes | yes |
+| norovirus_gii   | yes | yes | yes | yes | yes |
+| enterovirus_e11 | yes | yes | yes | yes | yes |
+| hiv_crf02ag     | yes | yes | yes | yes | yes |
+| hcv_2k1b        | yes | yes | yes | yes | yes |
+
+On these well-characterised real recombinants every caller fires independently, so no single method
+carries the ensemble here. The ensemble earns its keep on the harder cases instead -- short tracts,
+low divergence, and multi-breakpoint mosaics -- where the callers disagree (see the synthetic hybrid
+harness `--compare` table below). Recorded as measured.
 
 A dataset is **SKIP**ped (not failed) when it cannot supply a valid test: the
 most-divergent clade pair is below ~4 % divergence (too few discriminating sites:
