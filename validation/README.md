@@ -285,25 +285,39 @@ unit-tested in CI. Recorded as measured, not tuned.
 
 ## Method comparison (`run_method_comparison.py`)
 
-Runs each of Tessera's four recombination callers -- HMM, 3SEQ, MaxChi, Bootscan -- on the same
-published-recombinant alignments (the `datasets.json` positives) and tabulates, per caller, whether
-it detects the known recombination; the default four-caller ensemble is shown alongside. This is the
-internal-method comparison: it shows how much each caller contributes and where the ensemble is
-carried by a subset. Needs an aligner + the fetched data; opt-in.
+Two comparisons on the same published-recombinant alignments (the `datasets.json` positives): the
+first internal, the second against a standard external tool.
+
+1. **Tessera's own callers** -- HMM, 3SEQ, MaxChi, Bootscan -- each run alone, plus the default
+   four-caller ensemble, tabulating per-caller detection of the known recombination.
+2. **OpenRDP** (the maintained RDP5 reimplementation, [PoonLab/OpenRDP](https://github.com/PoonLab/OpenRDP))
+   -- its seven methods (GENECONV, Bootscan, MaxChi, SiScan, Chimaera, 3SEQ, RDP) run on the *same*
+   alignment, so Tessera sits beside the standard methods on identical data.
+
+Needs an aligner + the fetched data; opt-in. OpenRDP is pure Python but pins `numpy<2`/`h5py<3.11`,
+so it is easiest to keep in its own environment; the harness resolves it via `$OPENRDP_CMD`, then an
+`openrdp` on PATH, then `conda run -n $OPENRDP_CONDA_ENV openrdp` (default env `openrdp`), and skips
+that half with a note if none resolves. (An earlier attempt used the `raspberryhusky` fork, which
+pins `numpy==1.17.3` and needs `cblas.h`/`pybind11` and does not build; the PoonLab implementation
+builds cleanly.)
 
 ```
+# once, in a dedicated env:
+conda create -n openrdp python=3.10 -y
+conda run -n openrdp pip install "numpy<2.0.0" "scipy>=1.5.0" "h5py<3.11.0" \
+    git+https://github.com/PoonLab/OpenRDP
+
 export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"
 python validation/fetch.py && python validation/run_method_comparison.py
+python validation/run_method_comparison.py --no-openrdp   # Tessera callers only
 ```
 
-An **external** head-to-head against RDP4/OpenRDP was intended (the Jaya set, one alignment both
-tools see). It is deferred: OpenRDP does not build on modern Python -- it pins `numpy==1.17.3` and
-needs `cblas.h`/`pybind11` that are absent here -- and no reference PhiPack/3seq/GENECONV binary is
-available in the `recomfi-aln` env. The harness keeps a `--openrdp` hook that activates if the
-package ever becomes importable; until then that path is skipped with a note, not silently. The
-per-caller aggregation helper is unit-tested in CI.
+The OpenRDP detection metric: a method "detects" when the known recombinant sequence appears in any
+recombination triplet it reports (Recombinant / Parent1 / Parent2). Using the whole triplet is robust
+to the parent/child direction ambiguity that triplet methods -- and Tessera's single backbone --
+share. The parsing and detection helpers are unit-tested in CI.
 
-Measured (six positives; orthopox `SKIP`s until its query is fetched, ~200 kb):
+Measured (six positives; orthopox `SKIP`s until its query is fetched, ~200 kb). Tessera's callers:
 
 | dataset | hmm | 3seq | maxchi | bootscan | ensemble |
 |---|---|---|---|---|---|
@@ -314,10 +328,27 @@ Measured (six positives; orthopox `SKIP`s until its query is fetched, ~200 kb):
 | hiv_crf02ag     | yes | yes | yes | yes | yes |
 | hcv_2k1b        | yes | yes | yes | yes | yes |
 
-On these well-characterised real recombinants every caller fires independently, so no single method
-carries the ensemble here. The ensemble earns its keep on the harder cases instead -- short tracts,
-low divergence, and multi-breakpoint mosaics -- where the callers disagree (see the synthetic hybrid
-harness `--compare` table below). Recorded as measured.
+OpenRDP's methods on the same alignments (its default set; SiScan is opt-in via `--with-siscan` --
+it is permutation-heavy, timed out at >15 min on the full-genome HIV alignment, and detected nothing
+on the datasets where it completed):
+
+| dataset | geneconv | bootscan | maxchi | chimaera | threeseq | rdp |
+|---|---|---|---|---|---|---|
+| sarscov2_xbb    | yes | yes | yes | no  | no  | yes |
+| hiv1_crf        | no  | yes | yes | no  | yes | yes |
+| norovirus_gii   | yes | yes | no  | no  | yes | yes |
+| enterovirus_e11 | yes | no  | yes | no  | yes | yes |
+| hiv_crf02ag     | yes | yes | yes | no  | yes | yes |
+| hcv_2k1b        | yes | yes | yes | no  | yes | yes |
+
+On these well-characterised real recombinants Tessera's four callers each fire independently, so no
+single method carries the ensemble here; the ensemble earns its keep on the harder cases -- short
+tracts, low divergence, multi-breakpoint mosaics -- where the callers disagree (see the synthetic
+hybrid harness `--compare` table below). OpenRDP concurs on the recombination in every case -- at
+least four of its six default methods fire per dataset -- though Chimaera (and SiScan, when run) add
+nothing on these small taxon sets. On `hcv_2k1b` its 3SEQ/GENECONV/Bootscan place the breakpoint at
+nt ~3186-3187 -- an independent, external confirmation of the breakpoint Tessera recovers (~3187) and
+of the published NS2/NS3 junction. Recorded as measured.
 
 A dataset is **SKIP**ped (not failed) when it cannot supply a valid test: the
 most-divergent clade pair is below ~4 % divergence (too few discriminating sites:
