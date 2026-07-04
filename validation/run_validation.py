@@ -118,6 +118,15 @@ def _check(ds: dict, out_dir: Path) -> tuple[bool, list[str]]:
         ok &= good
         msgs.append(f"#regions={len(regions)} (>= {exp['min_regions']}) {'OK' if good else 'FAIL'}")
 
+    if "max_regions" in exp:
+        # Specificity control: a non-recombinant query must call at most this many present
+        # (non donor-absent) regions -- 0 for a clean clonal case.
+        present_regions = [r for r in regions if r.get("donor_absent") != "yes"]
+        good = len(present_regions) <= exp["max_regions"]
+        ok &= good
+        msgs.append(f"#present-regions={len(present_regions)} (<= {exp['max_regions']}) "
+                    f"{'OK' if good else 'FAIL'}")
+
     if "breakpoint" in exp:
         bp = exp["breakpoint"]
         lo_key = "msa_start" if bp["coord"] == "msa" else "query_start"

@@ -53,15 +53,25 @@ have not been fetched, so a partial setup still reports cleanly.
 | `norovirus_gii` | norovirus ~7.5 kb | GII.P16-GII.1, ORF1/ORF2 junction | mafft | major GII.P16-GII.4 (polymerase); GII.1 capsid region from ~nt 4.9 kb |
 | `enterovirus_e11` | enterovirus ~7.3 kb | Echovirus-11 x Coxsackievirus-B1, breakpoint in P2 | mafft | recombination detected; both parents named (checks parents-present, not the ambiguous backbone direction) |
 | `hiv_crf02ag` | HIV-1 ~9.2 kb | CRF02_AG (IbNG): A backbone + subtype-G segments | mafft | major A; G donor region(s) over the pol/vif and vpu-env inserts |
+| `hcv_2k1b` | HCV ~9.4 kb | RF1_2k/1b: genotype-2k 5' + 1b 3', breakpoint in NS2/NS3 | mafft | major 1b; genotype-2 donor over the 5'; **precise breakpoint ~nt 3187 recovered** |
+| `hcv_clonal_1b` | HCV ~9.4 kb | pure genotype-1b (non-recombinant control) | mafft | resolves to 1b throughout; **0 regions** (real-data specificity) |
 
-Each reproduces its published recombination event end-to-end (verified with
-`minimap2`/`mafft` installed); the current run is **5 PASS, 0 FAIL**
-(`orthopox_example` SKIPs until its 7-genome collection is built). Accessions are
+Each reproduces its published event (or, for the clonal control, its *absence* of
+recombination) end-to-end; the current run is **7 PASS, 0 FAIL**
+(`orthopox_example` SKIPs until its 7-genome collection is built). `hcv_2k1b` is the
+first real **precise-breakpoint** check and `hcv_clonal_1b` the first real
+**false-positive** (specificity) check. Accessions are
 listed per dataset in `datasets.json` (`provenance` field) and were confirmed
 against NCBI nuccore. A `sarscov2_xe` (BA.1 x BA.2) stub is present but
 `enabled:false` until a public GenBank XE genome is confirmed (most are
 GISAID-only). Each dataset is gated on the aligner it actually uses, so the
 mafft/minimap2 cases run even when the whole-genome aligners are absent.
+
+### Scope boundary
+
+Bacterial **homologous** recombination (as detected by Gubbins, ClonalFrameML, and similar on
+core-genome alignments) is a different problem -- phylogenetic incongruence within a clonal frame,
+not inter-lineage mosaic recombination -- and is out of scope for Tessera and these benchmarks.
 
 ### Aligner note (orthopoxvirus)
 
