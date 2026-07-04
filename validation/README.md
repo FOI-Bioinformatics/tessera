@@ -16,6 +16,7 @@ validation/
   run_benchmark.py     PHI/Rmin power+specificity on a published simulated set
   run_coalescent_benchmark.py   Posada & Crandall coalescent design (msprime)
   run_recombinhunt_benchmark.py RecombinHunt noise-robustness of breakpoint detection
+  run_reassort_benchmark.py     reassort verdict precision/recall/F1 (flu HA+NA)
   run_deep_typing.py   run the real --deep-typing lineage ladder, check nextclade-nn
   data/                downloaded sequences + run artifacts (gitignored)
 ```
@@ -259,6 +260,27 @@ Measured on the default divergent pair (flu H3N2 HA, C.1 x K): breakpoint recove
 noise level 0-30** -- robust to the full injected-mutation range on a divergent pair. A
 low-divergence dataset degrades faster; the pure noise-injection and per-level aggregation are
 unit-tested in CI.
+
+## Reassortment benchmark (`run_reassort_benchmark.py`)
+
+Scores the shipped `tessera reassort` verdict the way the influenza-reassortment literature does
+(TreeSort / TreeKnit / CoalRe report **precision / recall / F1** against known reassortment events).
+Flu H3N2 HA and NA tips are strain-labelled and many strains are typed in both segment datasets, so a
+labelled query set is built: **clonal** = the HA and NA of one cross-typed strain (one parent);
+**reassortant** = the HA of strain A with the NA of strain B. Each query runs through the shipped
+`assign_segments`; `reassortant` is the positive class. Needs skani + network; opt-in.
+
+```
+export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"
+python validation/run_reassort_benchmark.py            # 15 clonal + 15 reassortant
+python validation/run_reassort_benchmark.py --n 25
+```
+
+Measured (479 cross-typed strains; 10 clonal + 10 reassortant): **precision 0.83, recall 1.00,
+F1 0.91** -- every reassortant is caught, and the two false positives quantify the documented
+cross-typing-coverage limit (a clonal isolate whose exact strain is not in both segments' nearest
+top-k can read `reassortant`; see `docs/reference-panels.md`). The pure confusion/F1 scorer is
+unit-tested in CI. Recorded as measured, not tuned.
 
 A dataset is **SKIP**ped (not failed) when it cannot supply a valid test: the
 most-divergent clade pair is below ~4 % divergence (too few discriminating sites:
