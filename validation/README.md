@@ -14,6 +14,8 @@ validation/
   fetch.py             download the fetch-based datasets from NCBI (efetch)
   run_validation.py    build MSA + run recomb per dataset, check, print a table
   run_benchmark.py     PHI/Rmin power+specificity on a published simulated set
+  run_coalescent_benchmark.py   Posada & Crandall coalescent design (msprime)
+  run_recombinhunt_benchmark.py RecombinHunt noise-robustness of breakpoint detection
   run_deep_typing.py   run the real --deep-typing lineage ladder, check nextclade-nn
   data/                downloaded sequences + run artifacts (gitignored)
 ```
@@ -208,6 +210,45 @@ python validation/run_benchmark.py --alpha 0.05 --window 100 --max 200
 The pure filename parser and power/specificity aggregation are unit-tested in CI; the end-to-end
 run is opt-in and needs no aligner. Breakpoint-position accuracy is out of scope here (the archive
 has no breakpoint annotations); it would need our own SANTA-SIM runs with breakpoint logging.
+
+## Coalescent benchmark (`run_coalescent_benchmark.py`)
+
+Reproduces the evaluation design of **Posada & Crandall (2001, *PNAS* 98:13757)**: neutral
+sequences simulated under the **coalescent with recombination** across a mutation x recombination
+grid, scoring a method's false-positive rate (specificity, at `rec=0`) and power (`rec>0`). The
+2001 alignments were never archived, so the design is regenerated with `msprime` (Hudson's
+algorithm); the method under test is Tessera's parent-free PHI test. Self-contained (nothing is
+downloaded) and opt-in -- it needs msprime (`pip install msprime`) and SKIPs without it.
+
+```
+python validation/run_coalescent_benchmark.py            # power / specificity grid
+python validation/run_coalescent_benchmark.py --reps 20
+```
+
+Measured (40 samples x 2 kb, PHI window 100): **power 1.0, specificity 1.0** across the grid --
+PHI fires on every recombining coalescent sample and never on the clonal (`rec=0`) controls. The
+pure power/specificity scorer is shared with `run_benchmark.py` and unit-tested in CI.
+
+## Noise-robustness benchmark (`run_recombinhunt_benchmark.py`)
+
+Reproduces the noise-robustness design of **RecombinHunt (Bianchi et al., *Nat. Commun.* 2024,
+s41467-024-47464-5)**, which measured detection sensitivity as increasing numbers of injected
+(non-characteristic) mutations were added to simulated recombinants. Their SARS-CoV-2 BA.2 x AY.45
+sequences are GISAID-gated, so the (virus-agnostic) design is reproduced on Nextclade lineage
+genomes: splice a one-breakpoint recombinant from the two most-divergent clade consensuses, inject
+the mutation grid (0, 3, 5, 10, 15, 20, 30), run the recomb scan, and report the fraction of
+replicates where a called region overlaps the true breakpoint. Needs skani and an aligner; opt-in.
+
+```
+export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"
+python validation/run_recombinhunt_benchmark.py
+python validation/run_recombinhunt_benchmark.py --dataset nextstrain/rsv/a/EPI_ISL_412866
+```
+
+Measured on the default divergent pair (flu H3N2 HA, C.1 x K): breakpoint recovery **5/5 at every
+noise level 0-30** -- robust to the full injected-mutation range on a divergent pair. A
+low-divergence dataset degrades faster; the pure noise-injection and per-level aggregation are
+unit-tested in CI.
 
 A dataset is **SKIP**ped (not failed) when it cannot supply a valid test: the
 most-divergent clade pair is below ~4 % divergence (too few discriminating sites:
