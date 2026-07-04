@@ -165,6 +165,52 @@
         "breakpoint": {"coord": "query", "lo": 9400, "hi": 13900}
       },
       "provenance": "TODO: confirm a public GenBank XE genome and BA.1/BA.2 parent accessions before enabling (most XE genomes are GISAID-only). XE breakpoint ~nt 11556 (99% CI 9460-13866), in nsp6/ORF1a (Eurosurveillance; PMC9497488). Set enabled=true once accessions are confirmed on NCBI."
+    },
+    {
+      "name": "hcv_2k1b",
+      "enabled": true,
+      "description": "HCV inter-genotype recombinant RF1_2k/1b (N687): genotype-2k 5' and genotype-1b 3', single breakpoint in NS2/NS3.",
+      "aligner": "mafft",
+      "reference": "GT1a_H77",
+      "threads": 4,
+      "recomb": {"window_size": 400, "window_step": 40},
+      "fetch": {
+        "query": {"accession": "AY587845", "label": "RF1_2k1b"},
+        "collection": [
+          {"accession": "AJ238799", "label": "GT1b_Con1"},
+          {"accession": "AB047639", "label": "GT2a_JFH1"},
+          {"accession": "AF009606", "label": "GT1a_H77"}
+        ]
+      },
+      "expected": {
+        "major_parent": "GT1b_Con1",
+        "region_minor_any": ["GT2a_JFH1"],
+        "min_regions": 1,
+        "breakpoint": {"coord": "query", "lo": 2800, "hi": 3600}
+      },
+      "provenance": "All accessions confirmed on NCBI nuccore. Query = RF1_2k/1b N687 AY587845 (9357 bp; the widely-transmitted St Petersburg inter-genotype recombinant; Virus Evolution 2019 vez041). 5' is genotype 2k, 3' genotype 1b, a single breakpoint in NS2/NS3 at ~nt 3175-3187 (H77 coords). References: 1b = Con1 AJ238799, 1a = H77 AF009606 (coordinate anchor). Pure genotype-2k full genomes are scarce, so genotype-2a JFH-1 AB047639 stands in for the 2k parent (the nearest available genotype 2), which the 5' should resolve to over genotype 1. The 3' 1b portion (~6.2 kb) exceeds the 5' portion (~3.2 kb), so 1b is the major parent and the genotype-2 5' is the donor region."
+    },
+    {
+      "name": "hcv_clonal_1b",
+      "enabled": true,
+      "description": "HCV pure genotype-1b genome (non-recombinant clonal control): must resolve to 1b throughout with NO recombination called.",
+      "aligner": "mafft",
+      "reference": "GT1a_H77",
+      "threads": 4,
+      "recomb": {"window_size": 400, "window_step": 40},
+      "fetch": {
+        "query": {"accession": "M58335", "label": "GT1b_query"},
+        "collection": [
+          {"accession": "AJ238799", "label": "GT1b_Con1"},
+          {"accession": "AB047639", "label": "GT2a_JFH1"},
+          {"accession": "AF009606", "label": "GT1a_H77"}
+        ]
+      },
+      "expected": {
+        "major_parent": "GT1b_Con1",
+        "max_regions": 0
+      },
+      "provenance": "Real-data specificity (false-positive) control. Query = M58335, a pure HCV subtype-1b genome (9416 bp), against a 1b/2a/1a panel. A non-recombinant genome must be attributed to its own genotype (1b = Con1 AJ238799) across its full length with no recombination region called (max_regions 0). All accessions confirmed on NCBI nuccore."
     }
   ]
 }

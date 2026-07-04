@@ -16,6 +16,8 @@ validation/
   run_benchmark.py     PHI/Rmin power+specificity on a published simulated set
   run_coalescent_benchmark.py   Posada & Crandall coalescent design (msprime)
   run_recombinhunt_benchmark.py RecombinHunt noise-robustness of breakpoint detection
+  run_reassort_benchmark.py     reassort verdict precision/recall/F1 (flu HA+NA)
+  run_method_comparison.py      per-caller detection on the real recombinants
   run_deep_typing.py   run the real --deep-typing lineage ladder, check nextclade-nn
   data/                downloaded sequences + run artifacts (gitignored)
 ```
@@ -53,15 +55,25 @@ have not been fetched, so a partial setup still reports cleanly.
 | `norovirus_gii` | norovirus ~7.5 kb | GII.P16-GII.1, ORF1/ORF2 junction | mafft | major GII.P16-GII.4 (polymerase); GII.1 capsid region from ~nt 4.9 kb |
 | `enterovirus_e11` | enterovirus ~7.3 kb | Echovirus-11 x Coxsackievirus-B1, breakpoint in P2 | mafft | recombination detected; both parents named (checks parents-present, not the ambiguous backbone direction) |
 | `hiv_crf02ag` | HIV-1 ~9.2 kb | CRF02_AG (IbNG): A backbone + subtype-G segments | mafft | major A; G donor region(s) over the pol/vif and vpu-env inserts |
+| `hcv_2k1b` | HCV ~9.4 kb | RF1_2k/1b: genotype-2k 5' + 1b 3', breakpoint in NS2/NS3 | mafft | major 1b; genotype-2 donor over the 5'; **precise breakpoint ~nt 3187 recovered** |
+| `hcv_clonal_1b` | HCV ~9.4 kb | pure genotype-1b (non-recombinant control) | mafft | resolves to 1b throughout; **0 regions** (real-data specificity) |
 
-Each reproduces its published recombination event end-to-end (verified with
-`minimap2`/`mafft` installed); the current run is **5 PASS, 0 FAIL**
-(`orthopox_example` SKIPs until its 7-genome collection is built). Accessions are
+Each reproduces its published event (or, for the clonal control, its *absence* of
+recombination) end-to-end; the current run is **7 PASS, 0 FAIL**
+(`orthopox_example` SKIPs until its 7-genome collection is built). `hcv_2k1b` is the
+first real **precise-breakpoint** check and `hcv_clonal_1b` the first real
+**false-positive** (specificity) check. Accessions are
 listed per dataset in `datasets.json` (`provenance` field) and were confirmed
 against NCBI nuccore. A `sarscov2_xe` (BA.1 x BA.2) stub is present but
 `enabled:false` until a public GenBank XE genome is confirmed (most are
 GISAID-only). Each dataset is gated on the aligner it actually uses, so the
 mafft/minimap2 cases run even when the whole-genome aligners are absent.
+
+### Scope boundary
+
+Bacterial **homologous** recombination (as detected by Gubbins, ClonalFrameML, and similar on
+core-genome alignments) is a different problem -- phylogenetic incongruence within a clonal frame,
+not inter-lineage mosaic recombination -- and is out of scope for Tessera and these benchmarks.
 
 ### Aligner note (orthopoxvirus)
 
@@ -249,6 +261,63 @@ Measured on the default divergent pair (flu H3N2 HA, C.1 x K): breakpoint recove
 noise level 0-30** -- robust to the full injected-mutation range on a divergent pair. A
 low-divergence dataset degrades faster; the pure noise-injection and per-level aggregation are
 unit-tested in CI.
+
+## Reassortment benchmark (`run_reassort_benchmark.py`)
+
+Scores the shipped `tessera reassort` verdict the way the influenza-reassortment literature does
+(TreeSort / TreeKnit / CoalRe report **precision / recall / F1** against known reassortment events).
+Flu H3N2 HA and NA tips are strain-labelled and many strains are typed in both segment datasets, so a
+labelled query set is built: **clonal** = the HA and NA of one cross-typed strain (one parent);
+**reassortant** = the HA of strain A with the NA of strain B. Each query runs through the shipped
+`assign_segments`; `reassortant` is the positive class. Needs skani + network; opt-in.
+
+```
+export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"
+python validation/run_reassort_benchmark.py            # 15 clonal + 15 reassortant
+python validation/run_reassort_benchmark.py --n 25
+```
+
+Measured (479 cross-typed strains; 10 clonal + 10 reassortant): **precision 0.83, recall 1.00,
+F1 0.91** -- every reassortant is caught, and the two false positives quantify the documented
+cross-typing-coverage limit (a clonal isolate whose exact strain is not in both segments' nearest
+top-k can read `reassortant`; see `docs/reference-panels.md`). The pure confusion/F1 scorer is
+unit-tested in CI. Recorded as measured, not tuned.
+
+## Method comparison (`run_method_comparison.py`)
+
+Runs each of Tessera's four recombination callers -- HMM, 3SEQ, MaxChi, Bootscan -- on the same
+published-recombinant alignments (the `datasets.json` positives) and tabulates, per caller, whether
+it detects the known recombination; the default four-caller ensemble is shown alongside. This is the
+internal-method comparison: it shows how much each caller contributes and where the ensemble is
+carried by a subset. Needs an aligner + the fetched data; opt-in.
+
+```
+export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"
+python validation/fetch.py && python validation/run_method_comparison.py
+```
+
+An **external** head-to-head against RDP4/OpenRDP was intended (the Jaya set, one alignment both
+tools see). It is deferred: OpenRDP does not build on modern Python -- it pins `numpy==1.17.3` and
+needs `cblas.h`/`pybind11` that are absent here -- and no reference PhiPack/3seq/GENECONV binary is
+available in the `recomfi-aln` env. The harness keeps a `--openrdp` hook that activates if the
+package ever becomes importable; until then that path is skipped with a note, not silently. The
+per-caller aggregation helper is unit-tested in CI.
+
+Measured (six positives; orthopox `SKIP`s until its query is fetched, ~200 kb):
+
+| dataset | hmm | 3seq | maxchi | bootscan | ensemble |
+|---|---|---|---|---|---|
+| sarscov2_xbb    | yes | yes | yes | yes | yes |
+| hiv1_crf        | yes | yes | yes | yes | yes |
+| norovirus_gii   | yes | yes | yes | yes | yes |
+| enterovirus_e11 | yes | yes | yes | yes | yes |
+| hiv_crf02ag     | yes | yes | yes | yes | yes |
+| hcv_2k1b        | yes | yes | yes | yes | yes |
+
+On these well-characterised real recombinants every caller fires independently, so no single method
+carries the ensemble here. The ensemble earns its keep on the harder cases instead -- short tracts,
+low divergence, and multi-breakpoint mosaics -- where the callers disagree (see the synthetic hybrid
+harness `--compare` table below). Recorded as measured.
 
 A dataset is **SKIP**ped (not failed) when it cannot supply a valid test: the
 most-divergent clade pair is below ~4 % divergence (too few discriminating sites:
