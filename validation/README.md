@@ -317,29 +317,22 @@ recombination triplet it reports (Recombinant / Parent1 / Parent2). Using the wh
 to the parent/child direction ambiguity that triplet methods -- and Tessera's single backbone --
 share. The parsing and detection helpers are unit-tested in CI.
 
-Measured (six positives; orthopox `SKIP`s until its query is fetched, ~200 kb). Tessera's callers:
+Measured (six positives; orthopox `SKIP`s until its query is fetched, ~200 kb). One table, Tessera's
+callers on the left of the `|` divider and OpenRDP's methods on the right, both on the same alignment
+(OpenRDP's default set; SiScan is opt-in via `--with-siscan` -- it is permutation-heavy, timed out at
+>15 min on the full-genome HIV alignment, and detected nothing where it completed):
 
-| dataset | hmm | 3seq | maxchi | bootscan | ensemble |
-|---|---|---|---|---|---|
-| sarscov2_xbb    | yes | yes | yes | yes | yes |
-| hiv1_crf        | yes | yes | yes | yes | yes |
-| norovirus_gii   | yes | yes | yes | yes | yes |
-| enterovirus_e11 | yes | yes | yes | yes | yes |
-| hiv_crf02ag     | yes | yes | yes | yes | yes |
-| hcv_2k1b        | yes | yes | yes | yes | yes |
+| dataset | hmm | 3seq | maxchi | bootscan | ensemble | `\|` | geneconv | bootscan | maxchi | chimaera | threeseq | rdp |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| sarscov2_xbb    | yes | yes | yes | yes | yes | `\|` | yes | yes | yes | no  | no  | yes |
+| hiv1_crf        | yes | yes | yes | yes | yes | `\|` | no  | yes | yes | no  | yes | yes |
+| norovirus_gii   | yes | yes | yes | yes | yes | `\|` | yes | yes | no  | no  | yes | yes |
+| enterovirus_e11 | yes | yes | yes | yes | yes | `\|` | yes | no  | yes | no  | yes | yes |
+| hiv_crf02ag     | yes | yes | yes | yes | yes | `\|` | yes | yes | yes | no  | yes | yes |
+| hcv_2k1b        | yes | yes | yes | yes | yes | `\|` | yes | yes | yes | no  | yes | yes |
 
-OpenRDP's methods on the same alignments (its default set; SiScan is opt-in via `--with-siscan` --
-it is permutation-heavy, timed out at >15 min on the full-genome HIV alignment, and detected nothing
-on the datasets where it completed):
-
-| dataset | geneconv | bootscan | maxchi | chimaera | threeseq | rdp |
-|---|---|---|---|---|---|---|
-| sarscov2_xbb    | yes | yes | yes | no  | no  | yes |
-| hiv1_crf        | no  | yes | yes | no  | yes | yes |
-| norovirus_gii   | yes | yes | no  | no  | yes | yes |
-| enterovirus_e11 | yes | no  | yes | no  | yes | yes |
-| hiv_crf02ag     | yes | yes | yes | no  | yes | yes |
-| hcv_2k1b        | yes | yes | yes | no  | yes | yes |
+Columns left of the `|` are Tessera's callers; right of it are OpenRDP's methods (`maxchi`/`bootscan`
+appear on both sides -- the same algorithm family in each tool).
 
 On these well-characterised real recombinants Tessera's four callers each fire independently, so no
 single method carries the ensemble here; the ensemble earns its keep on the harder cases -- short

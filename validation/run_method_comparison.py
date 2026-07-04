@@ -187,40 +187,45 @@ def main(argv: list[str]) -> int:
                 per["openrdp"] = run_openrdp(msa, orc, work, label, orc_methods, logger)
             rows.append((ds["name"], per))
 
-    _print_tessera_table(rows)
+    _print_combined_table(rows, orc, orc_methods)
     if orc is None:
         print("\n[note] OpenRDP not run (--no-openrdp, or no openrdp/conda env resolved). "
               "Set $OPENRDP_CMD or install into a conda env named 'openrdp'.")
-    else:
-        _print_openrdp_table(rows, orc_methods)
     return 0
 
 
-def _print_tessera_table(rows: list[tuple[str, dict]]) -> None:
-    cols = (*CALLERS, "ensemble")
-    hdr = f"  {'dataset':22} " + " ".join(f"{c:>8}" for c in cols)
-    print("\nTessera per-caller detection on real published recombinants\n" + "=" * len(hdr))
-    print(hdr)
+def _print_combined_table(rows: list[tuple[str, dict]], orc: list[str] | None,
+                          methods: tuple[str, ...]) -> None:
+    """One table: Tessera's callers and, if run, OpenRDP's methods on the same alignments."""
+    tcols = (*CALLERS, "ensemble")
+    ocols = tuple(methods) if orc is not None else ()
+    sep = "  |  "
+
+    def cells(values: list[str]) -> str:
+        return " ".join(f"{v:>8}" for v in values)
+
+    tess_hdr, op_hdr = cells(list(tcols)), cells(list(ocols))
+    prefix = f"  {'dataset':20} "
+    group = f"  {'':20} {'Tessera'.center(len(tess_hdr))}"
+    col = prefix + tess_hdr
+    if ocols:
+        group += f"{sep}{'OpenRDP (RDP5)'.center(len(op_hdr))}"
+        col += sep + op_hdr
+
+    print("\nMethod comparison on real published recombinants (Tessera vs OpenRDP)\n"
+          + "=" * len(col))
+    print(group)
+    print(col)
     for name, per in rows:
         if "skip" in per:
-            print(f"  {name:22} SKIP: {per['skip']}")
+            print(f"  {name:20} SKIP: {per['skip']}")
             continue
-        print(f"  {name:22} " + " ".join(f"{_fmt(bool(per[c])):>8}" for c in cols))
-
-
-def _print_openrdp_table(rows: list[tuple[str, dict]], methods: tuple[str, ...]) -> None:
-    hdr = f"  {'dataset':22} " + " ".join(f"{m:>9}" for m in methods)
-    print("\nOpenRDP (RDP5) per-method detection on the same alignments\n" + "=" * len(hdr))
-    print(hdr)
-    for name, per in rows:
-        if "skip" in per:
-            print(f"  {name:22} SKIP: {per['skip']}")
-            continue
-        det = per.get("openrdp")
-        if det is None:
-            print(f"  {name:22} OpenRDP did not run (timed out or errored)")
-            continue
-        print(f"  {name:22} " + " ".join(f"{_fmt(det[m]):>9}" for m in methods))
+        line = f"  {name:20} " + cells([_fmt(bool(per[c])) for c in tcols])
+        if ocols:
+            det = per.get("openrdp")
+            ovals = ["-" if det is None else _fmt(det[m]) for m in ocols]
+            line += sep + cells(ovals)
+        print(line)
 
 
 if __name__ == "__main__":
