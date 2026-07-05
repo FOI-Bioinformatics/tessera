@@ -30,6 +30,17 @@ All notable changes to Tessera are recorded here. The format follows
   insert-shaped recombinant plus a clonal control and checks that `--scan-segments`
   localizes the intragenic recombination (localization-gated; attribution and specificity
   reported). Not part of CI.
+- **`--method geneconv` -- an opt-in GENECONV-style caller** (Sawyer 1989): over the
+  triplet discriminating sites it scores the longest uninterrupted run of consecutive
+  donor-matches (a clean gene-conversion fragment), with a permutation p-value and
+  Benjamini-Hochberg across donors. Complementary to 3SEQ's drawdown and MaxChi's boundary
+  chi-square; not in the default ensemble.
+- **External method comparison and short-tract probe (opt-in validation).**
+  `validation/run_method_comparison.py` runs Tessera's callers beside OpenRDP (the
+  maintained RDP5 reimplementation) on the same published-recombinant alignments, in one
+  combined table; `validation/run_method_comparison_hybrids.py` measures short-tract
+  sensitivity against ground truth, including an adversarial sub-window-tract tier. Both
+  need external tools and are not part of CI.
 
 ### Fixed
 
@@ -47,6 +58,19 @@ All notable changes to Tessera are recorded here. The format follows
   now propagates instead of being reported as a biological "unassigned"; a genuine
   no-dataset resolution or a skani rejection of a short segment stays a non-fatal
   per-segment skip.
+- **Short recombinant tracts (below one sliding window) were missed.** The site-based
+  callers (3SEQ, MaxChi, GENECONV) drew candidate donors only from window winners, so a
+  sub-window tract -- whose donor is diluted in the windowed vote and wins no window --
+  was never tested, despite an often overwhelming discriminating-site signal. They now
+  draw candidates from all references (`rank_datasets`), with the existing significance
+  floors dropping the rest, so short tracts are recovered at no measured specificity cost.
+- **Backbone mis-identified when the query is nearly identical to its parent.** For a very
+  short tract the query is almost identical to its true backbone, so the HMM's whole-genome
+  sibling exclusion could drop that backbone as a twin and pick a genotype that wins zero
+  windows as the major -- which `reconcile_major` then adopted, mislabelling every region's
+  backbone. `reconcile_major` now ignores a HMM major that wins zero windows when the
+  windowed vote has a clear winner; a HMM major that wins any window (including the
+  masking-twin case the exclusion exists for) is left untouched.
 
 ## [2.0.0]
 
