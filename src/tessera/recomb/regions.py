@@ -36,7 +36,7 @@ from .stats import benjamini_hochberg, sign_test_pvalue
 # The region callers, in canonical (display) order; the single source of truth for the
 # valid ``--method`` set. The default ensemble runs the four statistical callers and
 # merges them; heuristic is legacy and opt-in (or via ``all``).
-CALLERS = ("hmm", "3seq", "maxchi", "bootscan", "barcode", "heuristic")
+CALLERS = ("hmm", "3seq", "maxchi", "bootscan", "geneconv", "barcode", "heuristic")
 DEFAULT_METHODS = ("hmm", "3seq", "maxchi", "bootscan")
 
 
@@ -219,6 +219,9 @@ def call_regions(
     elif params.method == "bootscan":
         from .bootscan import call_regions_bootscan
         regions, major, siblings = call_regions_bootscan(result, analysis, window_size, params)
+    elif params.method == "geneconv":
+        from .geneconv import call_regions_geneconv
+        regions, major, siblings = call_regions_geneconv(result, analysis, params)
     elif params.method == "barcode":
         from .barcode import call_regions_barcode
         regions, major, siblings = call_regions_barcode(result, analysis, window_size, params)

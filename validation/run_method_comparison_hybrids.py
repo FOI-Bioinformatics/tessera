@@ -56,14 +56,21 @@ HARD_CASE_TYPES = frozenset({
     "mosaic", "mask_sibling",
 })
 NEGATIVE_CASE_TYPES = frozenset({"neg_pure", "neg_within"})
+# Display order for Tessera callers, including the opt-in geneconv (so a --tessera-methods
+# run that adds it shows whether it fired).
+CALLER_ORDER = ("hmm", "3seq", "maxchi", "bootscan", "geneconv", "barcode")
 
 
 def _fmt(flag: bool) -> str:
     return "yes" if flag else "no"
 
 
+def _opt(argv: list[str], name: str, default: str) -> str:
+    return argv[argv.index(name) + 1] if name in argv else default
+
+
 def tessera_callers(regions: list[dict], true_spans: list[tuple[int, int, str]],
-                    is_negative: bool) -> set[str]:
+                    is_negative: bool, callers: tuple[str, ...] = CALLERS) -> set[str]:
     """Which Tessera callers fired on a relevant region.
 
     For a positive, "relevant" means a present region overlapping a true donor span; for a negative,
@@ -79,7 +86,7 @@ def tessera_callers(regions: list[dict], true_spans: list[tuple[int, int, str]],
     fired: set[str] = set()
     for r in relevant:
         fired.update(m.strip() for m in (r.get("methods") or "").split(",") if m.strip())
-    return fired & set(CALLERS)
+    return fired & set(callers)
 
 
 def gap_summary(rows: list[dict], methods: tuple[str, ...] = DEFAULT_OPENRDP_METHODS) -> dict:
@@ -123,10 +130,9 @@ def _select(names: list[str], include_core: bool, adversarial: bool) -> list[dic
 
 
 def _probe_case(case: dict, orc, orc_methods: tuple[str, ...],
-                logger: logging.Logger) -> dict:
+                tessera_methods: tuple[str, ...], logger: logging.Logger) -> dict:
     setup = _prepare_case(case, logger)
-    result = _build_and_score(setup, "tip", parse_methods(",".join(DEFAULT_METHODS)),
-                              setup.out, logger)
+    result = _build_and_score(setup, "tip", tessera_methods, setup.out, logger)
     is_neg = setup.case_type in NEGATIVE_CASE_TYPES
     spans = setup.true_spans or [(setup.q_start, setup.q_end, setup.clade_b)]
     regions = parse_regions(setup.out / "recombination_regions.tsv")
@@ -139,7 +145,8 @@ def _probe_case(case: dict, orc, orc_methods: tuple[str, ...],
     return {
         "name": setup.name, "case_type": setup.case_type, "is_negative": is_neg,
         "tessera_pass": bool(result["pass"]), "tessera_detected": bool(result.get("detected")),
-        "tessera_callers": tessera_callers(regions, spans, is_neg), "openrdp": det,
+        "tessera_callers": tessera_callers(regions, spans, is_neg, tessera_methods),
+        "openrdp": det,
     }
 
 
@@ -149,17 +156,20 @@ def main(argv: list[str]) -> int:
 
     orc = None if "--no-openrdp" in argv else openrdp_command()
     orc_methods = OPENRDP_METHODS if "--with-siscan" in argv else DEFAULT_OPENRDP_METHODS
-    names = [a for a in argv if not a.startswith("-")]
+    # Positional case names, excluding any token consumed as an option value.
+    value_idx = {argv.index(o) + 1 for o in ("--tessera-methods",) if o in argv}
+    names = [a for i, a in enumerate(argv) if not a.startswith("-") and i not in value_idx]
     adversarial = "--adversarial" in argv
     cases = _select(names, include_core="--all" in argv, adversarial=adversarial)
+    tessera_methods = parse_methods(_opt(argv, "--tessera-methods", ",".join(DEFAULT_METHODS)))
 
     kind = "ADVERSARIAL" if adversarial else "hard"
     print(f"\nGENECONV gap probe ({kind}) -- {len(cases)} case(s); "
-          f"OpenRDP {'on' if orc else 'off'}\n" + "=" * 72)
+          f"Tessera [{','.join(tessera_methods)}]; OpenRDP {'on' if orc else 'off'}\n" + "=" * 72)
     rows: list[dict] = []
     for case in cases:
         try:
-            row = _probe_case(case, orc, orc_methods, logger)
+            row = _probe_case(case, orc, orc_methods, tessera_methods, logger)
         except CaseSkipped as exc:
             print(f"  [SKIP ] {case['name']:16} {exc}")
             continue
@@ -180,7 +190,7 @@ def main(argv: list[str]) -> int:
 def _print_row(row: dict, methods: tuple[str, ...]) -> None:
     tag = "neg" if row["is_negative"] else "pos"
     verdict = "PASS" if row["tessera_pass"] else "FAIL"
-    callers = ",".join(c for c in CALLERS if c in row["tessera_callers"]) or "-"
+    callers = ",".join(c for c in CALLER_ORDER if c in row["tessera_callers"]) or "-"
     line = (f"  {row['name']:16} {row['case_type']:14} [{tag}] Tessera {verdict:4} "
             f"({callers})")
     if methods:

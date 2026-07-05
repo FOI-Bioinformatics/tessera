@@ -83,7 +83,9 @@ sites.
 ## 3SEQ caller (`--method 3seq`, scan-aware triplet test)
 
 A second caller, complementary to the HMM, after Boni, Posada & Feldman (2007). For
-the query against the major parent and each candidate donor it looks only at the
+the query against the major parent and each candidate donor -- **every reference, not
+only the window winners**, so a sub-window tract whose donor wins no window is still
+tested -- it looks only at the
 **discriminating sites** (where the two parents differ and the query matches one of
 them) and measures the **maximum drawdown** of the resulting +1/-1 walk -- a
 sustained run of donor matches inside the backbone, i.e. a mosaic. Its p-value is the
@@ -115,6 +117,21 @@ candidate parent, then resamples the window's alignment columns with replacement
 closest match. A run of windows where a non-major parent's support clears 70 % and beats
 the backbone is a region, carrying that support as a confidence the other callers express
 only as a p-value.
+
+## GENECONV caller (`--method geneconv`, clean-fragment run test; opt-in)
+
+Sawyer's (1989) GENECONV signal, adapted to the single-backbone triplet setting: over the
+major/minor discriminating sites it scores the longest **uninterrupted** run of consecutive
+minor-matches (a clean gene-conversion fragment), with a permutation p-value and
+Benjamini-Hochberg across donors. It differs from 3SEQ (maximum drawdown, which tolerates a
+few interspersed major-matches) and MaxChi (a boundary chi-square). It is **opt-in and not
+in the default ensemble**: an adversarial sub-window-tract measurement (see
+`validation/README.md`) showed it detects the same tracts the ensemble already finds and,
+run alone, did not rescue the short-tract cases. That experiment led to the actual cause of
+those misses -- the site callers only tested window *winners* as donors, so a sub-window
+tract's zero-win donor was never tested -- which is now fixed for all three site callers
+(they draw candidates from `rank_datasets`, winners then the rest). GENECONV stays opt-in:
+it was the instrument that found the fix, not the fix itself.
 
 ## Barcode caller (`--method barcode`, lineage-marker attribution)
 
@@ -217,6 +234,8 @@ sources:
   15:3187 (RecombinHunt); the same per-lineage characteristic-mutation idea as rebar/sc2rf.
 - **3SEQ triplet test.** Boni MF, Posada D, Feldman MW (2007). An exact nonparametric
   method for inferring mosaic structure in sequence triplets. *Genetics* 176(2):1035-1047.
+- **GENECONV (clean-fragment run test).** Sawyer S (1989). Statistical tests for detecting
+  gene conversion. *Molecular Biology and Evolution* 6(5):526-538.
 - **PHI test (Pairwise Homoplasy Index).** Bruen TC, Philippe H, Bryant D (2006). A
   simple and robust statistical test for detecting the presence of recombination.
   *Genetics* 172(4):2665-2681.

@@ -171,13 +171,17 @@ def call_regions_3seq(result: WindowSimilarity, analysis, params):
     across the tested donors) is a recombinant tract. Overlapping tracts keep the most
     significant donor. Returns ``(regions, major, [])`` to match ``call_regions``.
     """
-    from .analyze import rank_by_wins
+    from .analyze import rank_datasets
     from .regions import Region, _signif
 
     labels = list(result.similarities)
     if len(labels) < 2:
         return [], (labels[0] if labels else None), []
-    ranked = rank_by_wins(analysis.winners_with_ties, len(labels)) or labels
+    # Rank by window wins but keep non-winning references as candidate donors too: a
+    # sub-window recombinant tract is diluted in the windowed vote, so its true donor may
+    # win no window yet still carry a strong discriminating-site signal. The pre-BH floors
+    # below drop candidates without a real drawdown, so the extra donors cost little power.
+    ranked = rank_datasets(analysis, len(labels)) or labels
     major = ranked[0]
     candidates = []
     for minor in ranked:
