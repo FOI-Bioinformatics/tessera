@@ -62,7 +62,10 @@ All notable changes to Tessera are recorded here. The format follows
   HIV subtype genome is statistically indistinguishable from a real recombinant against a
   source-removed subtype panel (its false donor is also a real donor in the `hiv1` positive),
   so it cannot be suppressed without breaking genuine detection -- documented, not a caller
-  change. Gating `neg_pure` specificity is 8/8.
+  change. Gating `neg_pure` specificity is 8/8. Two `neg_within` controls (intra-clade splices
+  that must not read as cross-clade) are now enabled: the panel keeps both same-clade sources,
+  so the splice is credited intra-clade instead of being mis-attributed to a different clade
+  whose representative the dropped source happened to be closest to.
 
 ### Fixed
 
