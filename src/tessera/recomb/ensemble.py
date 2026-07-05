@@ -43,6 +43,8 @@ def _same_donor(a: Region, b: Region, lineage_map: LineageMap | None) -> bool:
 
 def reconcile_major(
     majors: dict[str, str | None],
+    *,
+    window_wins: dict[str, int] | None = None,
 ) -> tuple[str | None, dict[str, str]]:
     """The canonical backbone (major parent) plus each method's own major.
 
@@ -52,12 +54,26 @@ def reconcile_major(
     (the genome-wide closest reference); when they differ the HMM's major wins if HMM ran,
     else the most frequently reported one. The per-method mapping is returned so the
     report can surface a disagreement.
+
+    ``window_wins`` (label -> windows won) guards one failure mode: the HMM excludes the
+    query's whole-genome siblings before segmenting, and for a very short recombinant
+    tract the true backbone is ~identical to the query and can be dropped as a sibling,
+    leaving the HMM with a major that wins no window. When that happens and the windowed
+    vote has a clear winner the HMM's major is not, the winner is trusted instead -- the
+    genome-wide closest reference is the backbone, and a zero-win HMM major is an artefact
+    of the exclusion. A HMM major that wins any window (the usual case, and the HIV/RSV
+    masking-twin case where the true parent wins its own segment) is left untouched.
     """
     per = {m: major for m, major in majors.items() if major is not None}
     if not per:
         return None, per
     if "hmm" in per:
-        return per["hmm"], per
+        hmm_major = per["hmm"]
+        if window_wins and window_wins.get(hmm_major, 0) == 0:
+            top = max(window_wins, key=window_wins.get)
+            if window_wins.get(top, 0) > 0 and top != hmm_major:
+                return top, per
+        return hmm_major, per
     values = list(per.values())
     canonical = max(values, key=lambda m: (values.count(m), -values.index(m)))
     return canonical, per
