@@ -494,14 +494,24 @@ sensitivity cost**:
 | | before (raw p) | after (BH q) |
 |---|---|---|
 | sensitivity | 30/30 | 30/30 |
-| `neg_pure` specificity | -- | **8/9** |
+| `neg_pure` specificity (gating) | -- | **8/8** |
 
-The one remaining `neg_pure` failure is **`neg_hiv1`**: a pure HIV subtype-A1 genome is called
-recombinant by all four callers (q ~ 0.01). This is a genuine, documented limitation -- HIV subtypes
-are strongly inter-mosaic, so a single subtype genome scanned against a source-removed subtype panel
-carries real recombination signal. It is reported, not hidden. (`neg_within`, an intra-clade splice,
-stays deferred: a trial re-confirmed that the tip panel cannot represent both same-clade sources, so
-its cross-clade call is a harness artefact rather than a tool false positive.)
+**`neg_hiv1` -- an investigated, irreducible known-limitation** (reported, not gating). A pure HIV
+subtype-A1 genome is still called recombinant, and it cannot be suppressed without breaking genuine
+recombination detection the suite must keep. The false and true HIV signals overlap completely: the
+main false donor `AY521630` (subtype A3, `sim_minor=0.93, margin=0.021`) is *also* a legitimate donor
+in the real `hiv1` positive (`sim_minor=0.86, margin=0.011`), whose true donors span `sim_minor`
+0.86-0.93 and `margin` 0.011-0.16 -- so no margin, donor-match-quality or divergence threshold
+separates them. Clade-hierarchy suppression fails too, because real RSV recombination (`rsv_a`, A.1 x
+A.D.1.8) is *intra*-top-level-A, exactly what suppressing same-subtype donors would kill. The
+independent PHI/Rmin test corroborates the signal (`parent_free_support=yes`). Root cause: HIV
+subtypes are so inter-mosaic that a pure subtype genome (source removed) is indistinguishable from a
+real recombinant -- a property of the data, not a caller bug. So the harness reports it as a
+`KNOWN-LIMIT` row and excludes it from the gating specificity, rather than changing the callers.
+
+(`neg_within`, an intra-clade splice, stays deferred for a different reason: a trial re-confirmed
+that the tip panel cannot represent both same-clade sources, so its cross-clade call is a harness
+artefact rather than a tool false positive.)
 
 Phase 2 adds hard *topologies* via `make_mosaic` / `true_spans`: a `mosaic` case type with
 `pattern` in `{ABAC, AB_9010, AB_short, AB_terminal}` (multi-breakpoint 3-parent, asymmetric,
