@@ -408,17 +408,40 @@ via `--method`) and the sweep re-run with it in the ensemble
 | 0.30 | zika  | **FAIL** | no |
 | 0.30 | mumps | **FAIL** | no |
 
-Tessera's own GENECONV fires on the tracts it can already detect (1.0x, 0.5x) but **rescues none of
-the four sub-window failures** -- exactly where OpenRDP's GENECONV still detects. This confirms the
-diagnosis directly: a query-vs-panel GENECONV hits the same few-discriminating-sites wall as 3SEQ;
-OpenRDP catches these tracts because it scans the whole population alignment (many taxa, more power
-per short region), not because of GENECONV's signal. **Verdict: the short-tract miss is a limit of
-Tessera's query-vs-panel scan configuration, not a missing method -- adding GENECONV does not close
-it.** The caller is kept opt-in (not in the default ensemble): it is correct and available for method
-comparison, but does not extend Tessera's detection envelope. The lever for short tracts is Tessera's
-windowing / scan design. Recorded as measured; probe and tier stay in the suite. (Several 2-parent
-`AB_micro` cases SKIP when a donor clade loses its only panel representative after source removal -- a
-harness invariant, not a detection result.)
+Tessera's own GENECONV fired on the tracts it could already detect (1.0x, 0.5x) but rescued none of
+the four sub-window failures -- adding a method did not close the gap. That ruled out the method
+inventory and pointed at *why* every site caller missed the tract.
+
+#### Root cause and fix
+
+Instrumenting the worst case (`adv_wnv_030`) settled it. The true donor's discriminating-site signal
+is overwhelming -- 3SEQ drawdown depth 35, **p = 0**, a perfect match at the tract's discriminating
+sites -- yet no caller fired. The reason: the site callers (3SEQ, MaxChi, GENECONV) drew candidate
+donors **only from window winners** (`rank_by_wins`). A sub-window tract is diluted in the windowed
+vote, so its donor wins zero windows and was **never tested as a minor**, however strong its signal.
+So the miss was **candidate selection, not windowing dilution or statistical power**; OpenRDP caught
+these tracts because its all-vs-all scan tests every pair, so the donor is always a candidate.
+
+The fix (`src/tessera/recomb/{threeseq,maxchi,geneconv}.py`): draw candidates from `rank_datasets`
+(window winners first, then the remaining references), so a zero-win donor is still tested. The
+pre-Benjamini-Hochberg floors (`_MIN_DISCRIMINATING` / `_MIN_DESCENT` / min run) drop candidates
+without a real signal, so the extra donors cost little power. Re-measured:
+
+| tract (x window) | dataset | before fix | after fix (default ensemble) |
+|---|---|---|---|
+| 0.30 | wnv   | FAIL | **PASS** (3seq, maxchi) |
+| 0.15 | wnv   | FAIL | **PASS** (3seq, maxchi) |
+| 0.30 | zika  | FAIL | **PASS** (3seq, maxchi) |
+| 0.30 | mumps | FAIL | detects, but a mumps-specific backbone mis-call still fails scoring |
+
+**Three of the four sub-window failures now pass with the default ensemble** (no GENECONV needed);
+the fourth now detects the tract but a separate backbone-selection issue on mumps keeps it from a
+clean pass. Crucially, **no specificity cost**: the full must-pass hybrid suite holds at
+**sensitivity 30/30, specificity 1/1, 0 false calls** -- testing non-winning donors added no false
+positives, because a non-recombinant query yields no significant discriminating-site run for any
+donor. Recorded as measured. GENECONV stays opt-in (it was the instrument that led here, not the
+fix). (Several 2-parent `AB_micro` cases SKIP when a donor clade loses its only panel representative
+after source removal -- a harness invariant, not a detection result.)
 
 A dataset is **SKIP**ped (not failed) when it cannot supply a valid test: the
 most-divergent clade pair is below ~4 % divergence (too few discriminating sites:

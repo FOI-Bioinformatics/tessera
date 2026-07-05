@@ -83,7 +83,9 @@ sites.
 ## 3SEQ caller (`--method 3seq`, scan-aware triplet test)
 
 A second caller, complementary to the HMM, after Boni, Posada & Feldman (2007). For
-the query against the major parent and each candidate donor it looks only at the
+the query against the major parent and each candidate donor -- **every reference, not
+only the window winners**, so a sub-window tract whose donor wins no window is still
+tested -- it looks only at the
 **discriminating sites** (where the two parents differ and the query matches one of
 them) and measures the **maximum drawdown** of the resulting +1/-1 walk -- a
 sustained run of donor matches inside the backbone, i.e. a mosaic. Its p-value is the
@@ -124,10 +126,12 @@ minor-matches (a clean gene-conversion fragment), with a permutation p-value and
 Benjamini-Hochberg across donors. It differs from 3SEQ (maximum drawdown, which tolerates a
 few interspersed major-matches) and MaxChi (a boundary chi-square). It is **opt-in and not
 in the default ensemble**: an adversarial sub-window-tract measurement (see
-`validation/README.md`) showed it detects the same tracts the ensemble already finds and
-does not rescue the short-tract cases the query-vs-panel scan misses -- the limit there is
-the number of discriminating sites in a sub-window tract, which no triplet statistic
-escapes. It is kept for method comparison and as the faithful record of that experiment.
+`validation/README.md`) showed it detects the same tracts the ensemble already finds and,
+run alone, did not rescue the short-tract cases. That experiment led to the actual cause of
+those misses -- the site callers only tested window *winners* as donors, so a sub-window
+tract's zero-win donor was never tested -- which is now fixed for all three site callers
+(they draw candidates from `rank_datasets`, winners then the rest). GENECONV stays opt-in:
+it was the instrument that found the fix, not the fix itself.
 
 ## Barcode caller (`--method barcode`, lineage-marker attribution)
 
