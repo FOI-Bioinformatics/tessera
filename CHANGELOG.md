@@ -58,7 +58,11 @@ All notable changes to Tessera are recorded here. The format follows
 - **Broadened specificity panel (opt-in validation).** The synthetic-hybrid suite now carries
   nine non-recombinant `neg_pure` controls across the divergence and panel-size axes
   (was one), so the false-positive rate is measured over many pathogens rather than a
-  single case.
+  single case. `neg_hiv1` is reported as an investigated `KNOWN-LIMIT` (not gating): a pure
+  HIV subtype genome is statistically indistinguishable from a real recombinant against a
+  source-removed subtype panel (its false donor is also a real donor in the `hiv1` positive),
+  so it cannot be suppressed without breaking genuine detection -- documented, not a caller
+  change. Gating `neg_pure` specificity is 8/8.
 
 ### Fixed
 
