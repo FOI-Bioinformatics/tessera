@@ -18,6 +18,7 @@ validation/
   run_recombinhunt_benchmark.py RecombinHunt noise-robustness of breakpoint detection
   run_reassort_benchmark.py     reassort verdict precision/recall/F1 (flu HA+NA)
   run_method_comparison.py      per-caller detection on the real recombinants
+  run_method_comparison_hybrids.py  GENECONV gap probe on the hard synthetic cases
   run_deep_typing.py   run the real --deep-typing lineage ladder, check nextclade-nn
   data/                downloaded sequences + run artifacts (gitignored)
 ```
@@ -342,6 +343,39 @@ least four of its six default methods fire per dataset -- though Chimaera (and S
 nothing on these small taxon sets. On `hcv_2k1b` its 3SEQ/GENECONV/Bootscan place the breakpoint at
 nt ~3186-3187 -- an independent, external confirmation of the breakpoint Tessera recovers (~3187) and
 of the published NS2/NS3 junction. Recorded as measured.
+
+### Would an OpenRDP method improve Tessera? (`run_method_comparison_hybrids.py`)
+
+Of OpenRDP's seven methods, MaxChi and Bootscan are already Tessera callers, RDP is the
+similarity-switch signal Tessera's HMM already carries, and Chimaera/SiScan add nothing on these
+data -- leaving **GENECONV** (runs of matching polymorphic sites) as the one method with a genuinely
+different signal. On the easy real recombinants Tessera already detects everything, so a benefit
+could only appear on the *hard* synthetic cases (short tracts, low divergence, mosaics) or in
+specificity. This probe reuses the synthetic-hybrid builder to make those cases with known ground
+truth, runs Tessera's ensemble and OpenRDP on the same `panel.msa.fasta`, and counts, per OpenRDP
+method, **rescues** (a positive Tessera's ensemble missed) and **false-calls** on negatives.
+
+```
+export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"
+python validation/run_method_comparison_hybrids.py     # needs the openrdp conda env + network
+```
+
+Measured over the eight hard cases (7 positives: `low_div`, `panel_donor_absent`, the four mosaics
+ABAC/AB_9010/AB_short/AB_terminal, `mask_sibling`; 1 negative: `neg_pure`):
+
+| | positives detected | negatives false-called | GENECONV rescues | GENECONV false-calls |
+|---|---|---|---|---|
+| Tessera ensemble | 7/7 | 0/1 | -- | -- |
+| OpenRDP (incl. GENECONV) | 7/7 | 0/1 | **0** | **0** |
+
+Tessera's four callers each fired on all seven hard positives and the ensemble rejected the negative;
+OpenRDP's GENECONV also detected all seven and false-called none, so it rescued nothing Tessera
+missed. **Verdict: on this envelope, adding a GENECONV caller would not improve detection or
+specificity, so none was written.** This is a faithful negative result, not a null run: GENECONV is
+detecting the same events, just cases Tessera already covers. Caveats: the specificity side rests on
+a single negative (`neg_within` is deferred in the hybrid harness), and these are the harness's
+must-pass cases -- an adversarial gap would need cases Tessera fails, which this envelope does not
+contain. The probe stays in the suite so the question can be re-measured as harder cases are added.
 
 A dataset is **SKIP**ped (not failed) when it cannot supply a valid test: the
 most-divergent clade pair is below ~4 % divergence (too few discriminating sites:
