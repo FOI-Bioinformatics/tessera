@@ -464,6 +464,7 @@ measures **specificity** (false positives), not only sensitivity. The default ru
 `sensitivity P/N` and `specificity Q/M` lines. Phase-1 case types:
 
 - `neg_pure` -- a pure, non-recombinant genome that must yield **zero** recombinant regions.
+  Carried across nine pathogens spanning the divergence and panel-size axes (see below), not one.
 - `low_div` -- pins the *closest* viable clade pair (`pair_objective: "min"`, within a
   `divergence_band`) and **requires** backbone + donor at the correct top-level clade, with no
   sub-4% relaxation, testing attribution near the informative-site floor.
@@ -474,6 +475,33 @@ measures **specificity** (false positives), not only sensitivity. The default ru
 
 An out-of-envelope case is `SKIP`ped, and a genuine attribution shortfall is reported as a FAIL,
 not hidden -- see `attribution-results.md` for the measured result.
+
+#### Specificity panel and the FDR gate
+
+A single non-recombinant control (`neg_measles`) was too thin to show the tool does not over-call --
+and became riskier after the candidate-selection fix widened the callers' donor search. The suite now
+carries **nine `neg_pure` controls** (`neg_measles`, `neg_dengue`, `neg_hiv1`, `neg_prrsv2`,
+`neg_rsv`, `neg_wnv`, `neg_zika`, `neg_mumps`, `neg_sarscov2`), with dengue's large, divergent panel
+and sars_cov_2's near-identical panel bracketing the two regimes where over-calling is most likely.
+
+Running them immediately caught real over-calling: **specificity 7/11 with 10 false calls** under the
+old gate. The cause was that the widened search gated on the **raw p-value** while the
+Benjamini-Hochberg **q-value was computed but never used to filter** -- so more candidate donors meant
+more lucky raw p < alpha. Gating all four callers on the q-value instead (FDR-controlled, so the
+false-call rate no longer scales with the number of candidates) fixed the marginal calls at **no
+sensitivity cost**:
+
+| | before (raw p) | after (BH q) |
+|---|---|---|
+| sensitivity | 30/30 | 30/30 |
+| `neg_pure` specificity | -- | **8/9** |
+
+The one remaining `neg_pure` failure is **`neg_hiv1`**: a pure HIV subtype-A1 genome is called
+recombinant by all four callers (q ~ 0.01). This is a genuine, documented limitation -- HIV subtypes
+are strongly inter-mosaic, so a single subtype genome scanned against a source-removed subtype panel
+carries real recombination signal. It is reported, not hidden. (`neg_within`, an intra-clade splice,
+stays deferred: a trial re-confirmed that the tip panel cannot represent both same-clade sources, so
+its cross-clade call is a harness artefact rather than a tool false positive.)
 
 Phase 2 adds hard *topologies* via `make_mosaic` / `true_spans`: a `mosaic` case type with
 `pattern` in `{ABAC, AB_9010, AB_short, AB_terminal}` (multi-breakpoint 3-parent, asymmetric,

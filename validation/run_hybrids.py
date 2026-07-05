@@ -119,12 +119,29 @@ HYBRIDS: list[dict] = [
     # Phase-1 hard cases: specificity (negatives), low-divergence attribution, and a
     # panel-adversarial donor-absent case. These reuse existing datasets; the equidistant
     # case is added below once its clade pins are read from a probe run.
+    # Specificity panel: non-recombinant (neg_pure) controls across the divergence and
+    # panel-size axes -- each must call zero recombinant regions. dengue (a large, highly
+    # divergent serotype panel) and sars_cov_2 (a near-identical panel) bracket the two
+    # regimes where a widened donor search is most likely to over-call.
     {"name": "neg_measles", "dataset": "nextstrain/measles/genome/WHO-2012",
      "case_type": "neg_pure"},
-    # neg_within (a within-clade splice that should not read as cross-clade) is deferred:
-    # the panel reduction under test collapses a clade to one representative, so the
-    # mosaic's two same-clade sources cannot both be represented at detection time. Its
-    # scorer and helper are kept (unit-tested) for a later cycle with a fairer panel.
+    {"name": "neg_dengue", "dataset": "nextstrain/dengue/all", "case_type": "neg_pure"},
+    {"name": "neg_hiv1", "dataset": "community/neherlab/hiv-1/hxb2", "case_type": "neg_pure"},
+    {"name": "neg_prrsv2", "dataset": "community/isuvdl/mazeller/prrsv2/orf5/yimim2023",
+     "case_type": "neg_pure", "clades": ["L1H", "L8D"]},
+    {"name": "neg_rsv", "dataset": "nextstrain/rsv/a/EPI_ISL_412866", "case_type": "neg_pure"},
+    {"name": "neg_wnv", "dataset": "nextstrain/wnv/all-lineages", "case_type": "neg_pure"},
+    {"name": "neg_zika", "dataset": "community/itps/zikav", "case_type": "neg_pure"},
+    {"name": "neg_mumps", "dataset": "nextstrain/mumps/genome", "case_type": "neg_pure"},
+    {"name": "neg_sarscov2", "dataset": "nextstrain/sars-cov-2/XBB",
+     "case_type": "neg_pure", "clade_key": "clade_nextstrain", "min_divergence": 0.0},
+    # neg_within (an intra-clade splice that should not read as cross-clade) stays deferred.
+    # A trial run (negwithin_dengue, negwithin_measles) re-confirmed the panel-representation
+    # limitation: the tip panel reduces the query's clade to one representative, so the
+    # splice's *other* same-clade source is unrepresented and its half matches a different
+    # clade's rep -- producing a cross-clade call that is a harness artefact, not a Tessera
+    # false positive. The scorer and helper stay unit-tested for a later cycle with a panel
+    # that keeps both within-clade sources.
     {"name": "lowdiv_rsv", "dataset": "nextstrain/rsv/a/EPI_ISL_412866",
      "case_type": "low_div", "pair_objective": "min",
      "divergence_band": [1.0, 4.0], "min_divergence": 1.0},

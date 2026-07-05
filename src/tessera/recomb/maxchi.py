@@ -123,7 +123,7 @@ def call_regions_maxchi(result: WindowSimilarity, analysis, params):
     for (minor, steps, cols, descent, _chi2, p), q in sorted(
         zip(candidates, qvalues, strict=True), key=lambda t: t[0][5]
     ):
-        if p > params.alpha:
+        if q > params.alpha:   # FDR-controlled gate (BH q, not raw p)
             continue
         peak, trough = descent.start_site, descent.end_site
         if trough <= peak or peak >= cols.size:

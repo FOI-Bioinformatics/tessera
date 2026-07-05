@@ -108,7 +108,7 @@ def call_regions_geneconv(result: WindowSimilarity, analysis, params):
     for (minor, cols, run_len, start, end, p), q in sorted(
         zip(candidates, qvalues, strict=True), key=lambda t: t[0][5]
     ):
-        if p > params.alpha:
+        if q > params.alpha:   # FDR-controlled gate (BH q, not raw p)
             continue
         msa_start = int(cols[start])
         msa_end = int(cols[end]) + 1
