@@ -150,6 +150,20 @@ HYBRIDS: list[dict] = [
     {"name": "reassort_flu", "tier": "frontier", "case_type": "reassortant",
      "dataset": "nextstrain/flu/h3n2/ha/EPI1857216",
      "second_dataset": "nextstrain/flu/h3n2/na/EPI1857215"},
+    # Adversarial tract-length sweep (tier "adversarial"): sub-window donor tracts on divergent,
+    # clean datasets, scored strictly, to find where Tessera's windowed callers break down and
+    # whether an OpenRDP method (GENECONV) then rescues. Run only via the gap probe
+    # (run_method_comparison_hybrids.py --adversarial); never part of the must-pass suite.
+    {"name": "adv_dengue_050", "dataset": "nextstrain/dengue/all", "tier": "adversarial",
+     "case_type": "mosaic", "pattern": "AB_micro", "tract_windows": 0.5},
+    {"name": "adv_dengue_030", "dataset": "nextstrain/dengue/all", "tier": "adversarial",
+     "case_type": "mosaic", "pattern": "AB_micro", "tract_windows": 0.3},
+    {"name": "adv_dengue_015", "dataset": "nextstrain/dengue/all", "tier": "adversarial",
+     "case_type": "mosaic", "pattern": "AB_micro", "tract_windows": 0.15},
+    {"name": "adv_wnv_030", "dataset": "nextstrain/wnv/all-lineages", "tier": "adversarial",
+     "case_type": "mosaic", "pattern": "AB_micro", "tract_windows": 0.3},
+    {"name": "adv_measles_030", "dataset": "nextstrain/measles/genome/WHO-2012",
+     "tier": "adversarial", "case_type": "mosaic", "pattern": "AB_micro", "tract_windows": 0.3},
 ]
 INSERT = (0.35, 0.65)  # donor (clade B) occupies this fraction of the genome
 MIN_GENOME = 400  # skip a dataset whose genome/segment is too short to splice
@@ -870,6 +884,14 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
             segments = [(b_m, 0.0, 0.15, clade_b), (a_m, 0.15, 1.0, None)]
         elif pattern == "AB_short":
             half = 0.5 * window_params(len(reference))[0] / len(reference)
+            segments = [(a_m, 0.0, 0.5 - half, None), (b_m, 0.5 - half, 0.5 + half, clade_b),
+                        (a_m, 0.5 + half, 1.0, None)]
+        elif pattern == "AB_micro":
+            # Adversarial sub-window tract: a donor span of ``tract_windows`` x window (default
+            # 0.3, i.e. well below one sliding window), centred, to push past the windowed
+            # callers' detection floor. Scored strictly (below), so a miss is a FAIL.
+            frac = case.get("tract_windows", 0.3)
+            half = 0.5 * frac * window_params(len(reference))[0] / len(reference)
             segments = [(a_m, 0.0, 0.5 - half, None), (b_m, 0.5 - half, 0.5 + half, clade_b),
                         (a_m, 0.5 + half, 1.0, None)]
         else:
