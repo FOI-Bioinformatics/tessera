@@ -391,16 +391,34 @@ tract-length sweep (`python validation/run_method_comparison_hybrids.py --advers
 | 0.30 | mumps | **FAIL**                           | geneconv, bootscan, threeseq, rdp |
 
 There is a **real gap**: below ~0.3 x window Tessera's windowed scan misses the tract (HMM drops out
-first, by 0.5x), while OpenRDP still flags the query. But this is **not** a GENECONV-specific gap:
-across the four failures GENECONV rescued 4/4 and **3SEQ rescued 4/4 as well -- and Tessera already
-ships a 3SEQ caller**. The rescue comes from OpenRDP's all-vs-all population scan (more taxa, a
-different null), not from GENECONV's signal family; a GENECONV caller reimplemented in Tessera's own
-query-vs-panel windowed setting would face the same few-discriminating-sites problem its 3SEQ does.
-**Verdict: the adversarial cases expose a short-tract (sub-window) sensitivity limit in Tessera's
-scan configuration, not a missing method -- so importing GENECONV is still not the fix.** The lever
-is Tessera's windowing / short-tract handling. Recorded as measured; the probe and the tier stay in
-the suite. (Several 2-parent `AB_micro` cases SKIP when a donor clade loses its only panel
-representative after source removal -- a harness invariant, not a detection result.)
+first, by 0.5x), while OpenRDP still flags the query. But it is **not** a GENECONV-specific gap:
+across the four failures OpenRDP's GENECONV rescued 4/4 and its 3SEQ rescued 4/4 too -- and Tessera
+already ships a 3SEQ caller.
+
+To settle it, a query-vs-panel **GENECONV caller was built** (`src/tessera/recomb/geneconv.py`, opt-in
+via `--method`) and the sweep re-run with it in the ensemble
+(`--tessera-methods hmm,3seq,maxchi,bootscan,geneconv`):
+
+| tract (x window) | dataset | Tessera + geneconv | did native geneconv fire? |
+|---|---|---|---|
+| 1.00 | wnv   | PASS | yes (with the ensemble) |
+| 0.50 | wnv   | PASS | yes (with the ensemble) |
+| 0.30 | wnv   | **FAIL** | no |
+| 0.15 | wnv   | **FAIL** | no |
+| 0.30 | zika  | **FAIL** | no |
+| 0.30 | mumps | **FAIL** | no |
+
+Tessera's own GENECONV fires on the tracts it can already detect (1.0x, 0.5x) but **rescues none of
+the four sub-window failures** -- exactly where OpenRDP's GENECONV still detects. This confirms the
+diagnosis directly: a query-vs-panel GENECONV hits the same few-discriminating-sites wall as 3SEQ;
+OpenRDP catches these tracts because it scans the whole population alignment (many taxa, more power
+per short region), not because of GENECONV's signal. **Verdict: the short-tract miss is a limit of
+Tessera's query-vs-panel scan configuration, not a missing method -- adding GENECONV does not close
+it.** The caller is kept opt-in (not in the default ensemble): it is correct and available for method
+comparison, but does not extend Tessera's detection envelope. The lever for short tracts is Tessera's
+windowing / scan design. Recorded as measured; probe and tier stay in the suite. (Several 2-parent
+`AB_micro` cases SKIP when a donor clade loses its only panel representative after source removal -- a
+harness invariant, not a detection result.)
 
 A dataset is **SKIP**ped (not failed) when it cannot supply a valid test: the
 most-divergent clade pair is below ~4 % divergence (too few discriminating sites:

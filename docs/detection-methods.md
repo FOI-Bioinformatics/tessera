@@ -116,6 +116,19 @@ closest match. A run of windows where a non-major parent's support clears 70 % a
 the backbone is a region, carrying that support as a confidence the other callers express
 only as a p-value.
 
+## GENECONV caller (`--method geneconv`, clean-fragment run test; opt-in)
+
+Sawyer's (1989) GENECONV signal, adapted to the single-backbone triplet setting: over the
+major/minor discriminating sites it scores the longest **uninterrupted** run of consecutive
+minor-matches (a clean gene-conversion fragment), with a permutation p-value and
+Benjamini-Hochberg across donors. It differs from 3SEQ (maximum drawdown, which tolerates a
+few interspersed major-matches) and MaxChi (a boundary chi-square). It is **opt-in and not
+in the default ensemble**: an adversarial sub-window-tract measurement (see
+`validation/README.md`) showed it detects the same tracts the ensemble already finds and
+does not rescue the short-tract cases the query-vs-panel scan misses -- the limit there is
+the number of discriminating sites in a sub-window tract, which no triplet statistic
+escapes. It is kept for method comparison and as the faithful record of that experiment.
+
 ## Barcode caller (`--method barcode`, lineage-marker attribution)
 
 For **typed** panels (a Nextclade dataset or `--lineage-map`), the shared primitive of the
@@ -217,6 +230,8 @@ sources:
   15:3187 (RecombinHunt); the same per-lineage characteristic-mutation idea as rebar/sc2rf.
 - **3SEQ triplet test.** Boni MF, Posada D, Feldman MW (2007). An exact nonparametric
   method for inferring mosaic structure in sequence triplets. *Genetics* 176(2):1035-1047.
+- **GENECONV (clean-fragment run test).** Sawyer S (1989). Statistical tests for detecting
+  gene conversion. *Molecular Biology and Evolution* 6(5):526-538.
 - **PHI test (Pairwise Homoplasy Index).** Bruen TC, Philippe H, Bryant D (2006). A
   simple and robust statistical test for detecting the presence of recombination.
   *Genetics* 172(4):2665-2681.

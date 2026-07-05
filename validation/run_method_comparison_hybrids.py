@@ -156,7 +156,9 @@ def main(argv: list[str]) -> int:
 
     orc = None if "--no-openrdp" in argv else openrdp_command()
     orc_methods = OPENRDP_METHODS if "--with-siscan" in argv else DEFAULT_OPENRDP_METHODS
-    names = [a for a in argv if not a.startswith("-")]
+    # Positional case names, excluding any token consumed as an option value.
+    value_idx = {argv.index(o) + 1 for o in ("--tessera-methods",) if o in argv}
+    names = [a for i, a in enumerate(argv) if not a.startswith("-") and i not in value_idx]
     adversarial = "--adversarial" in argv
     cases = _select(names, include_core="--all" in argv, adversarial=adversarial)
     tessera_methods = parse_methods(_opt(argv, "--tessera-methods", ",".join(DEFAULT_METHODS)))
