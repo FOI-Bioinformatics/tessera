@@ -154,16 +154,18 @@ HYBRIDS: list[dict] = [
     # clean datasets, scored strictly, to find where Tessera's windowed callers break down and
     # whether an OpenRDP method (GENECONV) then rescues. Run only via the gap probe
     # (run_method_comparison_hybrids.py --adversarial); never part of the must-pass suite.
-    {"name": "adv_dengue_050", "dataset": "nextstrain/dengue/all", "tier": "adversarial",
+    {"name": "adv_wnv_100", "dataset": "nextstrain/wnv/all-lineages", "tier": "adversarial",
+     "case_type": "mosaic", "pattern": "AB_micro", "tract_windows": 1.0},
+    {"name": "adv_wnv_050", "dataset": "nextstrain/wnv/all-lineages", "tier": "adversarial",
      "case_type": "mosaic", "pattern": "AB_micro", "tract_windows": 0.5},
-    {"name": "adv_dengue_030", "dataset": "nextstrain/dengue/all", "tier": "adversarial",
-     "case_type": "mosaic", "pattern": "AB_micro", "tract_windows": 0.3},
-    {"name": "adv_dengue_015", "dataset": "nextstrain/dengue/all", "tier": "adversarial",
-     "case_type": "mosaic", "pattern": "AB_micro", "tract_windows": 0.15},
     {"name": "adv_wnv_030", "dataset": "nextstrain/wnv/all-lineages", "tier": "adversarial",
      "case_type": "mosaic", "pattern": "AB_micro", "tract_windows": 0.3},
-    {"name": "adv_measles_030", "dataset": "nextstrain/measles/genome/WHO-2012",
-     "tier": "adversarial", "case_type": "mosaic", "pattern": "AB_micro", "tract_windows": 0.3},
+    {"name": "adv_wnv_015", "dataset": "nextstrain/wnv/all-lineages", "tier": "adversarial",
+     "case_type": "mosaic", "pattern": "AB_micro", "tract_windows": 0.15},
+    {"name": "adv_zika_030", "dataset": "community/itps/zikav", "tier": "adversarial",
+     "case_type": "mosaic", "pattern": "AB_micro", "tract_windows": 0.3},
+    {"name": "adv_mumps_030", "dataset": "nextstrain/mumps/genome", "tier": "adversarial",
+     "case_type": "mosaic", "pattern": "AB_micro", "tract_windows": 0.3},
 ]
 INSERT = (0.35, 0.65)  # donor (clade B) occupies this fraction of the genome
 MIN_GENOME = 400  # skip a dataset whose genome/segment is too short to splice
