@@ -92,13 +92,15 @@ def call_regions_maxchi(result: WindowSimilarity, analysis, params):
     significant after Benjamini-Hochberg across donors is a region. Returns
     ``(regions, major, [])`` to match ``call_regions``.
     """
-    from .analyze import rank_by_wins
+    from .analyze import rank_datasets
     from .regions import Region, _signif
 
     labels = list(result.similarities)
     if len(labels) < 2:
         return [], (labels[0] if labels else None), []
-    ranked = rank_by_wins(analysis.winners_with_ties, len(labels)) or labels
+    # Keep non-winning references as candidate donors: a sub-window tract's donor may win no
+    # window yet carry a strong discriminating-site signal (the pre-BH floors drop the rest).
+    ranked = rank_datasets(analysis, len(labels)) or labels
     major = ranked[0]
     candidates = []
     for minor in ranked:
