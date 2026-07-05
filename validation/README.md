@@ -432,16 +432,24 @@ without a real signal, so the extra donors cost little power. Re-measured:
 | 0.30 | wnv   | FAIL | **PASS** (3seq, maxchi) |
 | 0.15 | wnv   | FAIL | **PASS** (3seq, maxchi) |
 | 0.30 | zika  | FAIL | **PASS** (3seq, maxchi) |
-| 0.30 | mumps | FAIL | detects, but a mumps-specific backbone mis-call still fails scoring |
+| 0.30 | mumps | FAIL | **PASS** (3seq, maxchi) |
 
-**Three of the four sub-window failures now pass with the default ensemble** (no GENECONV needed);
-the fourth now detects the tract but a separate backbone-selection issue on mumps keeps it from a
-clean pass. Crucially, **no specificity cost**: the full must-pass hybrid suite holds at
+**All four sub-window failures now pass with the default ensemble** (no GENECONV needed). The mumps
+case needed a second, related fix: with a 150 bp tract the query is 99.9% identical to its true
+backbone, so the HMM's whole-genome **sibling exclusion** dropped that backbone as a twin, the HMM
+picked a genotype that wins zero windows as its major, and `reconcile_major` adopted it -- overriding
+the three other callers, which all kept the true backbone. `reconcile_major` now ignores a HMM major
+that wins zero windows when the windowed vote has a clear winner it is not; a HMM major that wins any
+window (including the HIV/RSV masking-twin case, where the true parent wins its own segment) is left
+untouched.
+
+Crucially, **no specificity cost**: with both fixes the full must-pass hybrid suite holds at
 **sensitivity 30/30, specificity 1/1, 0 false calls** -- testing non-winning donors added no false
-positives, because a non-recombinant query yields no significant discriminating-site run for any
-donor. Recorded as measured. GENECONV stays opt-in (it was the instrument that led here, not the
-fix). (Several 2-parent `AB_micro` cases SKIP when a donor clade loses its only panel representative
-after source removal -- a harness invariant, not a detection result.)
+positives (a non-recombinant query yields no significant discriminating-site run for any donor), and
+the `reconcile_major` guard leaves the masking-twin cases unchanged. Recorded as measured. GENECONV
+stays opt-in (it was the instrument that led here, not the fix). (Several 2-parent `AB_micro` cases
+SKIP when a donor clade loses its only panel representative after source removal -- a harness
+invariant, not a detection result.)
 
 A dataset is **SKIP**ped (not failed) when it cannot supply a valid test: the
 most-divergent clade pair is below ~4 % divergence (too few discriminating sites:

@@ -246,7 +246,7 @@ def run_recomb(
         if method == "hmm":
             excluded_siblings = sibs
 
-    major_parent, per_major = reconcile_major(majors)
+    major_parent, per_major = reconcile_major(majors, window_wins=analysis_bp.winners_with_ties)
     regions, method_breakdown = consensus_regions(
         per_method, major=major_parent,
         rmin_intervals=signal.rmin_intervals if signal else None,

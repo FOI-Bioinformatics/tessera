@@ -123,3 +123,26 @@ def test_reconcile_major_available_with_no_regions() -> None:
     # a caller reports its backbone even when it finds no recombination
     canonical, per_major = reconcile_major({"hmm": "backbone", "3seq": "backbone"})
     assert canonical == "backbone"
+
+
+def test_reconcile_major_overrides_zero_win_hmm_major() -> None:
+    # HMM dropped the true backbone A1 as a sibling and picked K (0 windows); the windowed
+    # vote clearly favours A1, so the reconciled backbone is A1, not the zero-win HMM major.
+    canonical, per_major = reconcile_major(
+        {"hmm": "K", "3seq": "A1", "maxchi": "A1"}, window_wins={"A1": 298}
+    )
+    assert canonical == "A1"
+    assert per_major["hmm"] == "K"   # per-method disagreement still recorded
+
+
+def test_reconcile_major_keeps_hmm_major_that_wins_windows() -> None:
+    # the masking-twin case: HMM's major wins its own segment's windows -> left untouched.
+    canonical, _ = reconcile_major(
+        {"hmm": "parent", "3seq": "twin"}, window_wins={"parent": 40, "twin": 260}
+    )
+    assert canonical == "parent"
+
+
+def test_reconcile_major_without_window_wins_keeps_hmm() -> None:
+    canonical, _ = reconcile_major({"hmm": "A1", "3seq": "A2"})
+    assert canonical == "A1"
