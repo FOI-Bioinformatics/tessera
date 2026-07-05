@@ -74,3 +74,15 @@ def test_tessera_callers_negative_counts_any_present_region():
 def test_tessera_callers_ignores_donor_absent_regions():
     regions = [{"query_start": "10", "query_end": "40", "donor_absent": "yes", "methods": "hmm"}]
     assert gp.tessera_callers(regions, [(0, 100, "B")], is_negative=False) == set()
+
+
+def test_select_adversarial_returns_only_adversarial_tier():
+    cases = gp._select(names=[], include_core=False, adversarial=True)
+    assert cases, "expected adversarial-tier cases to be defined"
+    assert all(c.get("tier") == "adversarial" for c in cases)
+    assert all(c.get("pattern") == "AB_micro" for c in cases)
+
+
+def test_select_default_excludes_adversarial_tier():
+    cases = gp._select(names=[], include_core=False, adversarial=False)
+    assert all(c.get("tier", "must_pass") == "must_pass" for c in cases)

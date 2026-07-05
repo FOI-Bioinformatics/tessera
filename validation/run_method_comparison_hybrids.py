@@ -19,6 +19,7 @@ proof. Needs the aligner env, network (Nextclade datasets), and the `openrdp` co
 
     export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"
     python validation/run_method_comparison_hybrids.py                 # the hard/negative cases
+    python validation/run_method_comparison_hybrids.py --adversarial   # sub-window tract sweep
     python validation/run_method_comparison_hybrids.py lowdiv_rsv      # one case by name
     python validation/run_method_comparison_hybrids.py --no-openrdp    # Tessera only
 """
@@ -102,11 +103,16 @@ def gap_summary(rows: list[dict], methods: tuple[str, ...] = DEFAULT_OPENRDP_MET
     }
 
 
-def _select(names: list[str], include_core: bool) -> list[dict]:
+def _select(names: list[str], include_core: bool, adversarial: bool) -> list[dict]:
+    """Cases to probe. Default: the hard must-pass case types. ``--adversarial`` selects the
+    adversarial tier instead (sub-window tracts expected to break Tessera's windowed callers)."""
+    if adversarial:
+        want = [c for c in HYBRIDS if c.get("tier") == "adversarial"]
+        return [c for c in want if not names or c["name"] in names]
     out = []
     for c in HYBRIDS:
         if c.get("tier", "must_pass") != "must_pass":
-            continue  # frontier probes are scored separately in run_hybrids
+            continue  # frontier / adversarial probes are scored separately
         ct = c.get("case_type", "single_insert")
         if names:
             if c["name"] in names:
@@ -144,9 +150,11 @@ def main(argv: list[str]) -> int:
     orc = None if "--no-openrdp" in argv else openrdp_command()
     orc_methods = OPENRDP_METHODS if "--with-siscan" in argv else DEFAULT_OPENRDP_METHODS
     names = [a for a in argv if not a.startswith("-")]
-    cases = _select(names, include_core="--all" in argv)
+    adversarial = "--adversarial" in argv
+    cases = _select(names, include_core="--all" in argv, adversarial=adversarial)
 
-    print(f"\nGENECONV gap probe -- {len(cases)} case(s); "
+    kind = "ADVERSARIAL" if adversarial else "hard"
+    print(f"\nGENECONV gap probe ({kind}) -- {len(cases)} case(s); "
           f"OpenRDP {'on' if orc else 'off'}\n" + "=" * 72)
     rows: list[dict] = []
     for case in cases:

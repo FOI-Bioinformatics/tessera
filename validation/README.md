@@ -371,11 +371,36 @@ ABAC/AB_9010/AB_short/AB_terminal, `mask_sibling`; 1 negative: `neg_pure`):
 Tessera's four callers each fired on all seven hard positives and the ensemble rejected the negative;
 OpenRDP's GENECONV also detected all seven and false-called none, so it rescued nothing Tessera
 missed. **Verdict: on this envelope, adding a GENECONV caller would not improve detection or
-specificity, so none was written.** This is a faithful negative result, not a null run: GENECONV is
-detecting the same events, just cases Tessera already covers. Caveats: the specificity side rests on
-a single negative (`neg_within` is deferred in the hybrid harness), and these are the harness's
-must-pass cases -- an adversarial gap would need cases Tessera fails, which this envelope does not
-contain. The probe stays in the suite so the question can be re-measured as harder cases are added.
+specificity, so none was written.** On this envelope GENECONV is detecting the same events, just
+cases Tessera already covers. But the must-pass cases are ones Tessera is built to pass, so to find a
+real gap the probe carries an **adversarial tier** of cases Tessera fails.
+
+#### Adversarial sub-window tracts (`--adversarial`)
+
+The `AB_micro` mosaic pattern splices a donor tract of `tract_windows` x the sliding window (default
+0.3, i.e. below one window) and scores it strictly, to push past the windowed callers' floor. A
+tract-length sweep (`python validation/run_method_comparison_hybrids.py --adversarial`):
+
+| tract (x window) | dataset | Tessera | OpenRDP methods that detect |
+|---|---|---|---|
+| 1.00 | wnv   | PASS (hmm, 3seq, maxchi, bootscan) | geneconv, bootscan, threeseq, rdp |
+| 0.50 | wnv   | PASS (3seq, maxchi, bootscan)      | geneconv, bootscan, threeseq, rdp |
+| 0.30 | wnv   | **FAIL**                           | geneconv, bootscan, threeseq, rdp |
+| 0.15 | wnv   | **FAIL**                           | geneconv, threeseq, rdp |
+| 0.30 | zika  | **FAIL**                           | geneconv, threeseq |
+| 0.30 | mumps | **FAIL**                           | geneconv, bootscan, threeseq, rdp |
+
+There is a **real gap**: below ~0.3 x window Tessera's windowed scan misses the tract (HMM drops out
+first, by 0.5x), while OpenRDP still flags the query. But this is **not** a GENECONV-specific gap:
+across the four failures GENECONV rescued 4/4 and **3SEQ rescued 4/4 as well -- and Tessera already
+ships a 3SEQ caller**. The rescue comes from OpenRDP's all-vs-all population scan (more taxa, a
+different null), not from GENECONV's signal family; a GENECONV caller reimplemented in Tessera's own
+query-vs-panel windowed setting would face the same few-discriminating-sites problem its 3SEQ does.
+**Verdict: the adversarial cases expose a short-tract (sub-window) sensitivity limit in Tessera's
+scan configuration, not a missing method -- so importing GENECONV is still not the fix.** The lever
+is Tessera's windowing / short-tract handling. Recorded as measured; the probe and the tier stay in
+the suite. (Several 2-parent `AB_micro` cases SKIP when a donor clade loses its only panel
+representative after source removal -- a harness invariant, not a detection result.)
 
 A dataset is **SKIP**ped (not failed) when it cannot supply a valid test: the
 most-divergent clade pair is below ~4 % divergence (too few discriminating sites:
