@@ -283,15 +283,14 @@ def _call_regions_hmm(
         candidates.append((seg, favor_minor, favor_major,
                            sign_test_pvalue(favor_minor, favor_major)))
 
-    # Pass 2: a segment is reported when it is individually significant
-    # (p <= alpha); the Benjamini-Hochberg q-value is computed across all candidates
-    # and reported alongside, so the multiplicity-adjusted significance is visible
-    # without discarding marginal-but-real events (e.g. a recombination between
-    # near-identical parents, which has few distinguishing sites).
+    # Pass 2: a segment is reported when its Benjamini-Hochberg q-value clears alpha --
+    # the multiplicity-adjusted gate, so the number of candidate segments scanned does not
+    # inflate the false-call rate. (A low-divergence event between near-identical parents
+    # has few distinguishing sites but, when real, still clears the FDR gate.)
     qvalues = benjamini_hochberg([c[3] for c in candidates])
     regions: list[Region] = []
     for (seg, favor_minor, favor_major, pvalue), q in zip(candidates, qvalues, strict=True):
-        if pvalue > params.alpha:
+        if q > params.alpha:
             continue
         support = favor_minor / (favor_minor + favor_major)
         idx = range(seg.start_window, seg.end_window + 1)
