@@ -55,6 +55,10 @@ All notable changes to Tessera are recorded here. The format follows
     `run_coalescent_benchmark.py`, msprime), and a breakpoint noise-robustness design
     (RecombinHunt 2024, `run_recombinhunt_benchmark.py`). The pure scorers are unit-tested;
     the harnesses need aligner / simulator environments and are not part of CI.
+- **Broadened specificity panel (opt-in validation).** The synthetic-hybrid suite now carries
+  nine non-recombinant `neg_pure` controls across the divergence and panel-size axes
+  (was one), so the false-positive rate is measured over many pathogens rather than a
+  single case.
 
 ### Fixed
 
@@ -85,6 +89,14 @@ All notable changes to Tessera are recorded here. The format follows
   backbone. `reconcile_major` now ignores a HMM major that wins zero windows when the
   windowed vote has a clear winner; a HMM major that wins any window (including the
   masking-twin case the exclusion exists for) is left untouched.
+- **Over-calling from the widened donor search (FDR control).** After the candidate-selection
+  change above, every caller still gated on the raw p-value while the Benjamini-Hochberg
+  q-value was computed but unused -- so testing more candidate donors raised the false-call
+  rate (the broadened negative panel measured 10 false calls across the controls). All four
+  callers (3SEQ, MaxChi, GENECONV, and the HMM segment test) now gate on the q-value, so the
+  false-call rate no longer scales with the number of candidates scanned. Measured: detection
+  sensitivity unchanged (30/30 on the hybrid suite, including the low-divergence case), with
+  fewer false positives.
 
 ## [2.0.0]
 
