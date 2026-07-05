@@ -41,6 +41,20 @@ All notable changes to Tessera are recorded here. The format follows
   combined table; `validation/run_method_comparison_hybrids.py` measures short-tract
   sensitivity against ground truth, including an adversarial sub-window-tract tier. Both
   need external tools and are not part of CI.
+- **Benchmark scoring against published datasets (opt-in validation).** A set of harnesses
+  that score detection on real and simulated recombination, recording measured results:
+  - **Real published recombinants** (`validation/run_validation.py`, `datasets.json`),
+    extended with the HCV 2k/1b inter-genotype recombinant (a new virus family,
+    Flaviviridae, and the first precise real-breakpoint check, ~nt 3187) and a real
+    clonal-negative control, scored by a new `max_regions` specificity key.
+  - **Reassortment precision / recall / F1** (`validation/run_reassort_benchmark.py`) for
+    the shipped `reassort` verdict, the way the influenza-reassortment literature scores
+    it (a labelled clonal-vs-reassortant flu H3N2 HA+NA query set).
+  - **Simulated benchmarks:** a SANTA-SIM power/specificity set (Jaya 2023,
+    `run_benchmark.py`), a coalescent-with-recombination design (Posada & Crandall 2001,
+    `run_coalescent_benchmark.py`, msprime), and a breakpoint noise-robustness design
+    (RecombinHunt 2024, `run_recombinhunt_benchmark.py`). The pure scorers are unit-tested;
+    the harnesses need aligner / simulator environments and are not part of CI.
 
 ### Fixed
 
