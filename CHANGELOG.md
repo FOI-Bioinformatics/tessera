@@ -6,122 +6,16 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
-### Added
-
-- **`tessera reassort` -- per-segment reassortment detection for segmented viruses**
-  (influenza, bunyaviruses, reoviruses). Reassortment -- a whole-segment swap between
-  parents -- cannot be represented by the single-backbone intragenic scan; `reassort`
-  types each segment of a multi-FASTA query against its own Nextclade dataset and calls
-  reassortment when the segments trace to different parents. Writes `reassortment.tsv`
-  and `constellation.tsv` and prints a genotype mosaic plus a
-  `clonal` / `reassortant` / `undetermined` verdict.
-- **Coverage-aware reassortment call with a parent constellation.** The verdict is a
-  pairwise, coverage-aware comparison (concordant / discordant / uninformative over an
-  ANI margin) rather than a single strain intersection, so a clonal isolate whose parent
-  strain is not cross-typed in every segment's tree is not miscalled a reassortant as the
-  segment count grows. Segments are grouped into parent constellations. Adds a `--margin`
-  option; ranking uses skani ANI and alignment fraction.
-- **`reassort --scan-segments` -- intragenic per-segment scan.** After assignment, each
-  assigned segment is aligned to its own per-clade-consensus panel and run through the
-  ordinary recombination scan (`run_recomb`), writing the full per-segment output to
-  `out/<segment>/` and a rollup to `out/segment_scan.tsv`. Needs an aligner (`--aligner`,
-  default `mafft`), checked up front; a per-segment scan failure is non-fatal.
-- **Opt-in validation probe** `validation/run_reassort_scan.py` that builds a real-tip
-  insert-shaped recombinant plus a clonal control and checks that `--scan-segments`
-  localizes the intragenic recombination (localization-gated; attribution and specificity
-  reported). Not part of CI.
-- **`--method geneconv` -- an opt-in GENECONV-style caller** (Sawyer 1989): over the
-  triplet discriminating sites it scores the longest uninterrupted run of consecutive
-  donor-matches (a clean gene-conversion fragment), with a permutation p-value and
-  Benjamini-Hochberg across donors. Complementary to 3SEQ's drawdown and MaxChi's boundary
-  chi-square; not in the default ensemble.
-- **External method comparison and short-tract probe (opt-in validation).**
-  `validation/run_method_comparison.py` runs Tessera's callers beside OpenRDP (the
-  maintained RDP5 reimplementation) on the same published-recombinant alignments, in one
-  combined table; `validation/run_method_comparison_hybrids.py` measures short-tract
-  sensitivity against ground truth, including an adversarial sub-window-tract tier. Both
-  need external tools and are not part of CI.
-- **Benchmark scoring against published datasets (opt-in validation).** A set of harnesses
-  that score detection on real and simulated recombination, recording measured results:
-  - **Real published recombinants** (`validation/run_validation.py`, `datasets.json`),
-    extended with the HCV 2k/1b inter-genotype recombinant (a new virus family,
-    Flaviviridae, and the first precise real-breakpoint check, ~nt 3187) and a real
-    clonal-negative control, scored by a new `max_regions` specificity key.
-  - **Reassortment precision / recall / F1** (`validation/run_reassort_benchmark.py`) for
-    the shipped `reassort` verdict, the way the influenza-reassortment literature scores
-    it (a labelled clonal-vs-reassortant flu H3N2 HA+NA query set).
-  - **Simulated benchmarks:** a SANTA-SIM power/specificity set (Jaya 2023,
-    `run_benchmark.py`), a coalescent-with-recombination design (Posada & Crandall 2001,
-    `run_coalescent_benchmark.py`, msprime), and a breakpoint noise-robustness design
-    (RecombinHunt 2024, `run_recombinhunt_benchmark.py`). The pure scorers are unit-tested;
-    the harnesses need aligner / simulator environments and are not part of CI.
-- **Broadened specificity panel (opt-in validation).** The synthetic-hybrid suite now carries
-  nine non-recombinant `neg_pure` controls across the divergence and panel-size axes
-  (was one), so the false-positive rate is measured over many pathogens rather than a
-  single case. `neg_hiv1` is reported as an investigated `KNOWN-LIMIT` (not gating): a pure
-  HIV subtype genome is statistically indistinguishable from a real recombinant against a
-  source-removed subtype panel (its false donor is also a real donor in the `hiv1` positive),
-  so it cannot be suppressed without breaking genuine detection -- documented, not a caller
-  change. Gating `neg_pure` specificity is 8/8. Two `neg_within` controls (intra-clade splices
-  that must not read as cross-clade) are now enabled: the panel keeps both same-clade sources,
-  so the splice is credited intra-clade instead of being mis-attributed to a different clade
-  whose representative the dropped source happened to be closest to.
-- **De-novo lineage typing for the synthetic-hybrid harness.** Datasets with no Nextclade clade
-  attribute are now typed by ANI-clustering their reconstructed tips into `denovo_N` lineages,
-  and cases support clade pins and a per-case minimum divergence. This makes five of the six
-  previously-skipped hybrid datasets runnable; the remaining one is a documented data limit.
-
-### Changed
-
-- **CI runs the aligner-backed tests.** The workflow now installs an aligner (mafft) and runs the
-  `requires_binary` tests, so the MSA-build and end-to-end recombination paths are exercised in CI
-  rather than only locally.
-
-### Fixed
-
-- **`build_pool(per_clade_consensus=True)` crashed on within-clade indels.** The
-  per-clade consensus reconstructed tips with deletion gaps stripped, so unequal-length
-  tips reached `consensus_sequence` and raised. It now reconstructs in gapped reference
-  coordinates before the consensus. This also repairs `detect`'s consensus-pool mode on
-  datasets with indels (e.g. influenza).
-- **Example-genome clade label.** Nextclade example sequences were written with a mined
-  clade prefix that could masquerade as a real clade; they now carry an `example` marker
-  and are treated as untyped by the pool consumers (`reassort`, `type-lineages`).
-- **`reassort` now rejects duplicate segment names** up front, rather than silently
-  dropping a colliding segment (which could manufacture a false reassortant).
-- **Transient typing failures surface.** A download / network error during segment typing
-  now propagates instead of being reported as a biological "unassigned"; a genuine
-  no-dataset resolution or a skani rejection of a short segment stays a non-fatal
-  per-segment skip.
-- **Short recombinant tracts (below one sliding window) were missed.** The site-based
-  callers (3SEQ, MaxChi, GENECONV) drew candidate donors only from window winners, so a
-  sub-window tract -- whose donor is diluted in the windowed vote and wins no window --
-  was never tested, despite an often overwhelming discriminating-site signal. They now
-  draw candidates from all references (`rank_datasets`), with the existing significance
-  floors dropping the rest, so short tracts are recovered at no measured specificity cost.
-- **Backbone mis-identified when the query is nearly identical to its parent.** For a very
-  short tract the query is almost identical to its true backbone, so the HMM's whole-genome
-  sibling exclusion could drop that backbone as a twin and pick a genotype that wins zero
-  windows as the major -- which `reconcile_major` then adopted, mislabelling every region's
-  backbone. `reconcile_major` now ignores a HMM major that wins zero windows when the
-  windowed vote has a clear winner; a HMM major that wins any window (including the
-  masking-twin case the exclusion exists for) is left untouched.
-- **Over-calling from the widened donor search (FDR control).** After the candidate-selection
-  change above, every caller still gated on the raw p-value while the Benjamini-Hochberg
-  q-value was computed but unused -- so testing more candidate donors raised the false-call
-  rate (the broadened negative panel measured 10 false calls across the controls). All four
-  callers (3SEQ, MaxChi, GENECONV, and the HMM segment test) now gate on the q-value, so the
-  false-call rate no longer scales with the number of candidates scanned. Measured: detection
-  sensitivity unchanged (30/30 on the hybrid suite, including the low-divergence case), with
-  fewer false positives.
+Nothing yet -- the initial release below is not yet tagged, so all current changes are recorded
+under [1.0.0].
 
 ## [1.0.0]
 
-The initial `tessera` release (declared in `pyproject.toml`; not yet tagged as a dated release).
-This is the rebuild of the `recomfi` prototype as the `tessera` package -- package and CLI renamed
-from **`recomfi`** to **`tessera`** (`tessera` entry point, `src/tessera/` layout). `recomfi` was
-never released, so the first public version is **1.0.0** (a stable first release), not a continuation
-of a prior series. The entries below are grouped here rather than in `[Unreleased]` for readability.
+The initial `tessera` release (declared in `pyproject.toml`; not yet tagged as a dated release, so it
+encompasses everything below). This is the rebuild of the `recomfi` prototype as the `tessera`
+package -- package and CLI renamed from **`recomfi`** to **`tessera`** (`tessera` entry point,
+`src/tessera/` layout). `recomfi` was never released, so the first public version is **1.0.0** (a
+stable first release), not a continuation of a prior series.
 
 ### Added
 
@@ -143,6 +37,7 @@ bases (N / IUPAC) from comparability, and reports uninformative windows as `NA`.
 - `type-lineages` -- assign a lineage to every genome in a collection via a ladder
   (header / metadata designation, nearest Nextclade-dataset tip by skani ANI, de-novo ANI
   clustering); writes a `lineages.tsv` sidecar the other commands read.
+- `reassort` -- per-segment reassortment detection for segmented viruses (see **Reassortment**).
 
 **Detection methods.** A default four-caller **ensemble** (HMM segmentation, 3SEQ, MaxChi,
 Bootscan) with a lineage-aware consensus merge; each caller is also selectable via `--method`.
@@ -151,11 +46,17 @@ Bootscan) with a lineage-aware consensus merge; each caller is also selectable v
   Benjamini-Hochberg q-values, and breakpoint-uncertainty intervals.
 - 3SEQ maximum-drawdown triplet test, MaxChi chi-square triplet test, and Bootscan
   bootstrap-support caller.
+- Opt-in GENECONV-style clean-fragment caller (`--method geneconv`, Sawyer 1989): the longest
+  uninterrupted run of donor-matches over the triplet discriminating sites, with a permutation
+  p-value and Benjamini-Hochberg across donors. Not in the default ensemble.
 - Parent-free **PHI** (Pairwise Homoplasy Index) and Hudson-Kaplan **Rmin** diagnostics that
   fire even when the true donor is absent from the panel (`recombination_profile.tsv`).
 - Opt-in clade-barcode (lineage-marker) caller for typed panels.
 - Informative-site windowing for low-divergence panels (auto-enabled below ~8% between-reference
   divergence), so windows span polymorphic columns rather than base pairs.
+- Site callers draw candidate donors from all references (not only window winners) and gate on the
+  Benjamini-Hochberg q-value, so short sub-window tracts are recovered while the false-call rate
+  does not scale with the number of candidates scanned.
 
 **Reference panels.**
 
@@ -180,6 +81,53 @@ chart, per-dataset stats, embedded similarity plot, methods glossary); `recombin
 `recombination_methods.tsv`, `recombination_profile.tsv`, `coverage_gaps.tsv`,
 `panel_lineages.tsv`, and a persisted run log.
 
+**Reassortment.** For segmented viruses (influenza, bunyaviruses, reoviruses); a whole-segment swap
+between parents cannot be represented by the single-backbone intragenic scan.
+
+- `reassort` types each segment of a multi-FASTA query against its own Nextclade dataset and calls
+  reassortment when the segments trace to different parents; writes `reassortment.tsv` and
+  `constellation.tsv` and prints a genotype mosaic plus a `clonal` / `reassortant` / `undetermined`
+  verdict. The verdict is a pairwise, coverage-aware comparison (concordant / discordant /
+  uninformative over an ANI margin, `--margin`), so a clonal isolate whose parent strain is not
+  cross-typed in every segment's tree is not miscalled a reassortant as the segment count grows;
+  segments are grouped into parent constellations (ranking uses skani ANI and alignment fraction).
+- `reassort --scan-segments` aligns each assigned segment to its own per-clade-consensus panel and
+  runs the ordinary recombination scan (`run_recomb`), writing the full per-segment output to
+  `out/<segment>/` and a rollup to `out/segment_scan.tsv` (needs an aligner, `--aligner` default
+  `mafft`; a per-segment scan failure is non-fatal).
+
+**Validation harnesses (opt-in, not part of CI).** Harnesses that score detection on real and
+simulated recombination against a documented expectation, recording measured results.
+
+- `validation/run_reassort_scan.py` -- builds a real-tip insert-shaped recombinant plus a clonal
+  control and checks that `reassort --scan-segments` localizes the intragenic recombination
+  (localization-gated; attribution and specificity reported).
+- `validation/run_method_comparison.py` -- runs Tessera's callers beside OpenRDP (the maintained
+  RDP5 reimplementation) on the same published-recombinant alignments, in one combined table;
+  `validation/run_method_comparison_hybrids.py` measures short-tract sensitivity against ground
+  truth, including an adversarial sub-window-tract tier.
+- Benchmark scoring against published datasets: real published recombinants
+  (`validation/run_validation.py`, `datasets.json`, including the HCV 2k/1b inter-genotype
+  recombinant -- a Flaviviridae case with a precise ~nt 3187 breakpoint -- and a real clonal-negative
+  control scored by a `max_regions` key); reassortment precision / recall / F1
+  (`validation/run_reassort_benchmark.py`); and simulated benchmarks -- SANTA-SIM power/specificity
+  (Jaya 2023, `run_benchmark.py`), a coalescent design (Posada & Crandall 2001,
+  `run_coalescent_benchmark.py`, msprime), and breakpoint noise-robustness (RecombinHunt 2024,
+  `run_recombinhunt_benchmark.py`). The pure scorers are unit-tested.
+- Synthetic-hybrid harness (`validation/run_hybrids.py`): a broadened specificity panel of nine
+  non-recombinant `neg_pure` controls across the divergence and panel-size axes, plus two
+  `neg_within` intra-clade-splice controls (the panel keeps both same-clade sources so the splice
+  is credited intra-clade). `neg_hiv1` is reported as an investigated `KNOWN-LIMIT` (not gating): a
+  pure HIV subtype genome is statistically indistinguishable from a real recombinant against a
+  source-removed subtype panel, so it cannot be suppressed without breaking genuine detection.
+  Datasets with no Nextclade clade attribute are typed de-novo by ANI-clustering their reconstructed
+  tips, making five of six previously-skipped datasets runnable.
+
+### Changed
+
+- CI installs an aligner (mafft) and runs the `requires_binary` tests, so the MSA-build and
+  end-to-end recombination paths are exercised in CI rather than only locally.
+
 ### Fixed
 
 - MAF reverse-strand projection scrambled SibeliaZ / cactus coordinates (~43% of blocks place the
@@ -195,3 +143,29 @@ chart, per-dataset stats, embedded similarity plot, methods glossary); `recombin
 - NCBI Virus full-download for mega-taxa (HIV cold-start): a spurious `--limit`, an `ARG_MAX`
   overflow from inline skDER paths, and skDER representative symlinks resolved after their temp
   directory was removed.
+- `build_pool(per_clade_consensus=True)` crashed on within-clade indels: the per-clade consensus
+  reconstructed tips with deletion gaps stripped, so unequal-length tips reached
+  `consensus_sequence` and raised. It now reconstructs in gapped reference coordinates first, which
+  also repairs `detect`'s consensus-pool mode on datasets with indels (e.g. influenza).
+- Nextclade example sequences were written with a mined clade prefix that could masquerade as a real
+  clade; they now carry an `example` marker and are treated as untyped by the pool consumers.
+- `reassort` rejects duplicate segment names up front, rather than silently dropping a colliding
+  segment (which could manufacture a false reassortant).
+- A download / network error during segment typing now propagates instead of being reported as a
+  biological "unassigned"; a genuine no-dataset resolution or a skani rejection of a short segment
+  stays a non-fatal per-segment skip.
+- Short recombinant tracts (below one sliding window) were missed: the site-based callers drew
+  candidate donors only from window winners, so a sub-window tract's donor -- diluted in the windowed
+  vote and winning no window -- was never tested despite an often overwhelming discriminating-site
+  signal. They now draw candidates from all references, with the significance floors dropping the
+  rest, recovering short tracts at no measured specificity cost.
+- Backbone mis-identified when the query is nearly identical to its parent: for a very short tract
+  the HMM's whole-genome sibling exclusion could drop the true backbone as a twin and pick a genotype
+  that wins zero windows as the major, which `reconcile_major` then adopted. `reconcile_major` now
+  ignores a HMM major that wins zero windows when the windowed vote has a clear winner; a HMM major
+  that wins any window (including the masking-twin case the exclusion exists for) is left untouched.
+- Over-calling from the widened donor search: every caller gated on the raw p-value while the
+  Benjamini-Hochberg q-value was computed but unused, so testing more candidate donors raised the
+  false-call rate. All four callers (3SEQ, MaxChi, GENECONV, and the HMM segment test) now gate on
+  the q-value; detection sensitivity is unchanged (30/30 on the hybrid suite, including the
+  low-divergence case) with fewer false positives.
