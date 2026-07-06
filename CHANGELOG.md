@@ -66,6 +66,16 @@ All notable changes to Tessera are recorded here. The format follows
   that must not read as cross-clade) are now enabled: the panel keeps both same-clade sources,
   so the splice is credited intra-clade instead of being mis-attributed to a different clade
   whose representative the dropped source happened to be closest to.
+- **De-novo lineage typing for the synthetic-hybrid harness.** Datasets with no Nextclade clade
+  attribute are now typed by ANI-clustering their reconstructed tips into `denovo_N` lineages,
+  and cases support clade pins and a per-case minimum divergence. This makes five of the six
+  previously-skipped hybrid datasets runnable; the remaining one is a documented data limit.
+
+### Changed
+
+- **CI runs the aligner-backed tests.** The workflow now installs an aligner (mafft) and runs the
+  `requires_binary` tests, so the MSA-build and end-to-end recombination paths are exercised in CI
+  rather than only locally.
 
 ### Fixed
 
