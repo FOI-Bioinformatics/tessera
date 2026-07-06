@@ -9,13 +9,12 @@ All notable changes to Tessera are recorded here. The format follows
 Nothing yet -- the initial release below is not yet tagged, so all current changes are recorded
 under [1.0.0].
 
-## [1.0.0]
+## [1.0.0] - 2026-07-06
 
-The initial `tessera` release (declared in `pyproject.toml`; not yet tagged as a dated release, so it
-encompasses everything below). This is the rebuild of the `recomfi` prototype as the `tessera`
-package -- package and CLI renamed from **`recomfi`** to **`tessera`** (`tessera` entry point,
-`src/tessera/` layout). `recomfi` was never released, so the first public version is **1.0.0** (a
-stable first release), not a continuation of a prior series.
+The initial `tessera` release: the rebuild of the `recomfi` prototype as the `tessera` package --
+package and CLI renamed from **`recomfi`** to **`tessera`** (`tessera` entry point, `src/tessera/`
+layout). `recomfi` was never released, so the first public version is **1.0.0** (a stable first
+release), not a continuation of a prior series.
 
 ### Added
 
