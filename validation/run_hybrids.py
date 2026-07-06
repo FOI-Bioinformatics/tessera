@@ -141,13 +141,13 @@ HYBRIDS: list[dict] = [
     {"name": "neg_mumps", "dataset": "nextstrain/mumps/genome", "case_type": "neg_pure"},
     {"name": "neg_sarscov2", "dataset": "nextstrain/sars-cov-2/XBB",
      "case_type": "neg_pure", "clade_key": "clade_nextstrain", "min_divergence": 0.0},
-    # neg_within (an intra-clade splice that should not read as cross-clade) stays deferred.
-    # A trial run (negwithin_dengue, negwithin_measles) re-confirmed the panel-representation
-    # limitation: the tip panel reduces the query's clade to one representative, so the
-    # splice's *other* same-clade source is unrepresented and its half matches a different
-    # clade's rep -- producing a cross-clade call that is a harness artefact, not a Tessera
-    # false positive. The scorer and helper stay unit-tested for a later cycle with a panel
-    # that keeps both within-clade sources.
+    # neg_within: an intra-clade splice that must not read as a *cross-clade* event. The panel
+    # now keeps both same-clade sources (see _build_and_score), so the splice is credited
+    # intra-clade rather than being mis-attributed to a different clade whose rep the dropped
+    # source happens to be closest to.
+    {"name": "negwithin_measles", "dataset": "nextstrain/measles/genome/WHO-2012",
+     "case_type": "neg_within"},
+    {"name": "negwithin_dengue", "dataset": "nextstrain/dengue/all", "case_type": "neg_within"},
     {"name": "lowdiv_rsv", "dataset": "nextstrain/rsv/a/EPI_ISL_412866",
      "case_type": "low_div", "pair_objective": "min",
      "divergence_band": [1.0, 4.0], "min_divergence": 1.0},
@@ -847,6 +847,7 @@ class CaseSetup:
     case_type: str = "single_insert"
     true_spans: list[tuple[int, int, str]] = field(default_factory=list)  # non-backbone donor spans
     pattern: str = ""  # mosaic pattern (ABAC / AB_9010 / AB_short / AB_terminal)
+    sources: tuple[str, str] = ("", "")  # the two source accessions (neg_within needs both kept)
 
 
 def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
@@ -1038,6 +1039,7 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
         window=window, step=step, sel_window=sel_window, aligner=aligner,
         reference=reference, tips=tips, pool=pool, members_by_clade=members_by_clade,
         case_type=case_type, true_spans=true_spans, pattern=case.get("pattern", ""),
+        sources=(src_a, src_b),
     )
 
 
@@ -1105,6 +1107,21 @@ def _build_and_score(
             selected = representative_panel(setup.pool, setup.tips, logger)
         if not selected:
             raise CaseSkipped("no reference panel could be built")
+        # neg_within is a within-clade splice: the query is spliced from two members of ONE
+        # clade. Lineage-aware selection keeps a single representative per clade, so the half
+        # from the dropped source ends up closest to a *different* clade's rep and is mis-called
+        # cross-clade. Add both sources back, so the splice is credited intra-clade (the test).
+        if setup.case_type == "neg_within":
+            have = {strip_sequence_extension(g.name).split(".")[0] for g in selected}
+            for src in setup.sources:
+                base = src.split(".")[0]
+                if base in have:
+                    continue
+                match = next((g for g in setup.pool
+                              if strip_sequence_extension(g.name).split(".")[0] == base), None)
+                if match is not None:
+                    selected.append(match)
+                    have.add(base)
         # The harness removes the two source genomes; a fair test needs each parent clade
         # to remain credit-able from the panel (its design invariant).
         panel_clades = {clade_of_label(g.name, setup.tips) for g in selected}

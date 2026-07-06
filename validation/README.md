@@ -509,9 +509,14 @@ subtypes are so inter-mosaic that a pure subtype genome (source removed) is indi
 real recombinant -- a property of the data, not a caller bug. So the harness reports it as a
 `KNOWN-LIMIT` row and excludes it from the gating specificity, rather than changing the callers.
 
-(`neg_within`, an intra-clade splice, stays deferred for a different reason: a trial re-confirmed
-that the tip panel cannot represent both same-clade sources, so its cross-clade call is a harness
-artefact rather than a tool false positive.)
+Two **`neg_within`** controls (`negwithin_measles`, `negwithin_dengue`) add a distinct false-positive
+mode: an intra-clade splice (a genome recombined from two members of one clade) must not read as a
+*cross-clade* event. This was previously deferred because lineage-aware panel reduction kept a single
+representative per clade, so the half from the dropped same-clade source matched a different clade's
+rep and was mis-called cross-clade (a harness artefact, not a tool bug). The panel now keeps **both
+same-clade sources** for a `neg_within` case, so the splice is correctly credited intra-clade -- e.g.
+`negwithin_measles` now attributes its region `D8 -> D8` (`KC117298`/`PQ590060`) instead of the old
+`D8 -> D4`. Both pass.
 
 Phase 2 adds hard *topologies* via `make_mosaic` / `true_spans`: a `mosaic` case type with
 `pattern` in `{ABAC, AB_9010, AB_short, AB_terminal}` (multi-breakpoint 3-parent, asymmetric,
