@@ -115,12 +115,13 @@ All notable changes to Tessera are recorded here. The format follows
   sensitivity unchanged (30/30 on the hybrid suite, including the low-divergence case), with
   fewer false positives.
 
-## [2.0.0]
+## [1.0.0]
 
-The current declared version (`pyproject.toml`); the rebuild of the tool as the `tessera`
-package. Not yet tagged as a dated release, so the entries below are grouped here rather than
-in `[Unreleased]` for readability. Renamed the package and CLI from **`recomfi`** to
-**`tessera`** (`tessera` entry point, `src/tessera/` layout).
+The initial `tessera` release (declared in `pyproject.toml`; not yet tagged as a dated release).
+This is the rebuild of the `recomfi` prototype as the `tessera` package -- package and CLI renamed
+from **`recomfi`** to **`tessera`** (`tessera` entry point, `src/tessera/` layout). `recomfi` was
+never released, so the first public version is **1.0.0** (a stable first release), not a continuation
+of a prior series. The entries below are grouped here rather than in `[Unreleased]` for readability.
 
 ### Added
 
