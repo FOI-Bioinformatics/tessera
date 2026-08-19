@@ -72,6 +72,15 @@ python validation/run_hybrids.py
 The aligner conda env is named `recomfi-aln` (predates the rename; it is external
 infrastructure, not part of the package). See `validation/README.md`.
 
+`validation/run_specificity.py` is the exception: it simulates its own already-aligned
+clonal data, so it needs **no aligner, no network and no downloaded data**, and can be
+run directly. Use it to check the false-positive rate -- every region it reports is by
+construction a false positive.
+
+```
+python validation/run_specificity.py --reps 3
+```
+
 ## Notes
 
 - The on-disk cache is `~/.cache/tessera` (override with `$TESSERA_CACHE`).
