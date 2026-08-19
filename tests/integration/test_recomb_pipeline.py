@@ -78,3 +78,51 @@ def test_recomb_pipeline_outputs_and_ranking(tmp_path: Path) -> None:
     report = (out / "report.html").read_text()
     assert "Recombinant regions" in report
     assert "variola" in report
+
+
+def _clonal_msa(path: Path, seed: int = 5) -> None:
+    """A non-recombinant query against a redundant panel.
+
+    Five near-equidistant relatives (~2 % from a shared ancestor, so ~3 % from each
+    other) plus three outgroups. Nothing recombined anywhere, so the scan must report
+    no recombinant region -- this is the panel shape in which a caller that only
+    counts window votes flips winner between windows by chance.
+    """
+    rng = random.Random(seed)
+    base = "".join(rng.choice("ACGT") for _ in range(8000))
+
+    def mutate(seq: str, frac: float) -> str:
+        chars = list(seq)
+        for i in range(len(chars)):
+            if rng.random() < frac:
+                chars[i] = rng.choice("ACGT")
+        return "".join(chars)
+
+    records = {"query": mutate(base, 0.02)}
+    for i in range(5):
+        records[f"sib{i}"] = mutate(base, 0.02)
+    for i in range(3):
+        records[f"out{i}"] = mutate(base, 0.15)
+    with open(path, "w") as fo:
+        for name, seq in records.items():
+            fo.write(f">{name}\n{seq}\n")
+
+
+def test_clonal_panel_yields_no_recombinant_region(tmp_path: Path) -> None:
+    """Specificity regression for the shipped default ensemble.
+
+    Coverage-gap rows (``donor_absent``) are legitimate "no close reference here"
+    flags, not recombination claims, so they are excluded -- matching how
+    ``validation/run_hybrids.py::_score_neg_pure`` scores a negative control.
+    """
+    msa = tmp_path / "clonal.fasta"
+    _clonal_msa(msa)
+    out = tmp_path / "out"
+    run_recomb(RecombParams(msa=msa, output=out, query="query",
+                            window_size=1000, window_step=100, plot_format="png"), _LOG)
+
+    lines = [x for x in (out / "recombination_regions.tsv").read_text().splitlines() if x]
+    header = lines[0].split("\t")
+    called = [dict(zip(header, x.split("\t"), strict=True)) for x in lines[1:]]
+    claimed = [r for r in called if r.get("donor_absent") != "yes"]
+    assert claimed == [], f"false positive(s) on clonal data: {claimed}"

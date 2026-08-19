@@ -5,7 +5,9 @@ from __future__ import annotations
 import numpy as np
 
 from tessera.recomb.diagnostics import (
+    RecombinationSignal,
     biallelic_columns,
+    corroborating_intervals,
     hudson_kaplan_rmin,
     incompatibility_matrix,
     phi,
@@ -123,3 +125,29 @@ def test_recombination_signal_none_below_min_informative() -> None:
     # Three biallelic informative columns is below the _MIN_INFORMATIVE floor (10).
     rows = _rows({"s0": "AAA", "s1": "AAA", "s2": "CCC", "s3": "CCC"})
     assert recombination_signal(rows, "s0", lambda c: c) is None
+
+
+# --- corroborating intervals ------------------------------------------------
+
+def _signal(phi_p: float, intervals: list[tuple[int, int]]) -> RecombinationSignal:
+    return RecombinationSignal(
+        n_informative=500, phi_p=phi_p, phi_observed=0.1, phi_window=100,
+        rmin=len(intervals), rmin_intervals=intervals,
+    )
+
+
+def test_corroborating_intervals_require_a_significant_phi() -> None:
+    """Rmin alone is not evidence of recombination.
+
+    Hudson-Kaplan bounds recombination only under infinite sites; under a finite-sites
+    model recurrent mutation produces four-gamete violations on strictly clonal data,
+    so a non-zero Rmin says nothing on its own. PHI is the calibrated test, so the
+    intervals only localise a signal PHI has already established.
+    """
+    intervals = [(100, 200), (900, 1000)]
+    assert corroborating_intervals(_signal(0.001, intervals), alpha=0.05) == intervals
+    assert corroborating_intervals(_signal(0.40, intervals), alpha=0.05) == []
+
+
+def test_corroborating_intervals_without_a_signal() -> None:
+    assert corroborating_intervals(None, alpha=0.05) == []

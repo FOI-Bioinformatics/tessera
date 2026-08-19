@@ -34,6 +34,13 @@ def recomb(
         "lineage attribution; needs typed references), heuristic (legacy margin/merge). "
         "Pass a single name (e.g. --method hmm) for one caller.",
     ),
+    min_methods: int = typer.Option(
+        2, "--min-methods",
+        help="Callers that must independently find a region before it is reported. "
+        "The union of an ensemble inherits every member's false positives, so "
+        "corroboration is required by default. Clamped to the number of callers "
+        "actually run, so a single --method is unaffected; 1 reports the union.",
+    ),
     jump_rate: float = typer.Option(
         1e-3, "--jump-rate",
         help="HMM prior probability of switching reference per window (lower = "
@@ -143,6 +150,7 @@ def recomb(
             top_n=top_n,
             plot_format=plot_format,
             methods=methods,
+            min_methods=min_methods,
             jump_rate=jump_rate,
             alpha=alpha,
             min_region=min_region,

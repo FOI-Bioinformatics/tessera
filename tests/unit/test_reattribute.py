@@ -86,3 +86,20 @@ def test_skips_span_with_too_few_comparable_sites():
     regions = [_region("b1", "a1", 5, 8)]            # 3 columns < min_sites
     out = reattribute_donors(regions, result, lm, "A", margin=0.1, min_sites=4)
     assert out[0].minor_parent == "b1"
+
+
+def test_keeps_an_untyped_donor_that_cannot_be_scored():
+    """A donor absent from the lineage map has no consensus to score, so there is
+    nothing to compare a rival clade against and re-attribution must decline.
+
+    Treating the unscorable donor as a similarity of zero would let any clade clear
+    the margin -- replacing a better donor with a worse one.
+    """
+    # 'x1' matches the query over the whole span but is deliberately untyped;
+    # clade C also matches fully, clade B only 6/10.
+    rows = {"q": _enc(_QUERY), "a1": _enc(_A), "b1": _enc(_B), "c1": _enc(_C),
+            "x1": _enc(_QUERY)}
+    lm = {"a1": "A", "b1": "B", "c1": "C"}           # x1 absent from the map
+    out = reattribute_donors([_region("x1", "a1", 5, 15)], _Result(rows, "q"), lm,
+                             "A", margin=0.1, min_sites=4)
+    assert out[0].minor_parent == "x1"

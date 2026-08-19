@@ -14,6 +14,7 @@ from tessera.recomb.similarity import (
     compute_similarity,
     compute_similarity_informative,
     informative_site_count,
+    low_canonical_records,
 )
 
 from ..conftest import write_fasta
@@ -161,3 +162,49 @@ def test_informative_too_few_sites_raises(tmp_path: Path) -> None:
     msa = write_fasta(tmp_path / "m.fasta", {"query": "ACGTACGT", "refA": "ACGTACGT"})
     with pytest.raises(UserInputError, match="informative site"):
         compute_similarity_informative(str(msa), "query", info_window=5, info_step=1)
+
+
+def test_rna_alphabet_reads_identically_to_dna(tmp_path: Path) -> None:
+    """U is the same base as T for identity; an RNA record must not go dark.
+
+    Tessera's whole target domain is RNA viruses, and NCBI/Nextclade will sometimes
+    serve U-alphabet FASTA. Treating U as non-comparable silently drops every such
+    column instead of failing loudly.
+    """
+    records = {
+        "query": "ACGTACGTACGTACGTACGT",
+        "refA": "ACGTACGTACGTACGTACGT",
+        "refB": "ACGTACGTACGTTTTTTTTT",
+    }
+    dna = compute_similarity(
+        str(write_fasta(tmp_path / "dna.fasta", records)), "query",
+        window_size=10, window_step=10,
+    )
+    rna = compute_similarity(
+        str(write_fasta(tmp_path / "rna.fasta",
+                        {k: v.replace("T", "U") for k, v in records.items()})),
+        "query", window_size=10, window_step=10,
+    )
+    assert rna.similarities == dna.similarities
+    assert rna.denominators == dna.denominators
+
+
+def test_read_alignment_normalises_u_to_t(tmp_path: Path) -> None:
+    msa = write_fasta(tmp_path / "m.fasta", {"a": "ACGU", "b": "acgu"})
+    rows = _read_alignment(str(msa))
+    assert rows["a"].tobytes() == b"ACGT"
+    assert rows["b"].tobytes() == b"ACGT"
+
+
+def test_low_canonical_records_flags_unreadable_rows(tmp_path: Path) -> None:
+    """A record that is mostly not A/C/G/T contributes almost nothing; say so."""
+    msa = write_fasta(tmp_path / "m.fasta", {
+        "good": "ACGTACGTAC",
+        "gappy": "AC--------",   # gaps are expected in an MSA -- not flagged
+        "junk": "ACRYKMSWBV",    # IUPAC ambiguity throughout -- flagged
+    })
+    rows = _read_alignment(str(msa))
+    flagged = dict(low_canonical_records(rows, min_fraction=0.5))
+    assert "junk" in flagged
+    assert "good" not in flagged
+    assert "gappy" not in flagged   # judged over non-gap positions only

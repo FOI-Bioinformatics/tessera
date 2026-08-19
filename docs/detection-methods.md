@@ -23,9 +23,18 @@ parent genome, or, when the references are typed (a lineage map), the same **lin
 so two callers that pick different representative genomes of one lineage still count as
 the same event and as agreement. The consensus region records exactly **which** callers
 found it (the report's *Method(s)* column and a *Method comparison* table) and whether
-the parent-free Hudson-Kaplan Rmin signal corroborates it. A region called by more than one method is treated as **higher
-confidence** -- agreement is the point of running an ensemble: the union of the callers
-raises recall, their agreement raises precision.
+the parent-free Hudson-Kaplan Rmin signal corroborates it.
+
+Agreement is a **gate**, not only a label. Reporting the plain union raises recall but
+inherits every caller's false positives, so by default a region must be found
+independently by at least **two** callers (`--min-methods 2`). This is the control RDP5
+exposes as "list events detected by more than N methods". On simulated clonal panels --
+no recombination anywhere, so every region reported is a false positive -- the gate
+removes the great majority of them at no measured cost to detection: a genuine tract is
+found by several callers, a chance window-vote flip by one. The threshold is clamped to
+the number of callers actually run, so `--method hmm` is unaffected; `--min-methods 1`
+restores the union, and the suppressed count is always logged rather than silently
+dropped.
 
 The default ensemble's two further callers are **MaxChi** (a chi-square triplet test,
 complementary to 3SEQ) and **Bootscan** (a distance + bootstrap method that yields a
@@ -115,8 +124,20 @@ Salminen (1995) (SimPlot++ 2022). Per window it measures the query's identity to
 candidate parent, then resamples the window's alignment columns with replacement; the
 **bootstrap support** of a parent is the fraction of resamples in which it is the query's
 closest match. A run of windows where a non-major parent's support clears 70 % and beats
-the backbone is a region, carrying that support as a confidence the other callers express
-only as a p-value.
+the backbone is a candidate region, carrying that support as a confidence the other
+callers express only as a p-value.
+
+Support alone is not evidence of recombination, though: it answers *which reference is
+closest here*, not *whether the query recombined*. Each candidate run is therefore also
+tested against a **permutation null** that holds the donor's number of won windows fixed
+and asks whether they are more contiguous than chance -- a recombinant tract is one run,
+chance flips are scattered. Windows are permuted in **blocks** one window wide, because
+sliding windows overlap and their winners are autocorrelated even with no recombination;
+an element-wise shuffle would destroy that structure and make every short run look
+significant. The resulting p-values are Benjamini-Hochberg corrected across candidates
+and gated on the q-value, exactly as the other callers are. A consequence worth knowing:
+with a real null Bootscan clears FDR far less often than its raw support suggested, and
+on small tracts it may stay silent.
 
 ## GENECONV caller (`--method geneconv`, clean-fragment run test; opt-in)
 
@@ -163,10 +184,29 @@ with a one-sided permutation p-value. **Rmin** (Hudson & Kaplan 1985) is the min
 number of recombination events the incompatibilities force, with the intervals as
 breakpoint candidates. Both are dependency-free.
 
+**The two are not interchangeable, and only one of them is a test.** Hudson-Kaplan
+bounds recombination *under the infinite-sites model*: it counts four-gamete
+violations, and under a finite-sites model recurrent mutation produces those with no
+recombination at all. On strictly clonal simulated data Rmin rises from 13 to 991
+across a 2-24 % divergence ladder while the true answer is zero throughout -- the
+implementation is correct (it returns 0 whenever the infinite-sites assumption
+actually holds), but the statistic does not discriminate. PHI does: it permutes
+against exactly that background, and on the same clonal data its false-positive rate
+was 2.5-7.5 % against a nominal 5 %.
+
+So a region is flagged `parent_free_support` only when **both** agree -- PHI
+significant (there is recombination in this alignment) *and* an Rmin interval
+overlapping the region (it is here). Neither half suffices: PHI is genome-wide and
+localizes nothing, while a non-zero Rmin is the normal state of any finite-sites
+alignment. An empty parent-free flag therefore means the parent-free track has
+nothing to add, not that the region is wrong.
+
 On the synthetic-hybrid harness, Rmin is non-zero for every recombinant across the
 full divergence range (dengue serotypes at 33 % down to the mpox clade-I/II
-recombination at 0.5 %), and the PHI test reaches the permutation floor in most
-cases. PHI's genome-wide p-value is conservative in Tessera's typical setup, though:
+recombination at 0.5 %) -- but, per the above, so it is for non-recombinants, so read
+that as a description of the data rather than as evidence. The PHI test reaches the
+permutation floor in most cases. PHI's genome-wide p-value is conservative in
+Tessera's typical setup, though:
 when the panel is clean parental clades around a single hybrid query, the many
 clade-defining sites are mutually compatible and dilute the few incompatibilities the
 one query introduces, so PHI can stay non-significant even where detection succeeds

@@ -18,8 +18,8 @@ from .coverage import (
     gaps_as_regions,
     reconcile_gaps,
 )
-from .diagnostics import recombination_signal
-from .ensemble import consensus_regions, reconcile_major
+from .diagnostics import corroborating_intervals, recombination_signal
+from .ensemble import consensus_regions, filter_by_agreement, reconcile_major
 from .hmm import DEFAULT_JUMP_RATE
 from .reattribute import reattribute_donors
 from .regions import DEFAULT_METHODS, RegionParams, call_regions
@@ -34,6 +34,7 @@ from .similarity import (
     compute_similarity,
     compute_similarity_informative,
     informative_site_count,
+    low_canonical_records,
 )
 from .typing import LINEAGES_TSV, LineageMap, lineage_of, load_lineage_map
 
@@ -51,6 +52,10 @@ class RecombParams:
     # Region calling. The default ensemble runs the hmm and 3seq callers and merges
     # their regions into a consensus; a single-method tuple reproduces one caller.
     methods: tuple[str, ...] = DEFAULT_METHODS
+    # Callers that must independently find a region before it is reported. The union of
+    # an ensemble inherits every member's false positives, so corroboration is required
+    # by default; clamped to the number of callers actually run, and 1 reports the union.
+    min_methods: int = 2
     jump_rate: float = DEFAULT_JUMP_RATE  # HMM prior switch probability per window
     alpha: float = 0.05  # significance level for the donor-vs-major site test
     exclude_siblings: bool = True  # set aside the query's own-lineage siblings first
@@ -192,6 +197,14 @@ def run_recomb(
         window_step=params.window_step,
         metric=params.metric,
     )
+    # Only canonical bases count toward a window, so a record that is mostly something
+    # else contributes almost nothing. Say so rather than let it drop out in silence.
+    for label, fraction in low_canonical_records(bp_result.rows):
+        logger.warning(
+            "Sequence '%s' is only %.0f%% A/C/G/T outside gaps; it will contribute "
+            "little to the scan. Check its alphabet.", label, 100.0 * fraction,
+        )
+
     # On a near-identical panel a base-pair window holds too few discriminating
     # sites for the HMM emission to separate the references; switch to windows that
     # span a fixed number of informative (polymorphic) columns instead. Auto unless
@@ -247,10 +260,22 @@ def run_recomb(
             excluded_siblings = sibs
 
     major_parent, per_major = reconcile_major(majors, window_wins=analysis_bp.winners_with_ties)
+    # Parent-free corroboration needs both halves of the diagnostic: PHI to establish
+    # that the alignment carries recombination at all, the Rmin intervals to say where.
+    # Rmin alone counts four-gamete violations, which recurrent mutation also produces.
     regions, method_breakdown = consensus_regions(
         per_method, major=major_parent,
-        rmin_intervals=signal.rmin_intervals if signal else None,
+        rmin_intervals=corroborating_intervals(signal, alpha=params.alpha),
         lineage_map=lineage_map,
+    )
+    # Agreement gate: a region resting on a single caller is the weakest thing the
+    # ensemble can report, so require corroboration when enough callers ran to give
+    # it (clamped, so selecting one caller is not silently self-suppressing). This runs
+    # *before* re-attribution: a suppressed region should not be re-attributed, and must
+    # not announce a re-attribution in the log for a region nobody will see.
+    min_agree = max(1, min(params.min_methods, len(params.methods)))
+    regions, method_breakdown, suppressed = filter_by_agreement(
+        regions, method_breakdown, min_agree
     )
     if params.reattribute_donors and lineage_map:
         # reattribute_donors excludes by clade name, so map the backbone genome to its clade
@@ -271,6 +296,12 @@ def run_recomb(
         ", ".join(params.methods), major_parent or "n/a", len(regions),
         f", {n_agree} called by >1 method" if len(params.methods) > 1 else "",
     )
+    if suppressed:
+        logger.info(
+            "Suppressed %d region(s) found by fewer than %d caller(s) "
+            "(--min-methods %d); lower it to see single-caller candidates.",
+            suppressed, min_agree, params.min_methods,
+        )
 
     coverage_params = CoverageParams.with_defaults(
         params.window_size,

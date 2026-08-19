@@ -58,6 +58,13 @@ def detect(
         "heuristic, or 'all'. Several run as an ensemble and their regions are merged "
         "(default hmm,3seq,maxchi,bootscan).",
     ),
+    min_methods: int = typer.Option(
+        2, "--min-methods",
+        help="Callers that must independently find a region before it is reported. "
+        "The union of an ensemble inherits every member's false positives, so "
+        "corroboration is required by default. Clamped to the number of callers "
+        "actually run, so a single --method is unaffected; 1 reports the union.",
+    ),
     pool_consensus: bool = typer.Option(
         False, "--pool-consensus/--no-pool-consensus",
         help="With a Nextclade pool, use one denoised consensus genome per clade (a "
@@ -112,7 +119,8 @@ def detect(
             threads=threads, cache_dir=cache_dir,
             taxon=taxon, candidate_pool=candidate_pool,
             nextclade=nextclade, nextclade_dataset=nextclade_dataset,
-            methods=parse_methods(method), pool_consensus=pool_consensus,
+            methods=parse_methods(method), min_methods=min_methods,
+            pool_consensus=pool_consensus,
             organism=organism, lineage_map=lineage_map,
             reattribute_donors=reattribute_donors,
             keep_recombinant=keep_recombinant_lineages,

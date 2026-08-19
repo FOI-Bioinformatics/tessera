@@ -137,6 +137,13 @@ def fill_references(
         "hmm/3seq/maxchi/bootscan/heuristic, or 'all'. Several run as an ensemble "
         "(default hmm,3seq,maxchi,bootscan).",
     ),
+    min_methods: int = typer.Option(
+        2, "--min-methods",
+        help="Callers that must independently find a region before it is reported. "
+        "The union of an ensemble inherits every member's false positives, so "
+        "corroboration is required by default. Clamped to the number of callers "
+        "actually run, so a single --method is unaffected; 1 reports the union.",
+    ),
     pool_consensus: bool = typer.Option(
         False, "--pool-consensus/--no-pool-consensus",
         help="With a Nextclade pool (--seed-source nextclade), use one denoised consensus "
@@ -202,7 +209,8 @@ def fill_references(
             email=email or os.environ.get("NCBI_EMAIL"),
             exclude=tuple(exclude), keep_self_hits=keep_self_hits, threads=threads,
             curate=curate, sibling_margin=sibling_margin, af_min=af_min, derep_ani=derep_ani,
-            report=report, methods=parse_methods(method), pool_consensus=pool_consensus,
+            report=report, methods=parse_methods(method), min_methods=min_methods,
+            pool_consensus=pool_consensus,
             organism=organism, lineage_map=lineage_map,
             reattribute_donors=reattribute_donors,
             keep_recombinant=keep_recombinant_lineages,

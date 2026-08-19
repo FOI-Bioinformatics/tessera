@@ -6,8 +6,56 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
-Nothing yet -- the initial release below is not yet tagged, so all current changes are recorded
-under [1.0.0].
+### Fixed
+
+- **Bootscan is now gated on a null model.** It previously carried no significance test at all:
+  `benjamini_hochberg` was applied in the HMM, 3SEQ and MaxChi callers but absent from
+  `bootscan.py`, whose regions were built with neither `pvalue` nor `qvalue` and gated only on a
+  fixed 0.70 bootstrap-support threshold. Bootstrap support answers *which reference is closest
+  here*, not *whether the query recombined*. Each candidate run of won windows is now tested
+  against a permutation null holding the win count fixed, permuted in blocks one window wide so
+  the autocorrelation of overlapping windows survives into the null, then BH-corrected and gated
+  on the q-value like the other callers.
+- **`parent_free_support` no longer fires on recurrent mutation.** The flag was set from the
+  Hudson-Kaplan Rmin intervals alone, but Rmin bounds recombination only under the
+  infinite-sites model -- under finite sites, recurrent mutation produces four-gamete violations
+  on strictly clonal data (measured: Rmin 13-991 across a 2-24 % divergence ladder with no
+  recombination anywhere, versus 0 throughout under infinite sites). The flag consequently
+  corroborated almost every false positive. It now requires the **PHI test** to be significant
+  as well -- PHI establishes that the alignment carries recombination, the Rmin intervals say
+  where. On a clonal panel (PHI p = 0.16, Rmin = 292) the flag is now `no`; on a true recombinant
+  (PHI p = 0.001, Rmin = 312) it remains `yes`.
+- **RNA-alphabet input is no longer silently mis-read.** `U` was not a canonical base and no
+  `U`->`T` normalisation existed anywhere, in a tool whose target domain is RNA viruses. A single
+  U-alphabet record silently changed the result for *every* reference -- in one check it cut a
+  neighbouring reference's usable windows from 25 to 9 and pushed a third's median similarity from
+  0.5 to 0.0 -- with no warning, because it also perturbs the automatic informative-site switch.
+  `U` is now folded to `T` on read, and a record whose non-gap positions are mostly not A/C/G/T is
+  reported as a warning rather than quietly contributing nothing.
+- **Donor re-attribution no longer bypasses its own margin guard.** `best_score - (cur or 0.0)`
+  collapsed an *unscorable* current donor -- one absent from the lineage map, or in a span with
+  too few comparable sites -- to a similarity of 0.0, making the margin test vacuous: a donor
+  matching the query at 98.2 % was replaced by a clade matching at 58.7 %. Re-attribution now
+  declines when the current donor cannot be scored.
+
+### Changed
+
+- **Ensemble agreement is now a gate, not only a label** (`--min-methods`, default 2). Reporting
+  the plain union of the callers raises recall but inherits every caller's false positives, so a
+  region must be found independently by at least two callers to be reported. This is the control
+  RDP5 exposes as "list events detected by more than N methods". The threshold is clamped to the
+  number of callers actually run, so a single `--method` is unaffected; `--min-methods 1` restores
+  the previous union behaviour, and the suppressed count is logged rather than silently dropped.
+
+Measured on simulated clonal panels (4 clades, 16 tips, JC69, no recombination anywhere), 40 runs
+of the default ensemble, counting donor-present regions as `validation/run_hybrids.py` scores a
+negative control:
+
+| | before | bootscan null | + agreement gate |
+|---|---|---|---|
+| runs reporting a false region | 39/40 | 17/40 | **2/40** |
+| false regions | 139 | 21 | **2** |
+| of which bootscan | 132 | 0 | 0 |
 
 ## [1.0.0] - 2026-07-06
 

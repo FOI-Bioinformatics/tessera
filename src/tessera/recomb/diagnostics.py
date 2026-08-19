@@ -210,3 +210,25 @@ def recombination_signal(
         n_informative=int(z), phi_p=p, phi_observed=observed, phi_window=window,
         rmin=rmin, rmin_intervals=query_intervals, profile=profile,
     )
+
+
+def corroborating_intervals(
+    signal: RecombinationSignal | None, *, alpha: float = 0.05
+) -> list[tuple[int, int]]:
+    """Rmin intervals, but only when the PHI test says there is anything to localise.
+
+    The two parent-free statistics are not interchangeable. The Hudson-Kaplan bound is
+    valid *under the infinite-sites model*: it counts four-gamete violations, and under
+    a finite-sites model recurrent mutation produces those on strictly clonal data, so a
+    non-zero Rmin is not on its own evidence of recombination. PHI is the calibrated
+    test -- it permutes against exactly that background -- but it is genome-wide and so
+    localises nothing.
+
+    Used together each covers the other's weakness: PHI establishes that the alignment
+    carries recombination, and the intervals say where. A region is corroborated only
+    when both agree, so an empty list here means the parent-free track has nothing to
+    say -- not that the region is wrong.
+    """
+    if signal is None or signal.phi_p is None or signal.phi_p > alpha:
+        return []
+    return list(signal.rmin_intervals)

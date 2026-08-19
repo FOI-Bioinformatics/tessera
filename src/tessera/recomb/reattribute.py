@@ -92,12 +92,21 @@ def reattribute_donors(
             s = score(clade, lo, hi)
             if s is not None and s > best_score:
                 best, best_score = clade, s
-        if best is not None and best != current and best_score - (cur or 0.0) >= margin:
+        # ``cur is None`` means the current donor could not be scored at all -- it is
+        # untyped, or the span has too few comparable sites. There is then nothing to
+        # measure a rival against, so decline rather than treat it as a similarity of
+        # zero, which would let any clade clear the margin.
+        if (
+            best is not None
+            and best != current
+            and cur is not None
+            and best_score - cur >= margin
+        ):
             if logger is not None:
                 logger.info(
                     "Re-attributed donor %s -> %s over query %d-%d (consensus sim %.3f "
                     "vs %.3f).", region.minor_parent, rep[best], region.query_start,
-                    region.query_end, best_score, cur or 0.0,
+                    region.query_end, best_score, cur,
                 )
             out.append(replace(region, minor_parent=rep[best],
                                mean_sim_minor=round(best_score, 4)))
