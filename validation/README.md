@@ -14,6 +14,7 @@ validation/
   fetch.py             download the fetch-based datasets from NCBI (efetch)
   run_validation.py    build MSA + run recomb per dataset, check, print a table
   run_benchmark.py     PHI/Rmin power+specificity on a published simulated set
+  run_specificity.py   false-positive RATE on simulated clonal data (no aligner needed)
   run_coalescent_benchmark.py   Posada & Crandall coalescent design (msprime)
   run_recombinhunt_benchmark.py RecombinHunt noise-robustness of breakpoint detection
   run_reassort_benchmark.py     reassort verdict precision/recall/F1 (flu HA+NA)
@@ -22,6 +23,52 @@ validation/
   run_deep_typing.py   run the real --deep-typing lineage ladder, check nextclade-nn
   data/                downloaded sequences + run artifacts (gitignored)
 ```
+
+## Specificity: what does the scan report when there is nothing to find?
+
+`run_specificity.py` answers the question the `neg_pure` controls cannot. Those ask a
+pass/fail question of nine real, curated Nextclade panels: that measures a **verdict on
+favourable cases**, not a **rate**, and it does not sample the redundant-panel regime --
+several near-equidistant relatives of the query -- where the callers are most likely to
+mistake a stochastic window-vote flip for an event.
+
+Here the ground truth is known by construction. Sequences are simulated down a fixed
+four-clade tree under JC69 and **no recombination is introduced anywhere**, so every
+region reported is a false positive. Four scenarios escalate the confounders this
+literature blames for spurious signal:
+
+| scenario | what it adds |
+|---|---|
+| `clean` | uniform site and lineage rates -- the model's own null |
+| `asrv` | gamma(0.2) among-site rate variation |
+| `lineage_rate` | the query's branch evolves 4x faster than the rest |
+| `rate_shift` | genome halves at 0.3x and 3x -- differing constraint between genes |
+
+A paired positive control splices a known clade-B tract into a clade-A backbone, so
+**specificity and sensitivity are reported together**: a detection claim without a
+false-positive rate beside it is half a result. Rates carry Wilson confidence intervals,
+because a rate from ten replicates is not a point estimate.
+
+Unlike every other harness here this one needs **no aligner, no network and no downloaded
+data** -- the simulated sequences are already aligned. It is opt-in only because a full
+run is minutes of wall clock; the simulation and scoring logic is unit-tested in CI
+(`tests/unit/test_specificity_scoring.py`).
+
+```
+python validation/run_specificity.py                  # 10 replicates per scenario
+python validation/run_specificity.py --reps 3         # quick look
+python validation/run_specificity.py --min-methods 1  # without the agreement gate
+```
+
+It is deliberately sensitive to the failure mode it was built for. With the default
+agreement gate the scan is clean; dropping the gate with `--min-methods 1` surfaces the
+single-caller regions again (measured at 4 replicates: 9/16 runs, 10 false regions,
+almost all from one caller). Treat a non-zero total as a regression to explain.
+
+**Caveat.** JC69 on a fixed topology is simpler than real viral evolution, and modest
+replicate counts carry real sampling error -- hence the intervals. These numbers
+establish whether a failure mode exists and roughly how large it is, not its exact
+magnitude on real panels.
 
 ## Prerequisites
 
