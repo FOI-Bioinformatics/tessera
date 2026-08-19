@@ -34,6 +34,7 @@ from .similarity import (
     compute_similarity,
     compute_similarity_informative,
     informative_site_count,
+    low_canonical_records,
 )
 from .typing import LINEAGES_TSV, LineageMap, lineage_of, load_lineage_map
 
@@ -196,6 +197,14 @@ def run_recomb(
         window_step=params.window_step,
         metric=params.metric,
     )
+    # Only canonical bases count toward a window, so a record that is mostly something
+    # else contributes almost nothing. Say so rather than let it drop out in silence.
+    for label, fraction in low_canonical_records(bp_result.rows):
+        logger.warning(
+            "Sequence '%s' is only %.0f%% A/C/G/T outside gaps; it will contribute "
+            "little to the scan. Check its alphabet.", label, 100.0 * fraction,
+        )
+
     # On a near-identical panel a base-pair window holds too few discriminating
     # sites for the HMM emission to separate the references; switch to windows that
     # span a fixed number of informative (polymorphic) columns instead. Auto unless

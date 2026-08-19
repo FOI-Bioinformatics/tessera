@@ -106,13 +106,43 @@ class WindowSimilarity:
         return int(self.query_cumulative[col])
 
 
+def low_canonical_records(
+    rows: dict[str, np.ndarray], min_fraction: float = 0.5
+) -> list[tuple[str, float]]:
+    """Records whose non-gap positions are mostly *not* A/C/G/T, worst first.
+
+    Only canonical bases count toward a window, so such a record contributes little
+    or nothing to the scan. That is legitimate for a genuinely ambiguous sequence but
+    is also the fingerprint of an alphabet the reader did not understand, which would
+    otherwise fail silently. Gaps are excluded from the denominator -- they are
+    expected in an alignment and say nothing about the alphabet.
+    """
+    flagged: list[tuple[str, float]] = []
+    for label, seq in rows.items():
+        ungapped = int(np.count_nonzero(seq != GAP))
+        if ungapped == 0:
+            flagged.append((label, 0.0))
+            continue
+        fraction = float(np.count_nonzero(_canonical_mask(seq)) / ungapped)
+        if fraction < min_fraction:
+            flagged.append((label, fraction))
+    return sorted(flagged, key=lambda item: item[1])
+
+
 def _read_alignment(msa_path: str) -> dict[str, np.ndarray]:
-    """Read an aligned FASTA into label -> uint8 array of (upper-cased) bytes."""
+    """Read an aligned FASTA into label -> uint8 array of (upper-cased) bytes.
+
+    ``U`` is folded to ``T``: RNA and DNA spellings of the same base must compare
+    equal, and Tessera's inputs are overwhelmingly RNA viruses whose sequences are
+    served in either alphabet. Everything else is left alone -- gaps, ``N`` and the
+    IUPAC ambiguity codes are meant to be non-comparable.
+    """
     alignment = AlignIO.read(msa_path, "fasta")
     rows: dict[str, np.ndarray] = {}
     width: int | None = None
     for record in alignment:
-        seq = np.frombuffer(str(record.seq).upper().encode("ascii"), dtype=np.uint8)
+        text = str(record.seq).upper().replace("U", "T")
+        seq = np.frombuffer(text.encode("ascii"), dtype=np.uint8)
         if width is None:
             width = seq.size
         elif seq.size != width:

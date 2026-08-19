@@ -16,6 +16,13 @@ All notable changes to Tessera are recorded here. The format follows
   against a permutation null holding the win count fixed, permuted in blocks one window wide so
   the autocorrelation of overlapping windows survives into the null, then BH-corrected and gated
   on the q-value like the other callers.
+- **RNA-alphabet input is no longer silently mis-read.** `U` was not a canonical base and no
+  `U`->`T` normalisation existed anywhere, in a tool whose target domain is RNA viruses. A single
+  U-alphabet record silently changed the result for *every* reference -- in one check it cut a
+  neighbouring reference's usable windows from 25 to 9 and pushed a third's median similarity from
+  0.5 to 0.0 -- with no warning, because it also perturbs the automatic informative-site switch.
+  `U` is now folded to `T` on read, and a record whose non-gap positions are mostly not A/C/G/T is
+  reported as a warning rather than quietly contributing nothing.
 - **Donor re-attribution no longer bypasses its own margin guard.** `best_score - (cur or 0.0)`
   collapsed an *unscorable* current donor -- one absent from the lineage map, or in a span with
   too few comparable sites -- to a similarity of 0.0, making the margin test vacuous: a donor
