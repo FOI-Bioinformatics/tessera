@@ -6,6 +6,20 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`validation/run_specificity.py`** -- a harness that measures the false-positive *rate* on
+  simulated clonal data, where the ground truth is known by construction: no recombination is
+  introduced anywhere, so every region reported is a false positive. Four scenarios escalate the
+  confounders the literature blames for spurious signal (uniform rates, among-site rate variation,
+  a fast query lineage, and a rate shift between genome halves), and a paired positive control
+  reports sensitivity beside specificity. Rates carry Wilson confidence intervals. Unlike the other
+  harnesses it needs no aligner, no network and no downloaded data; the simulation and scoring
+  logic is unit-tested in CI. This closes gap **G3** ("no specificity measurement") from
+  `docs/gap-analysis.md`: the nine `neg_pure` controls measure a verdict on nine favourable real
+  panels, which can neither estimate a rate nor sample the redundant-panel regime where the
+  callers are most likely to over-call.
+
 ### Fixed
 
 - **Bootscan is now gated on a null model.** It previously carried no significance test at all:
