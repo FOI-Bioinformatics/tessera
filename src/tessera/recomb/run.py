@@ -268,6 +268,15 @@ def run_recomb(
         rmin_intervals=corroborating_intervals(signal, alpha=params.alpha),
         lineage_map=lineage_map,
     )
+    # Agreement gate: a region resting on a single caller is the weakest thing the
+    # ensemble can report, so require corroboration when enough callers ran to give
+    # it (clamped, so selecting one caller is not silently self-suppressing). This runs
+    # *before* re-attribution: a suppressed region should not be re-attributed, and must
+    # not announce a re-attribution in the log for a region nobody will see.
+    min_agree = max(1, min(params.min_methods, len(params.methods)))
+    regions, method_breakdown, suppressed = filter_by_agreement(
+        regions, method_breakdown, min_agree
+    )
     if params.reattribute_donors and lineage_map:
         # reattribute_donors excludes by clade name, so map the backbone genome to its clade
         regions = reattribute_donors(
@@ -281,13 +290,6 @@ def run_recomb(
             len(excluded_siblings),
             ", ".join(f"{ev.label} (leads {ev.lead_frac:.0%})" for ev in excluded_siblings),
         )
-    # Agreement gate: a region resting on a single caller is the weakest thing the
-    # ensemble can report, so require corroboration when enough callers ran to give
-    # it (clamped, so selecting one caller is not silently self-suppressing).
-    min_agree = max(1, min(params.min_methods, len(params.methods)))
-    regions, method_breakdown, suppressed = filter_by_agreement(
-        regions, method_breakdown, min_agree
-    )
     n_agree = sum(1 for r in regions if len(r.methods) >= 2)
     logger.info(
         "Caller(s): %s -- major parent %s; %d recombinant region(s)%s.",
