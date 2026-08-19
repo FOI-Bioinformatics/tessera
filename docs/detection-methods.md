@@ -184,10 +184,29 @@ with a one-sided permutation p-value. **Rmin** (Hudson & Kaplan 1985) is the min
 number of recombination events the incompatibilities force, with the intervals as
 breakpoint candidates. Both are dependency-free.
 
+**The two are not interchangeable, and only one of them is a test.** Hudson-Kaplan
+bounds recombination *under the infinite-sites model*: it counts four-gamete
+violations, and under a finite-sites model recurrent mutation produces those with no
+recombination at all. On strictly clonal simulated data Rmin rises from 13 to 991
+across a 2-24 % divergence ladder while the true answer is zero throughout -- the
+implementation is correct (it returns 0 whenever the infinite-sites assumption
+actually holds), but the statistic does not discriminate. PHI does: it permutes
+against exactly that background, and on the same clonal data its false-positive rate
+was 2.5-7.5 % against a nominal 5 %.
+
+So a region is flagged `parent_free_support` only when **both** agree -- PHI
+significant (there is recombination in this alignment) *and* an Rmin interval
+overlapping the region (it is here). Neither half suffices: PHI is genome-wide and
+localizes nothing, while a non-zero Rmin is the normal state of any finite-sites
+alignment. An empty parent-free flag therefore means the parent-free track has
+nothing to add, not that the region is wrong.
+
 On the synthetic-hybrid harness, Rmin is non-zero for every recombinant across the
 full divergence range (dengue serotypes at 33 % down to the mpox clade-I/II
-recombination at 0.5 %), and the PHI test reaches the permutation floor in most
-cases. PHI's genome-wide p-value is conservative in Tessera's typical setup, though:
+recombination at 0.5 %) -- but, per the above, so it is for non-recombinants, so read
+that as a description of the data rather than as evidence. The PHI test reaches the
+permutation floor in most cases. PHI's genome-wide p-value is conservative in
+Tessera's typical setup, though:
 when the panel is clean parental clades around a single hybrid query, the many
 clade-defining sites are mutually compatible and dilute the few incompatibilities the
 one query introduces, so PHI can stay non-significant even where detection succeeds

@@ -18,7 +18,7 @@ from .coverage import (
     gaps_as_regions,
     reconcile_gaps,
 )
-from .diagnostics import recombination_signal
+from .diagnostics import corroborating_intervals, recombination_signal
 from .ensemble import consensus_regions, filter_by_agreement, reconcile_major
 from .hmm import DEFAULT_JUMP_RATE
 from .reattribute import reattribute_donors
@@ -260,9 +260,12 @@ def run_recomb(
             excluded_siblings = sibs
 
     major_parent, per_major = reconcile_major(majors, window_wins=analysis_bp.winners_with_ties)
+    # Parent-free corroboration needs both halves of the diagnostic: PHI to establish
+    # that the alignment carries recombination at all, the Rmin intervals to say where.
+    # Rmin alone counts four-gamete violations, which recurrent mutation also produces.
     regions, method_breakdown = consensus_regions(
         per_method, major=major_parent,
-        rmin_intervals=signal.rmin_intervals if signal else None,
+        rmin_intervals=corroborating_intervals(signal, alpha=params.alpha),
         lineage_map=lineage_map,
     )
     if params.reattribute_donors and lineage_map:

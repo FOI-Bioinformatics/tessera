@@ -16,6 +16,15 @@ All notable changes to Tessera are recorded here. The format follows
   against a permutation null holding the win count fixed, permuted in blocks one window wide so
   the autocorrelation of overlapping windows survives into the null, then BH-corrected and gated
   on the q-value like the other callers.
+- **`parent_free_support` no longer fires on recurrent mutation.** The flag was set from the
+  Hudson-Kaplan Rmin intervals alone, but Rmin bounds recombination only under the
+  infinite-sites model -- under finite sites, recurrent mutation produces four-gamete violations
+  on strictly clonal data (measured: Rmin 13-991 across a 2-24 % divergence ladder with no
+  recombination anywhere, versus 0 throughout under infinite sites). The flag consequently
+  corroborated almost every false positive. It now requires the **PHI test** to be significant
+  as well -- PHI establishes that the alignment carries recombination, the Rmin intervals say
+  where. On a clonal panel (PHI p = 0.16, Rmin = 292) the flag is now `no`; on a true recombinant
+  (PHI p = 0.001, Rmin = 312) it remains `yes`.
 - **RNA-alphabet input is no longer silently mis-read.** `U` was not a canonical base and no
   `U`->`T` normalisation existed anywhere, in a tool whose target domain is RNA viruses. A single
   U-alphabet record silently changed the result for *every* reference -- in one check it cut a
