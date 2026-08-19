@@ -101,6 +101,7 @@ class FillParams:
     derep_ani: float = 99.0  # skDER: collapse references >= this ANI to one representative
     report: bool = True  # call recombination detection after building the panel (False = stop)
     methods: tuple[str, ...] = DEFAULT_METHODS  # region caller(s) for the detection step
+    min_methods: int = 2  # callers that must agree before a region is reported
     # Nextclade seeding: use one denoised consensus genome per clade as the pool (a stable
     # per-lineage reference) instead of every tree tip. See discover/nextclade.build_pool.
     pool_consensus: bool = False
@@ -127,6 +128,7 @@ class FillParams:
         nextclade: bool = False,
         nextclade_dataset: str | None = None,
         methods: tuple[str, ...] = DEFAULT_METHODS,
+        min_methods: int = 2,
         pool_consensus: bool = False,
         organism: str | None = None,
         lineage_map: Path | None = None,
@@ -158,7 +160,7 @@ class FillParams:
             candidate_pool=candidate_pool, taxon=taxon,
             seed_mode="parents", curate=True,
             auto_diversify=True, negative_lineage=True,
-            methods=methods, pool_consensus=pool_consensus,
+            methods=methods, min_methods=min_methods, pool_consensus=pool_consensus,
             organism=organism, lineage_map=lineage_map,
             reattribute_donors=reattribute_donors,
             keep_recombinant=keep_recombinant,
@@ -248,7 +250,8 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
                 msa=panel_msa, output=params.output, query=query_label,
                 window_size=params.window_size, window_step=params.window_step,
                 coverage_floor=params.coverage_floor, coverage_rel_drop=params.coverage_rel_drop,
-                methods=params.methods, lineage_map=lineage_map or None,
+                methods=params.methods, min_methods=params.min_methods,
+                lineage_map=lineage_map or None,
                 organism=params.organism or params.taxon,
                 reattribute_donors=params.reattribute_donors,
             ),

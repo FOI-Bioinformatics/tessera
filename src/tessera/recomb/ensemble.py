@@ -139,6 +139,28 @@ def _group(regions: list[Region], lineage_map: LineageMap | None) -> list[list[R
     return groups
 
 
+def filter_by_agreement(
+    regions: list[Region], breakdown: list[dict], min_methods: int
+) -> tuple[list[Region], list[dict], int]:
+    """Keep only regions at least ``min_methods`` callers found; returns the kept
+    regions, their breakdown rows and how many were suppressed.
+
+    The union of several callers raises recall but inherits every caller's false
+    positives, so a region resting on one caller alone is the weakest thing the
+    ensemble can report. RDP5 ships the same control ("list events detected by more
+    than N methods"). ``regions`` and ``breakdown`` are built in one pass and sorted
+    alike, so they are filtered together to stay in step.
+    """
+    if min_methods <= 1:
+        return regions, breakdown, 0
+    kept = [
+        (region, row)
+        for region, row in zip(regions, breakdown, strict=True)
+        if len(region.methods) >= min_methods
+    ]
+    return [r for r, _ in kept], [b for _, b in kept], len(regions) - len(kept)
+
+
 def consensus_regions(
     per_method: dict[str, list[Region]],
     *,

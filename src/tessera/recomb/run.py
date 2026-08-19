@@ -19,7 +19,7 @@ from .coverage import (
     reconcile_gaps,
 )
 from .diagnostics import recombination_signal
-from .ensemble import consensus_regions, reconcile_major
+from .ensemble import consensus_regions, filter_by_agreement, reconcile_major
 from .hmm import DEFAULT_JUMP_RATE
 from .reattribute import reattribute_donors
 from .regions import DEFAULT_METHODS, RegionParams, call_regions
@@ -51,6 +51,10 @@ class RecombParams:
     # Region calling. The default ensemble runs the hmm and 3seq callers and merges
     # their regions into a consensus; a single-method tuple reproduces one caller.
     methods: tuple[str, ...] = DEFAULT_METHODS
+    # Callers that must independently find a region before it is reported. The union of
+    # an ensemble inherits every member's false positives, so corroboration is required
+    # by default; clamped to the number of callers actually run, and 1 reports the union.
+    min_methods: int = 2
     jump_rate: float = DEFAULT_JUMP_RATE  # HMM prior switch probability per window
     alpha: float = 0.05  # significance level for the donor-vs-major site test
     exclude_siblings: bool = True  # set aside the query's own-lineage siblings first
@@ -265,12 +269,25 @@ def run_recomb(
             len(excluded_siblings),
             ", ".join(f"{ev.label} (leads {ev.lead_frac:.0%})" for ev in excluded_siblings),
         )
+    # Agreement gate: a region resting on a single caller is the weakest thing the
+    # ensemble can report, so require corroboration when enough callers ran to give
+    # it (clamped, so selecting one caller is not silently self-suppressing).
+    min_agree = max(1, min(params.min_methods, len(params.methods)))
+    regions, method_breakdown, suppressed = filter_by_agreement(
+        regions, method_breakdown, min_agree
+    )
     n_agree = sum(1 for r in regions if len(r.methods) >= 2)
     logger.info(
         "Caller(s): %s -- major parent %s; %d recombinant region(s)%s.",
         ", ".join(params.methods), major_parent or "n/a", len(regions),
         f", {n_agree} called by >1 method" if len(params.methods) > 1 else "",
     )
+    if suppressed:
+        logger.info(
+            "Suppressed %d region(s) found by fewer than %d caller(s) "
+            "(--min-methods %d); lower it to see single-caller candidates.",
+            suppressed, min_agree, params.min_methods,
+        )
 
     coverage_params = CoverageParams.with_defaults(
         params.window_size,

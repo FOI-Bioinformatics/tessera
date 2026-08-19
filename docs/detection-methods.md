@@ -23,9 +23,18 @@ parent genome, or, when the references are typed (a lineage map), the same **lin
 so two callers that pick different representative genomes of one lineage still count as
 the same event and as agreement. The consensus region records exactly **which** callers
 found it (the report's *Method(s)* column and a *Method comparison* table) and whether
-the parent-free Hudson-Kaplan Rmin signal corroborates it. A region called by more than one method is treated as **higher
-confidence** -- agreement is the point of running an ensemble: the union of the callers
-raises recall, their agreement raises precision.
+the parent-free Hudson-Kaplan Rmin signal corroborates it.
+
+Agreement is a **gate**, not only a label. Reporting the plain union raises recall but
+inherits every caller's false positives, so by default a region must be found
+independently by at least **two** callers (`--min-methods 2`). This is the control RDP5
+exposes as "list events detected by more than N methods". On simulated clonal panels --
+no recombination anywhere, so every region reported is a false positive -- the gate
+removes the great majority of them at no measured cost to detection: a genuine tract is
+found by several callers, a chance window-vote flip by one. The threshold is clamped to
+the number of callers actually run, so `--method hmm` is unaffected; `--min-methods 1`
+restores the union, and the suppressed count is always logged rather than silently
+dropped.
 
 The default ensemble's two further callers are **MaxChi** (a chi-square triplet test,
 complementary to 3SEQ) and **Bootscan** (a distance + bootstrap method that yields a
@@ -115,8 +124,20 @@ Salminen (1995) (SimPlot++ 2022). Per window it measures the query's identity to
 candidate parent, then resamples the window's alignment columns with replacement; the
 **bootstrap support** of a parent is the fraction of resamples in which it is the query's
 closest match. A run of windows where a non-major parent's support clears 70 % and beats
-the backbone is a region, carrying that support as a confidence the other callers express
-only as a p-value.
+the backbone is a candidate region, carrying that support as a confidence the other
+callers express only as a p-value.
+
+Support alone is not evidence of recombination, though: it answers *which reference is
+closest here*, not *whether the query recombined*. Each candidate run is therefore also
+tested against a **permutation null** that holds the donor's number of won windows fixed
+and asks whether they are more contiguous than chance -- a recombinant tract is one run,
+chance flips are scattered. Windows are permuted in **blocks** one window wide, because
+sliding windows overlap and their winners are autocorrelated even with no recombination;
+an element-wise shuffle would destroy that structure and make every short run look
+significant. The resulting p-values are Benjamini-Hochberg corrected across candidates
+and gated on the q-value, exactly as the other callers are. A consequence worth knowing:
+with a real null Bootscan clears FDR far less often than its raw support suggested, and
+on small tracts it may stay silent.
 
 ## GENECONV caller (`--method geneconv`, clean-fragment run test; opt-in)
 

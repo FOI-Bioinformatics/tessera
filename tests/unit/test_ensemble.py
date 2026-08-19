@@ -5,7 +5,11 @@ from __future__ import annotations
 import pytest
 
 from tessera.core.errors import UserInputError
-from tessera.recomb.ensemble import consensus_regions, reconcile_major
+from tessera.recomb.ensemble import (
+    consensus_regions,
+    filter_by_agreement,
+    reconcile_major,
+)
 from tessera.recomb.regions import CALLERS, Region, parse_methods
 
 
@@ -146,3 +150,34 @@ def test_reconcile_major_keeps_hmm_major_that_wins_windows() -> None:
 def test_reconcile_major_without_window_wins_keeps_hmm() -> None:
     canonical, _ = reconcile_major({"hmm": "A1", "3seq": "A2"})
     assert canonical == "A1"
+
+
+# --- agreement gate (filter_by_agreement) ----------------------------------
+
+def test_agreement_gate_drops_regions_below_the_threshold() -> None:
+    # B over 1000-2000 is found by two callers; C over 5000-6000 by one only.
+    per_method = {
+        "hmm": [mk("B", 1000, 2000, "hmm")],
+        "maxchi": [mk("B", 1000, 2000, "maxchi")],
+        "bootscan": [mk("C", 5000, 6000, "bootscan")],
+    }
+    regions, breakdown = consensus_regions(per_method, major="A")
+    kept, kept_breakdown, suppressed = filter_by_agreement(regions, breakdown, 2)
+
+    assert [r.minor_parent for r in kept] == ["B"]
+    assert kept[0].methods == ("hmm", "maxchi")
+    assert suppressed == 1
+    # the breakdown must not advertise a region the region table no longer has
+    assert [b["minor_parent"] for b in kept_breakdown] == ["B"]
+
+
+def test_agreement_gate_of_one_keeps_every_region() -> None:
+    per_method = {
+        "hmm": [mk("B", 1000, 2000, "hmm")],
+        "bootscan": [mk("C", 5000, 6000, "bootscan")],
+    }
+    regions, breakdown = consensus_regions(per_method, major="A")
+    kept, kept_breakdown, suppressed = filter_by_agreement(regions, breakdown, 1)
+    assert sorted(r.minor_parent for r in kept) == ["B", "C"]
+    assert len(kept_breakdown) == 2
+    assert suppressed == 0
