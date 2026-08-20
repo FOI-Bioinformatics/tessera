@@ -54,22 +54,30 @@ All notable changes to Tessera are recorded here. The format follows
 
 ### Changed
 
-- **Ensemble agreement is now a gate, not only a label** (`--min-methods`, default 2). Reporting
-  the plain union of the callers raises recall but inherits every caller's false positives, so a
-  region must be found independently by at least two callers to be reported. This is the control
-  RDP5 exposes as "list events detected by more than N methods". The threshold is clamped to the
-  number of callers actually run, so a single `--method` is unaffected; `--min-methods 1` restores
-  the previous union behaviour, and the suppressed count is logged rather than silently dropped.
+- **Ensemble agreement can now be used as a gate** (`--min-methods`), the control RDP5 exposes as
+  "list events detected by more than N methods". It is **off by default** (`1`, the previous union
+  behaviour). Measured both ways: on a redundant panel -- several near-equidistant relatives of the
+  query -- a gate of 2 cuts false regions on simulated clonal data from 21 to 2; but on the curated
+  panels the hybrid harness builds it loses three true detections (`rsv_a`, `mpox`, `masksib_rsv`)
+  and gains nothing, since every negative control passes without it. The callers have different
+  applicability domains -- at mpox's 0.5 % divergence only the HMM has power -- so requiring two is
+  structurally impossible in the regime where detection is hardest. Raise it when your panel
+  carries near-duplicates; leave it at 1 for a curated panel. Clamped to the number of callers
+  actually run, and any suppressed count is logged rather than silently dropped.
 
 Measured on simulated clonal panels (4 clades, 16 tips, JC69, no recombination anywhere), 40 runs
 of the default ensemble, counting donor-present regions as `validation/run_hybrids.py` scores a
 negative control:
 
-| | before | bootscan null | + agreement gate |
+| | before | bootscan null (default) | + `--min-methods 2` |
 |---|---|---|---|
-| runs reporting a false region | 39/40 | 17/40 | **2/40** |
-| false regions | 139 | 21 | **2** |
+| runs reporting a false region | 39/40 | 17/40 | 2/40 |
+| false regions | 139 | 21 | 2 |
 | of which bootscan | 132 | 0 | 0 |
+
+On the real 24-pathogen hybrid harness the bootscan null alone carries the specificity:
+**sensitivity 30/30, specificity 10/10 with 0 false calls**. Adding `--min-methods 2` there
+costs three true detections and gains nothing, which is why it is not the default.
 
 ## [1.0.0] - 2026-07-06
 

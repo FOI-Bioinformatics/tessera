@@ -108,18 +108,27 @@ def _clonal_msa(path: Path, seed: int = 5) -> None:
             fo.write(f">{name}\n{seq}\n")
 
 
-def test_clonal_panel_yields_no_recombinant_region(tmp_path: Path) -> None:
-    """Specificity regression for the shipped default ensemble.
+def test_agreement_gate_clears_a_clonal_panel(tmp_path: Path) -> None:
+    """Specificity regression for the agreement gate on a redundant panel.
 
-    Coverage-gap rows (``donor_absent``) are legitimate "no close reference here"
-    flags, not recombination claims, so they are excluded -- matching how
-    ``validation/run_hybrids.py::_score_neg_pure`` scores a negative control.
+    The panel below is deliberately redundant -- five near-equidistant relatives -- which
+    is the regime where a caller that only counts window votes flips winner by chance.
+    `--min-methods 2` must clear those: a genuine tract is found by several callers, a
+    chance flip by one.
+
+    The gate is *not* the default (see `RecombParams.min_methods`): on the curated panels
+    the hybrid harness builds it costs true detections and gains nothing, so it is opted
+    into here rather than assumed.
+
+    Coverage-gap rows (``donor_absent``) are excluded -- they are legitimate "no close
+    reference here" flags, matching ``run_hybrids.py::_score_neg_pure``.
     """
     msa = tmp_path / "clonal.fasta"
     _clonal_msa(msa)
     out = tmp_path / "out"
     run_recomb(RecombParams(msa=msa, output=out, query="query",
-                            window_size=1000, window_step=100, plot_format="png"), _LOG)
+                            window_size=1000, window_step=100, plot_format="png",
+                            min_methods=2), _LOG)
 
     lines = [x for x in (out / "recombination_regions.tsv").read_text().splitlines() if x]
     header = lines[0].split("\t")
