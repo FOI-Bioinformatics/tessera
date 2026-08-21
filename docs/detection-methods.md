@@ -25,16 +25,21 @@ the same event and as agreement. The consensus region records exactly **which** 
 found it (the report's *Method(s)* column and a *Method comparison* table) and whether
 the parent-free Hudson-Kaplan Rmin signal corroborates it.
 
-Agreement is a **gate**, not only a label. Reporting the plain union raises recall but
-inherits every caller's false positives, so by default a region must be found
-independently by at least **two** callers (`--min-methods 2`). This is the control RDP5
-exposes as "list events detected by more than N methods". On simulated clonal panels --
-no recombination anywhere, so every region reported is a false positive -- the gate
-removes the great majority of them at no measured cost to detection: a genuine tract is
-found by several callers, a chance window-vote flip by one. The threshold is clamped to
-the number of callers actually run, so `--method hmm` is unaffected; `--min-methods 1`
-restores the union, and the suppressed count is always logged rather than silently
-dropped.
+Agreement can also be used as a **gate** (`--min-methods`), the control RDP5 exposes as
+"list events detected by more than N methods". It is **not on by default**, and the
+measurements say why. On a *redundant* panel -- several near-equidistant relatives of the
+query -- requiring two callers is a large win: on simulated clonal data, where every
+region reported is a false positive, it cuts them from 21 to 2. On the curated,
+dereplicated panels the hybrid harness builds it is all cost: it loses three true
+detections (`rsv_a`, `mpox`, `masksib_rsv`) and gains nothing, because every negative
+control already passes without it.
+
+The reason is that the callers have different applicability domains. At mpox's 0.5 %
+divergence only the HMM has power at all, so requiring two of them is structurally
+impossible in exactly the regime where detection is hardest. Raise `--min-methods` when
+your panel carries near-duplicate references and you want precision; leave it at 1 for a
+curated panel. The threshold is clamped to the number of callers actually run, and any
+suppressed count is logged rather than silently dropped.
 
 The default ensemble's two further callers are **MaxChi** (a chi-square triplet test,
 complementary to 3SEQ) and **Bootscan** (a distance + bootstrap method that yields a

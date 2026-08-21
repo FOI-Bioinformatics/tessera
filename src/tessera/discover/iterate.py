@@ -101,7 +101,7 @@ class FillParams:
     derep_ani: float = 99.0  # skDER: collapse references >= this ANI to one representative
     report: bool = True  # call recombination detection after building the panel (False = stop)
     methods: tuple[str, ...] = DEFAULT_METHODS  # region caller(s) for the detection step
-    min_methods: int = 2  # callers that must agree before a region is reported
+    min_methods: int = 1  # callers that must agree before a region is reported
     # Nextclade seeding: use one denoised consensus genome per clade as the pool (a stable
     # per-lineage reference) instead of every tree tip. See discover/nextclade.build_pool.
     pool_consensus: bool = False
@@ -128,7 +128,7 @@ class FillParams:
         nextclade: bool = False,
         nextclade_dataset: str | None = None,
         methods: tuple[str, ...] = DEFAULT_METHODS,
-        min_methods: int = 2,
+        min_methods: int = 1,
         pool_consensus: bool = False,
         organism: str | None = None,
         lineage_map: Path | None = None,

@@ -35,11 +35,13 @@ def recomb(
         "Pass a single name (e.g. --method hmm) for one caller.",
     ),
     min_methods: int = typer.Option(
-        2, "--min-methods",
-        help="Callers that must independently find a region before it is reported. "
-        "The union of an ensemble inherits every member's false positives, so "
-        "corroboration is required by default. Clamped to the number of callers "
-        "actually run, so a single --method is unaffected; 1 reports the union.",
+        1, "--min-methods",
+        help="Callers that must independently find a region before it is reported "
+        "(default 1: report the union). Raise to 2 to require corroboration -- a large\n"
+        "win on a redundant panel with several near-equidistant relatives of the "
+        "query, but it costs true detections on a curated panel, and at very low "
+        "divergence only one caller may have power at all. Clamped to the number "
+        "of callers actually run.",
     ),
     jump_rate: float = typer.Option(
         1e-3, "--jump-rate",

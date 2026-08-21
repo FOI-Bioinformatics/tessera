@@ -52,10 +52,19 @@ class RecombParams:
     # Region calling. The default ensemble runs the hmm and 3seq callers and merges
     # their regions into a consensus; a single-method tuple reproduces one caller.
     methods: tuple[str, ...] = DEFAULT_METHODS
-    # Callers that must independently find a region before it is reported. The union of
-    # an ensemble inherits every member's false positives, so corroboration is required
-    # by default; clamped to the number of callers actually run, and 1 reports the union.
-    min_methods: int = 2
+    # Callers that must independently find a region before it is reported; clamped to the
+    # number of callers actually run. Raising it to 2 is a real precision/recall trade and
+    # the right setting depends on the panel, so the default reports the union.
+    #
+    # On a *redundant* panel -- several near-equidistant relatives of the query -- a gate
+    # of 2 is a large win: on simulated clonal data it cuts false regions from 21 to 2.
+    # On the curated, dereplicated panels the hybrid harness builds it is all cost: it
+    # loses three true detections (rsv_a, mpox, masksib_rsv) and gains nothing, because
+    # every negative control already passes without it. The callers have different
+    # applicability domains -- at mpox's 0.5% divergence only the HMM has power -- so
+    # requiring two of them is structurally impossible in exactly the regime where
+    # detection is hardest.
+    min_methods: int = 1
     jump_rate: float = DEFAULT_JUMP_RATE  # HMM prior switch probability per window
     alpha: float = 0.05  # significance level for the donor-vs-major site test
     exclude_siblings: bool = True  # set aside the query's own-lineage siblings first
