@@ -31,6 +31,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from .clusters import median_window_step
 from .hmm import segment_query
 from .similarity import WindowSimilarity, discordant_counts
 from .stats import proportion_diff_significant, sign_test_pvalue
@@ -98,8 +99,9 @@ def _profiles(
 
 
 def _window_step(result: WindowSimilarity) -> int:
-    pos = result.positions
-    return (pos[1] - pos[0]) if len(pos) > 1 else 1
+    """Typical column spacing between windows -- see ``clusters.median_window_step``
+    for why a single sampled gap is wrong under informative-site windowing."""
+    return median_window_step(result)
 
 
 def _is_sibling(ev: SiblingEvidence, params, min_run_windows: int) -> bool:
