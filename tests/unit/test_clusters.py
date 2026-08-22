@@ -6,7 +6,12 @@ import random
 from pathlib import Path
 
 from tessera.recomb.analyze import analyze
-from tessera.recomb.clusters import all_singletons, cluster_references, clustered_view
+from tessera.recomb.clusters import (
+    all_singletons,
+    cluster_references,
+    clustered_view,
+    median_window_step,
+)
 from tessera.recomb.regions import RegionParams, call_regions
 from tessera.recomb.similarity import compute_similarity
 
@@ -130,3 +135,36 @@ def test_cluster_caller_excludes_sibling_lineage_and_calls_one_region(tmp_path) 
     minor_regions = [r for r in regions if r.minor_parent.startswith("pb")]
     assert len(minor_regions) == 1  # one region, not fragments
     assert minor_regions[0].minor_cluster_size == 3  # reported as a pooled lineage
+
+
+# --- window spacing --------------------------------------------------------
+
+def test_median_window_step_is_robust_to_uneven_spacing():
+    """Window spacing must not be read off a single sampled gap.
+
+    Under base-pair windowing every window is `window_step` apart, so the first gap
+    is the spacing. Under *informative-site* windowing -- which engages automatically
+    below ~8% divergence, exactly where the low-divergence pathogens live -- positions
+    are midpoints of informative-site windows and are not uniformly spaced. Taking
+    positions[1] - positions[0] then generalises one local gap to the whole genome.
+    """
+    uniform = _Positions([0, 100, 200, 300, 400])
+    assert median_window_step(uniform) == 100
+
+    # dense at the start, sparse later: the first gap is unrepresentative
+    uneven = _Positions([0, 5, 10, 20, 400, 900, 1600])
+    assert uneven.positions[1] - uneven.positions[0] == 5   # what the old code used
+    assert median_window_step(uneven) == 195                # the honest central value
+
+
+def test_median_window_step_degenerate_inputs():
+    assert median_window_step(_Positions([])) == 1
+    assert median_window_step(_Positions([42])) == 1
+    assert median_window_step(_Positions([7, 7, 7])) == 1   # never returns 0
+
+
+class _Positions:
+    """Minimal stand-in: median_window_step reads only `positions`."""
+
+    def __init__(self, positions):
+        self.positions = positions

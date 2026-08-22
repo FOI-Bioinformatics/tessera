@@ -46,6 +46,26 @@ def _window_bounds(result: WindowSimilarity, window_size: int) -> list[tuple[int
     return [(p - half, p - half + window_size) for p in result.positions]
 
 
+def median_window_step(result) -> int:
+    """Typical column distance between consecutive windows, as a positive int.
+
+    Converting a base-pair threshold like ``--min-region`` into a window count needs
+    the spacing between windows. Under base-pair windowing every gap equals
+    ``window_step``, so any one of them will do. Under **informative-site windowing**
+    -- automatic below ~8 % divergence, which is exactly where the low-divergence
+    pathogens (mpox, VZV, ebola, within-Omicron) are analysed -- ``positions`` are the
+    midpoints of informative-site windows, and their spacing tracks how densely
+    polymorphic sites happen to fall. Reading one sampled gap and applying it
+    genome-wide then over- or under-states the threshold wherever site density differs
+    from that sample; the median is the honest central estimate.
+    """
+    positions = result.positions
+    if len(positions) < 2:
+        return 1
+    gaps = np.diff(np.asarray(positions, dtype=np.int64))
+    return max(1, int(np.median(gaps)))
+
+
 def _max_low_run(
     comp_cumsum: np.ndarray, match_cumsum: np.ndarray,
     bounds: list[tuple[int, int]], t_floor: float,
@@ -93,7 +113,7 @@ def cluster_references(
     if len(labels) < 2:
         return [[label] for label in labels]
     bounds = _window_bounds(result, window_size)
-    step = (result.positions[1] - result.positions[0]) if len(result.positions) > 1 else window_size
+    step = median_window_step(result) if len(result.positions) > 1 else window_size
     min_run = max(1, math.ceil(params.min_region / max(step, 1)))
     t_floor = params.cluster_merge_identity
 

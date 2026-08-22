@@ -39,6 +39,16 @@ All notable changes to Tessera are recorded here. The format follows
   as well -- PHI establishes that the alignment carries recombination, the Rmin intervals say
   where. On a clonal panel (PHI p = 0.16, Rmin = 292) the flag is now `no`; on a true recombinant
   (PHI p = 0.001, Rmin = 312) it remains `yes`.
+- **Window spacing is no longer read off a single sampled gap.** `clusters.py` and `siblings.py`
+  converted a base-pair threshold (`--min-region`) into a window count using
+  `positions[1] - positions[0]`. That is exact under base-pair windowing, where every gap equals
+  `window_step`, but wrong under **informative-site windowing** -- automatic below ~8 % divergence,
+  so precisely for the low-divergence pathogens (mpox, VZV, ebola, within-Omicron) -- where
+  positions are midpoints of informative-site windows and their spacing tracks how densely
+  polymorphic sites fall. On a constructed alignment the true spacing ranged 9-765 columns while
+  the code used 13 throughout. Both sites now share `clusters.median_window_step`. Since the
+  affected code decides lineage clustering and sibling exclusion, the change was validated on the
+  real 24-pathogen harness: sensitivity 30/30, specificity 10/10, 0 false calls.
 - **RNA-alphabet input is no longer silently mis-read.** `U` was not a canonical base and no
   `U`->`T` normalisation existed anywhere, in a tool whose target domain is RNA viruses. A single
   U-alphabet record silently changed the result for *every* reference -- in one check it cut a
