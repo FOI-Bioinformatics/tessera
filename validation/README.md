@@ -325,11 +325,27 @@ python validation/run_reassort_benchmark.py            # 15 clonal + 15 reassort
 python validation/run_reassort_benchmark.py --n 25
 ```
 
-Measured (479 cross-typed strains; 10 clonal + 10 reassortant): **precision 0.83, recall 1.00,
-F1 0.91** -- every reassortant is caught, and the two false positives quantify the documented
-cross-typing-coverage limit (a clonal isolate whose exact strain is not in both segments' nearest
-top-k can read `reassortant`; see `docs/reference-panels.md`). The pure confusion/F1 scorer is
-unit-tested in CI. Recorded as measured, not tuned.
+Measured (471 cross-typed strains; 15 clonal + 15 reassortant, seeded so runs are comparable):
+**precision 1.00, recall 0.80, F1 0.89** -- no clonal strain is called reassortant, at the cost
+of missing three of fifteen genuine reassortants.
+
+The false positives this benchmark used to show were **not** an inherent cross-typing-coverage
+limit, as previously recorded here. They were an artifact of the candidate cap: `TOP_K` truncated
+each segment's candidate list by *rank* before `constellation._near_best` applied the ANI
+`margin`, so when more than `TOP_K` strains sat inside that window a genuinely shared parent
+could be cut, and two segments of one clonal strain read as having different parents. Capping so
+the margin window is never truncated removes them. Matched, seeded before/after:
+
+| candidate cap | TP | FP | FN | precision | recall | F1 |
+|---|---|---|---|---|---|---|
+| rank-only (`ranked[:TOP_K]`) | 14 | 3 | 1 | 0.82 | 0.93 | **0.87** |
+| margin-aware | 12 | 0 | 3 | 1.00 | 0.80 | **0.89** |
+
+Recall drops because the old behaviour bought sensitivity by accident: an arbitrarily narrowed
+near-best set made shared parents harder to find, so genuine reassortants stood out more. The
+principled lever for that trade is `--margin`, which is documented and means something, rather
+than a rank cap that tightened it as a side effect. The pure confusion/F1 scorer is unit-tested
+in CI. Recorded as measured, not tuned.
 
 ## Method comparison (`run_method_comparison.py`)
 

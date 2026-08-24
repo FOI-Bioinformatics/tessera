@@ -39,6 +39,15 @@ All notable changes to Tessera are recorded here. The format follows
   as well -- PHI establishes that the alignment carries recombination, the Rmin intervals say
   where. On a clonal panel (PHI p = 0.16, Rmin = 292) the flag is now `no`; on a true recombinant
   (PHI p = 0.001, Rmin = 312) it remains `yes`.
+- **Reassortment: the candidate cap no longer truncates the near-best ANI window.** `TOP_K` cut
+  each segment's candidate list by *rank* before `constellation._near_best` applied the ANI
+  `margin`, so when more than `TOP_K` strains sat inside that window a genuinely shared parent
+  could be dropped and two segments of one clonal strain read as having different parents -- a
+  clonal isolate reported as a reassortant. `validation/README.md` recorded this as an inherent
+  cross-typing-coverage limit; it was not. On the seeded flu H3N2 benchmark the false positives
+  go from 3 to 0 (precision 0.82 -> 1.00, F1 0.87 -> 0.89), at the cost of recall 0.93 -> 0.80 --
+  the old behaviour gained sensitivity by accident, from an arbitrarily narrowed near-best set.
+  `--margin` is the principled lever for that trade.
 - **Window spacing is no longer read off a single sampled gap.** `clusters.py` and `siblings.py`
   converted a base-pair threshold (`--min-region`) into a window count using
   `positions[1] - positions[0]`. That is exact under base-pair windowing, where every gap equals
