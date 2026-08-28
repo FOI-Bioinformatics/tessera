@@ -1,0 +1,61 @@
+name: Release
+
+# Fires on a version tag. Builds the distribution, checks it, verifies the console
+# script runs from the built wheel, and attaches the artifacts to the GitHub Release.
+#
+# It deliberately does NOT publish to PyPI. A release to a public index cannot be
+# undone -- the version name is burned even if the file is yanked -- so that step
+# should be a decision, not a side effect of pushing a tag. To enable it later:
+# configure a trusted publisher for this repository on PyPI, add a `pypi`
+# environment here with whatever approvals you want, and append a job with
+# `permissions: id-token: write` running `pypa/gh-action-pypi-publish`.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Check the tag matches the package version
+        # A tag that disagrees with the packaged version produces artifacts nobody can
+        # trace back. Fail here rather than publish the mismatch.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(python -c 'import tessera; print(tessera.__version__)')"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package version $pkg"
+            exit 1
+          fi
+          echo "version $pkg"
+
+      - name: Build and check
+        run: |
+          python -m pip install build twine
+          python -m build
+          python -m twine check dist/*
+
+      - name: Verify the console script runs from the built wheel
+        run: |
+          python -m venv /tmp/venv
+          /tmp/venv/bin/pip install --quiet dist/*.whl
+          /tmp/venv/bin/tessera --version
+          /tmp/venv/bin/tessera recomb --help > /dev/null
+
+      - name: Attach the distribution to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

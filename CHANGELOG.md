@@ -6,6 +6,8 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-28
+
 ### Added
 
 - **`CITATION.cff` and `CONTRIBUTING.md`.** Tessera had no machine-readable citation despite
@@ -394,3 +396,7 @@ simulated recombination against a documented expectation, recording measured res
   false-call rate. All four callers (3SEQ, MaxChi, GENECONV, and the HMM segment test) now gate on
   the q-value; detection sensitivity is unchanged (30/30 on the hybrid suite, including the
   low-divergence case) with fewer false positives.
+
+[Unreleased]: https://github.com/FOI-Bioinformatics/tessera/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/FOI-Bioinformatics/tessera/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/FOI-Bioinformatics/tessera/releases/tag/v1.0.0
