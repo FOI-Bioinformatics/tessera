@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tessera.discover import iterate
 from tessera.discover.blast import Hit
 from tessera.discover.iterate import FillParams, fill_references
@@ -258,6 +260,81 @@ def test_fetch_diverse_broadens_downloads_all_and_caches(monkeypatch, tmp_path, 
     cached = iterate._fetch_diverse(params, logger)
     assert calls["fetch"] == before  # network skipped
     assert len(cached) == 8  # the full cached set is returned (dereplicated downstream)
+
+
+def test_interrupted_fetch_leaves_no_reusable_cache(monkeypatch, tmp_path, logger):
+    """A fetch that dies part way must not leave a panel the next run trusts.
+
+    Panel composition decides which donors are findable, so silently reusing a
+    truncated set narrows detection without saying so.
+    """
+    from tessera.discover import iterate
+    from tessera.discover import pool as pool_mod
+    from tessera.discover.iterate import FillParams
+
+    calls = {"fetch": 0}
+
+    def dying_fetch(taxon, d, *, refseq=True, complete_only=False, released_after=None,
+                    limit=None, logger):
+        calls["fetch"] += 1
+        for i in range(3):  # some genomes land on disk ...
+            (d / f"G{i}.fasta").write_text(">x\nA\n")
+        raise KeyboardInterrupt("user pressed Ctrl-C mid-fetch")
+
+    monkeypatch.setattr(pool_mod, "fetch_ncbi_virus", dying_fetch)
+    params = FillParams(
+        query=tmp_path / "q.fasta", collection=None, output=tmp_path / "o",
+        taxon="SARS-CoV-2", source_refseq=False, cache_dir=tmp_path / "cache",
+    )
+    with pytest.raises(KeyboardInterrupt):
+        iterate._fetch_diverse(params, logger)
+
+    # ... but nothing is installed, and a retry goes back to the network.
+    cache_root = tmp_path / "cache" / "ncbi_virus"
+    assert not cache_root.exists() or not any(p.is_dir() for p in cache_root.iterdir())
+
+    def good_fetch(taxon, d, *, refseq=True, complete_only=False, released_after=None,
+                   limit=None, logger):
+        calls["fetch"] += 1
+        (d / "G0.fasta").write_text(">x\nA\n")
+        return [d / "G0.fasta"]
+
+    monkeypatch.setattr(pool_mod, "fetch_ncbi_virus", good_fetch)
+    (tmp_path / "o").mkdir(exist_ok=True)
+    assert len(iterate._fetch_diverse(params, logger)) == 1
+    assert calls["fetch"] == 2  # the interrupted attempt was not reused
+
+
+def test_fetch_scope_does_not_share_a_cache_slot(monkeypatch, tmp_path, logger):
+    """--source-refseq and the default ask for different genome sets."""
+    from tessera.discover import iterate
+    from tessera.discover import pool as pool_mod
+    from tessera.discover.iterate import FillParams
+
+    def fake_fetch(taxon, d, *, refseq=True, complete_only=False, released_after=None,
+                   limit=None, logger):
+        # Enough RefSeq genomes to clear SEED_MIN_DIVERSE, so the two scopes stay distinct
+        # instead of both broadening to the complete set.
+        name = "refseq" if refseq else "complete"
+        written = []
+        for i in range(4):
+            p = d / f"{name}{i}.fasta"
+            p.write_text(">x\nA\n")
+            written.append(p)
+        return written
+
+    monkeypatch.setattr(pool_mod, "fetch_ncbi_virus", fake_fetch)
+    out = tmp_path / "o"
+    out.mkdir()
+    common = {"query": tmp_path / "q.fasta", "collection": None, "output": out,
+              "taxon": "SARS-CoV-2", "cache_dir": tmp_path / "cache"}
+
+    complete = iterate._fetch_diverse(FillParams(source_refseq=False, **common), logger)
+    refseq = iterate._fetch_diverse(FillParams(source_refseq=True, **common), logger)
+
+    assert all(p.name.startswith("complete") for p in complete)
+    # The RefSeq request gets its own slot, not the complete set cached a moment ago.
+    assert all(p.name.startswith("refseq") for p in refseq)
 
 
 def test_dominant_lineage_token_extracted_from_titles():
