@@ -1,0 +1,71 @@
+cff-version: 1.2.0
+title: "Tessera: reference-anchored detection of recombination in viral genomes"
+message: "If you use Tessera in work you publish, please cite it."
+type: software
+authors:
+  - name: "FOI Bioinformatics"
+    website: "https://github.com/FOI-Bioinformatics"
+repository-code: "https://github.com/FOI-Bioinformatics/tessera"
+license: MIT
+version: 1.0.0
+abstract: >-
+  Tessera detects recombination in a query genome against a reference panel. It builds a
+  reference-anchored pseudo-MSA, scans it in sliding windows, and calls recombinant
+  regions with an ensemble of complementary methods: an HMM segmentation caller, a
+  scan-aware 3SEQ triplet test, MaxChi, and Bootscan, alongside a parent-free PHI/Rmin
+  diagnostic that fires even when the true donor is absent from the panel. It is an
+  indicative screen rather than a full phylogenetic test; strong candidates should be
+  confirmed with a dedicated method.
+keywords:
+  - bioinformatics
+  - recombination
+  - virus
+  - genomics
+  - phylogenetics
+references:
+  - type: article
+    title: "The PHI test: a statistical test for detecting the presence of recombination"
+    authors:
+      - family-names: Bruen
+        given-names: "Trevor C."
+      - family-names: Philippe
+        given-names: Hervé
+      - family-names: Bryant
+        given-names: David
+    journal: Genetics
+    volume: 172
+    issue: 4
+    start: 2665
+    end: 2681
+    year: 2006
+    doi: 10.1534/genetics.105.048975
+  - type: article
+    title: "Statistical properties of the number of recombination events in the history of a sample of DNA sequences"
+    authors:
+      - family-names: Hudson
+        given-names: "Richard R."
+      - family-names: Kaplan
+        given-names: "Norman L."
+    journal: Genetics
+    volume: 111
+    issue: 1
+    start: 147
+    end: 164
+    year: 1985
+    doi: 10.1093/genetics/111.1.147
+  - type: article
+    title: "A modified Bonferroni method for discrete data"
+    authors:
+      - family-names: Boni
+        given-names: "Maciej F."
+      - family-names: Posada
+        given-names: David
+      - family-names: Feldman
+        given-names: "Marcus W."
+    journal: Genetics
+    volume: 176
+    issue: 2
+    start: 1035
+    end: 1047
+    year: 2007
+    doi: 10.1534/genetics.106.068874

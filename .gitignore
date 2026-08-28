@@ -1,7 +1,5 @@
 # user-added exclusions
 wiki/
-example_data/
-README.md
 validation/data/
 reports/
 .DS_Store

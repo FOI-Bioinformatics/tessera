@@ -5,12 +5,28 @@ on:
     branches: [main]
   pull_request:
 
+# A superseded push should not keep burning runners.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint-and-test:
-    runs-on: ubuntu-latest
+    # macOS is included because the project is developed on Darwin/arm64 and
+    # docs/aligners.md records conda-build problems specific to that platform. Only
+    # one Python version there: the point is to catch platform-specific breakage
+    # (path handling, os.replace across filesystems, subprocess behaviour), not to
+    # re-run the whole matrix.
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python-version: ["3.11", "3.12", "3.13"]
+        include:
+          - os: macos-latest
+            python-version: "3.13"
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - name: Set up Python ${{ matrix.python-version }}
@@ -21,20 +37,52 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
-      - name: Install mafft aligner
+      - name: Install mafft aligner (Linux)
         # mafft is the default per-genome aligner and the only external binary the
         # requires_binary tests need; it ships in the ubuntu repos, so the workflow
         # stays pip-only (no conda). The aligner integration test runs in a separate
         # step below.
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y mafft
+      - name: Install mafft aligner (macOS)
+        if: runner.os == 'macOS'
+        run: brew install mafft
       - name: Lint
         run: ruff check src tests validation
+      - name: Type check
+        # Non-blocking for now: the codebase is ~91% annotated but has never been
+        # type-checked, so there is an existing backlog. It already found one real
+        # defect (a None reaching lineage_of). Flip to blocking once the baseline is
+        # clean, and delete this comment when you do.
+        continue-on-error: true
+        run: mypy
       - name: Unit and integration tests
         # The coverage floor is anchored on the pure suite (binary-gated tests run in
-        # the next step). It guards the current level (about 85 percent) against erosion.
+        # the next step). It guards the current level (about 86 percent) against erosion.
         run: pytest -q -m "not requires_binary" --cov=tessera --cov-report=term --cov-fail-under=80
       - name: Aligner integration tests (requires_binary)
         # Runs the mafft build_msa -> run_recomb end-to-end test with mafft installed
         # above. All requires_binary tests are runnable with mafft alone; heavier
         # aligners remain covered by the opt-in validation/ harnesses, not CI.
         run: pytest -q -m requires_binary
+
+  build:
+    # Packaging breaks quietly and is otherwise only discovered at release time.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Build and check the distribution
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          python -m twine check dist/*
+      - name: Verify the console script runs from the built wheel
+        run: |
+          python -m venv /tmp/venv
+          /tmp/venv/bin/pip install --quiet dist/*.whl
+          /tmp/venv/bin/tessera --version
+          /tmp/venv/bin/tessera recomb --help > /dev/null
