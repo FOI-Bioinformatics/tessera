@@ -7,7 +7,7 @@ authors:
     website: "https://github.com/FOI-Bioinformatics"
 repository-code: "https://github.com/FOI-Bioinformatics/tessera"
 license: MIT
-version: 1.0.0
+version: 1.1.0
 abstract: >-
   Tessera detects recombination in a query genome against a reference panel. It builds a
   reference-anchored pseudo-MSA, scans it in sliding windows, and calls recombinant
