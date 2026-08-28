@@ -6,7 +6,7 @@ from pathlib import Path
 
 import typer
 
-from .main import _require_choice, app, get_logger, stage_errors
+from .main import _require_choice, _require_range, app, get_logger, stage_errors
 
 
 @app.command()
@@ -37,8 +37,8 @@ def recomb(
     min_methods: int = typer.Option(
         1, "--min-methods",
         help="Callers that must independently find a region before it is reported "
-        "(default 1: report the union). Raise to 2 to require corroboration -- a large\n"
-        "win on a redundant panel with several near-equidistant relatives of the "
+        "(default 1: report the union). Raise to 2 to require corroboration -- a large win "
+        "on a redundant panel with several near-equidistant relatives of the "
         "query, but it costs true detections on a curated panel, and at very low "
         "divergence only one caller may have power at all. Clamped to the number "
         "of callers actually run.",
@@ -141,6 +141,22 @@ def recomb(
     logger = get_logger()
     with stage_errors(logger):
         _require_choice(plot_format, {"pdf", "png", "svg"}, "--plot-format")
+        # Bound the numeric options here: out of range they reach the statistics and
+        # surface as an internal exception under "Unexpected error".
+        _require_range(alpha, "--alpha", lo=0.0, hi=1.0, lo_open=True, hi_open=True)
+        _require_range(jump_rate, "--jump-rate", lo=0.0, hi=1.0, lo_open=True, hi_open=True)
+        _require_range(top_n, "--top-n", lo=1)
+        _require_range(min_methods, "--min-methods", lo=1)
+        _require_range(window_size, "--window-size", lo=1)
+        _require_range(window_step, "--window-step", lo=1)
+        _require_range(informative_window, "--informative-window", lo=1)
+        _require_range(informative_step, "--informative-step", lo=1)
+        _require_range(phi_window, "--phi-window", lo=1)
+        _require_range(margin, "--margin", lo=0.0, hi=1.0)
+        _require_range(reattribute_margin, "--reattribute-margin", lo=0.0, hi=1.0)
+        _require_range(coverage_rel_drop, "--coverage-rel-drop", lo=0.0, hi=1.0)
+        if coverage_floor is not None:
+            _require_range(coverage_floor, "--coverage-floor", lo=0.0, hi=1.0)
         methods = parse_methods(method)
         params = RecombParams(
             msa=msa,

@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from ..core.errors import UserInputError
 from ..core.io import write_fasta_record
 
 # Complement table over the IUPAC subset the original handled.
@@ -65,12 +66,21 @@ def xmfa_to_fasta(
     with open(xmfa_path) as xmfa:
         for line in xmfa:
             if _PATTERN_START.search(line):
-                curr_seq = int(line.split(":")[0].split(" ")[1])
+                # progressiveMauve output truncated by a disk-full or an OOM kill would
+                # otherwise fail here with a bare IndexError or ValueError, several
+                # frames from anything that names the file.
+                try:
+                    curr_seq = int(line.split(":")[0].split(" ")[1])
+                    startend = line.split(" ")[1].split(":")[1].split("-")
+                    p1, p2 = int(startend[0]), int(startend[1])
+                except (IndexError, ValueError) as exc:
+                    raise UserInputError(
+                        f"Malformed alignment header in {xmfa_path}: {line.strip()!r}. "
+                        "The aligner's output looks truncated or is not XMFA; check "
+                        "that progressiveMauve completed."
+                    ) from exc
                 curr_pos = 0
                 a_gen[alignment_number][curr_seq] = {}
-
-                startend = line.split(" ")[1].split(":")[1].split("-")
-                p1, p2 = int(startend[0]), int(startend[1])
                 lo, hi = (p1, p2) if p1 < p2 else (p2, p1)
                 a_gen[alignment_number][curr_seq]["p1"] = lo
                 a_gen[alignment_number][curr_seq]["p2"] = hi
@@ -81,8 +91,14 @@ def xmfa_to_fasta(
                 a_gen[alignment_number] = {}
                 rm_h[alignment_number] = {}
             elif _PATTERN_SEQ_NAME.search(line):
-                num = int(line.split("Sequence")[1].split("File")[0])
-                name = line.split("\t")[1].strip()
+                try:
+                    num = int(line.split("Sequence")[1].split("File")[0])
+                    name = line.split("\t")[1].strip()
+                except (IndexError, ValueError) as exc:
+                    raise UserInputError(
+                        f"Malformed sequence-file header in {xmfa_path}: "
+                        f"{line.strip()!r}."
+                    ) from exc
                 name2num[name] = num
                 num2name[num] = name
             elif _PATTERN_COMMENT.search(line):

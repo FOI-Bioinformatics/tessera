@@ -28,7 +28,7 @@ from ..core.binaries import BinarySpec
 from ..core.errors import UserInputError
 from ..core.io import read_fasta, strip_sequence_extension, write_fasta_record
 from ..core.plugins import ToolCapabilities
-from ..core.process import run_tool
+from ..core.process import FETCH_TIMEOUT, default_timeout, run_tool
 from ..recomb.typing import is_recombinant_lineage
 from .blast import BlastError, blast_subsequence
 from .panel import dereplicate, skani_available, skani_query_ani
@@ -155,7 +155,8 @@ def fetch_ncbi_virus(
         command += _scope_flags(refseq, complete_only, released_after)
         scope = "RefSeq" if refseq else ("complete" if complete_only else "all")
         logger.info("Fetching %s '%s' genomes from NCBI Virus...", scope, taxon)
-        run_tool(DATASETS, command, logger=logger, log_prefix="datasets")
+        run_tool(DATASETS, command, logger=logger, log_prefix="datasets",
+                 timeout=default_timeout(FETCH_TIMEOUT))
         with zipfile.ZipFile(zip_path) as zf:
             zf.extractall(tmp)
         data_dir = Path(tmp) / "ncbi_dataset" / "data"

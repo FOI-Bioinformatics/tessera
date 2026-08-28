@@ -37,6 +37,32 @@ def _require_choice(value: str, choices: set[str], label: str) -> None:
         )
 
 
+def _require_range(
+    value: float,
+    label: str,
+    *,
+    lo: float | None = None,
+    hi: float | None = None,
+    lo_open: bool = False,
+    hi_open: bool = False,
+) -> None:
+    """Reject an out-of-range numeric option with a message the user can act on.
+
+    Without this an out-of-range value reaches the statistics and surfaces as an
+    internal exception under "Unexpected error" -- ``--alpha 0`` reports
+    ``p must be in the range 0.0 < p < 1.0``, which reads like a bug in Tessera
+    rather than a bad argument. Bounds are inclusive unless ``lo_open``/``hi_open``.
+    """
+    too_low = lo is not None and (value <= lo if lo_open else value < lo)
+    too_high = hi is not None and (value >= hi if hi_open else value > hi)
+    if not (too_low or too_high):
+        return
+    lo_txt = "" if lo is None else f"{'>' if lo_open else '>='} {lo:g}"
+    hi_txt = "" if hi is None else f"{'<' if hi_open else '<='} {hi:g}"
+    bounds = " and ".join(t for t in (lo_txt, hi_txt) if t)
+    raise UserInputError(f"Invalid {label} {value:g}. It must be {bounds}.")
+
+
 def _parse_key_values(items: list[str], label: str) -> dict[str, str]:
     """Parse repeated ``key=value`` options into a dict (used for tool extras)."""
     out: dict[str, str] = {}

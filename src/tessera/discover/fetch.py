@@ -15,7 +15,7 @@ from ..core.binaries import BinarySpec
 from ..core.errors import OutputError
 from ..core.io import strip_sequence_extension
 from ..core.plugins import ToolCapabilities
-from ..core.process import run_tool
+from ..core.process import QUERY_TIMEOUT, default_timeout, run_tool
 
 EFETCH = ToolCapabilities(
     name="efetch",
@@ -41,6 +41,7 @@ def efetch_fasta(accession: str, collection_dir: Path, logger: logging.Logger) -
         EFETCH,
         ["efetch", "-db", "nuccore", "-id", accession, "-format", "fasta"],
         logger=logger, log_prefix=f"efetch:{accession}", stdout_path=dest,
+        timeout=default_timeout(QUERY_TIMEOUT),
     )
     if not dest.exists() or dest.stat().st_size == 0 or not dest.read_text().startswith(">"):
         raise OutputError(f"efetch returned no FASTA for accession '{accession}'.")
