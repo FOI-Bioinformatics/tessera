@@ -103,6 +103,23 @@ def test_window_larger_than_alignment_raises(tmp_path: Path) -> None:
         compute_similarity(str(msa), "q", window_size=100, window_step=10)
 
 
+def test_duplicate_identifiers_raise(tmp_path: Path) -> None:
+    # A repeated header would otherwise overwrite the earlier row in the label ->
+    # sequence mapping, shrinking the panel without saying so.
+    msa = tmp_path / "dup.fasta"
+    msa.write_text(">query\nACGTACGT\n>refA\nACGTACGT\n>refA\nTTTTTTTT\n")
+    with pytest.raises(UserInputError, match="Duplicate sequence identifier"):
+        _read_alignment(str(msa))
+
+
+def test_ragged_rows_name_the_offending_record(tmp_path: Path) -> None:
+    # Biopython's own alignment reader raises first and names no record; the error
+    # the user sees should identify which sequence is the wrong length.
+    msa = write_fasta(tmp_path / "m.fasta", {"query": "ACGTACGT", "refA": "ACGT"})
+    with pytest.raises(UserInputError, match="refA"):
+        _read_alignment(str(msa))
+
+
 # --- informative-site windowing (low-divergence mode) ----------------------
 
 def test_informative_column_mask_flags_only_variable_columns(tmp_path: Path) -> None:

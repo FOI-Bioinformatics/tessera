@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
-from Bio import AlignIO
+from Bio import SeqIO
 
 from ..core.errors import UserInputError
 
@@ -136,13 +136,25 @@ def _read_alignment(msa_path: str) -> dict[str, np.ndarray]:
     equal, and Tessera's inputs are overwhelmingly RNA viruses whose sequences are
     served in either alphabet. Everything else is left alone -- gaps, ``N`` and the
     IUPAC ambiguity codes are meant to be non-comparable.
+
+    Records are streamed with :func:`SeqIO.parse` rather than read as an alignment
+    so that the two structural problems below are reported against the offending
+    record. ``AlignIO.read`` raises its own length error first, which names no
+    record, and it admits repeated identifiers that would then collide silently in
+    ``rows``.
     """
-    alignment = AlignIO.read(msa_path, "fasta")
     rows: dict[str, np.ndarray] = {}
+    duplicates: list[str] = []
     width: int | None = None
-    for record in alignment:
+    for record in SeqIO.parse(msa_path, "fasta"):
         text = str(record.seq).upper().replace("U", "T")
-        seq = np.frombuffer(text.encode("ascii"), dtype=np.uint8)
+        try:
+            seq = np.frombuffer(text.encode("ascii"), dtype=np.uint8)
+        except UnicodeEncodeError as exc:
+            raise UserInputError(
+                f"Sequence '{record.id}' contains non-ASCII characters; "
+                "the input must be a plain nucleotide FASTA."
+            ) from exc
         if width is None:
             width = seq.size
         elif seq.size != width:
@@ -150,7 +162,16 @@ def _read_alignment(msa_path: str) -> dict[str, np.ndarray]:
                 f"Sequence '{record.id}' length {seq.size} != alignment width {width}; "
                 "the input must be an aligned FASTA (all rows equal length)."
             )
+        if record.id in rows:
+            duplicates.append(record.id)
         rows[record.id] = seq
+    if duplicates:
+        listed = ", ".join(sorted(set(duplicates)))
+        raise UserInputError(
+            f"Duplicate sequence identifier(s) in {msa_path}: {listed}. "
+            "Every record needs a unique name, otherwise sequences are silently "
+            "discarded and the panel is smaller than it appears."
+        )
     if not rows:
         raise UserInputError(f"No sequences found in MSA: {msa_path}")
     return rows

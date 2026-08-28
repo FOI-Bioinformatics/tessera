@@ -206,6 +206,18 @@ def run_recomb(
         window_step=params.window_step,
         metric=params.metric,
     )
+    # Recombination is a switch between donors, so it takes two references before there
+    # is anything to switch between. Below that every caller early-returns on
+    # `len(labels) < 2` and the run completes reporting no regions -- indistinguishable
+    # from a genuine clean negative. Refuse, so "could not test" is never read as
+    # "tested and found nothing".
+    if len(bp_result.similarities) < 2:
+        raise UserInputError(
+            f"The alignment holds {len(bp_result.similarities)} reference(s) besides the "
+            f"query '{query_label}'; detection needs at least 2 so there are two donors "
+            "to switch between. Add references to the panel -- this scan could not "
+            "report recombination even if it were present."
+        )
     # Only canonical bases count toward a window, so a record that is mostly something
     # else contributes almost nothing. Say so rather than let it drop out in silence.
     for label, fraction in low_canonical_records(bp_result.rows):

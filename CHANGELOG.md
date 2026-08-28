@@ -30,6 +30,27 @@ All notable changes to Tessera are recorded here. The format follows
 
 ### Fixed
 
+- **A panel too small to test is no longer reported as "no recombination".** Recombination is a
+  switch between donors, so it takes two references before there is anything to switch between.
+  Below that every caller early-returned on `len(labels) < 2`, `reconcile_major` yielded no major
+  parent and the coverage threshold collapsed to zero, so the scan finished successfully and
+  reported nothing found -- a result indistinguishable from a genuine clean negative on an
+  adequate panel. `run_recomb` now refuses an alignment carrying fewer than two references and
+  says why. The similarity engine itself is unchanged: computing per-window identity against a
+  single reference is still a meaningful operation, it is *calling recombination* on it that is
+  not.
+- **Duplicate sequence identifiers are rejected instead of silently discarding data.**
+  `Bio.AlignIO` preserves repeated headers, but the alignment was stored as a label to sequence
+  mapping, so only the last record with a given name survived: panel members vanished without a
+  message, the reported dataset count disagreed with the input FASTA, and a duplicated *query*
+  label meant the row actually analysed was whichever came last. Reading now collects duplicates
+  and raises, naming them.
+- **A ragged (unaligned) FASTA now names the offending record.** The check that does so was
+  unreachable: `AlignIO.read` raised `Sequences must all be the same length` first, which
+  identifies no record and surfaced through the CLI as an "Unexpected error". Records are read
+  with `SeqIO.parse` so Tessera's own message -- which gives the record and both lengths -- is
+  the one that fires. Non-ASCII input is likewise reported against the record rather than as a
+  raw `UnicodeEncodeError`.
 - **Bootscan is now gated on a null model.** It previously carried no significance test at all:
   `benjamini_hochberg` was applied in the HMM, 3SEQ and MaxChi callers but absent from
   `bootscan.py`, whose regions were built with neither `pvalue` nor `qvalue` and gated only on a
