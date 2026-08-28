@@ -52,9 +52,13 @@ def clade_markers(
 
     width = rows[query].size
     bases = np.array(sorted(CANONICAL_BASES), dtype=np.uint8)  # A C G T
-    counts = {c: np.stack([(np.array([rows[m] for m in members]) == b).sum(axis=0)
-                           for b in bases])  # (4, width)
-              for c, members in by_clade.items()}
+    # Stack each clade's members once, not once per base: the array(...) was inside the
+    # comprehension over the four bases, so every clade's (members x width) block was
+    # rebuilt four times.
+    counts = {}
+    for c, members in by_clade.items():
+        stack = np.array([rows[m] for m in members])  # (members, width)
+        counts[c] = np.stack([(stack == b).sum(axis=0) for b in bases])  # (4, width)
     total = sum(counts.values())  # (4, width) over all clades
     cols: dict[str, np.ndarray] = {}
     alleles: dict[str, np.ndarray] = {}

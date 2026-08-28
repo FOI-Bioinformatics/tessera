@@ -89,6 +89,12 @@ class RegionParams:
     # leaving distinct parents -- even diffusely-divergent ones a few % apart -- separate.
     cluster_merge_identity: float = 0.985
     cluster_min_refs: int = 4  # skip clustering below this many references (curated panels)
+    # ... and an upper bound. Clustering compares every pair, allocating two full-width
+    # cumulative-sum arrays per pair, so the cost grows quadratically with the panel: a
+    # 1000-genome panel is ~500k pairs. Above this, competing genomes individually is
+    # the lesser evil -- clustering exists to stop near-duplicates fragmenting a call,
+    # and a panel this large has been dereplicated upstream.
+    cluster_max_refs: int = 200
     # Reference genotypes (label -> clade) for the barcode caller's per-clade markers. Used
     # ONLY by that caller, never the genome competition, so it cannot reproduce the reverted
     # competition-layer pooling regression.
@@ -269,7 +275,8 @@ def _call_regions_hmm(
     # pooled lineages. A no-op for a curated panel (few refs, or all singletons).
     work = result
     cluster_size: dict[str, int] = {}
-    if params.cluster_lineages and len(result.similarities) >= params.cluster_min_refs:
+    n_refs = len(result.similarities)
+    if params.cluster_lineages and params.cluster_min_refs <= n_refs <= params.cluster_max_refs:
         clusters = cluster_references(result, window_size, params)
         if not all_singletons(clusters):
             work, cluster_size = clustered_view(result, clusters)

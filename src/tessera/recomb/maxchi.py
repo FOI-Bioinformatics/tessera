@@ -31,6 +31,12 @@ from .threeseq import (
 )
 
 _PERMUTATIONS = 20_000  # permutation null resolution (~1/_PERMUTATIONS floor)
+# Peak cells in any one permutation batch. Each batch holds several (batch, length)
+# int64 arrays, so an uncapped run on a donor with a few thousand discriminating sites
+# allocated hundreds of megabytes per array -- per candidate donor, once per reference.
+# This bounds the batch, not the permutation count: see maxchi_pvalue.
+_MAX_PERM_CELLS = 20_000_000
+
 
 
 def _chi2_2x2(a: int, b: int, c: int, d: int) -> float:
@@ -53,13 +59,9 @@ def maxchi_statistic(steps: np.ndarray, peak: int, trough: int) -> float:
     return _chi2_2x2(in_major, in_minor, total_major - in_major, total_minor - in_minor)
 
 
-def maxchi_pvalue(steps: np.ndarray, observed: float, *, seed: int = 0) -> float:
-    """Scan-aware permutation ``P(chi-square >= observed)``: each permutation of the walk
-    finds its own maximal-drawdown tract and that tract's chi-square (vectorised)."""
-    if observed <= 0.0 or steps.size < 2:
-        return 1.0
-    rng = np.random.default_rng(seed)
-    k, length = _PERMUTATIONS, steps.size
+def _exceedances(steps: np.ndarray, observed: float, k: int, rng) -> int:
+    """How many of ``k`` permutations reach ``observed``; vectorised over the batch."""
+    length = steps.size
     perm = steps[np.argsort(rng.random((k, length)), axis=1)]
     cum = np.hstack([np.zeros((k, 1), dtype=np.int64), np.cumsum(perm, axis=1)])
     runmax = np.maximum.accumulate(cum, axis=1)
@@ -81,7 +83,32 @@ def maxchi_pvalue(steps: np.ndarray, observed: float, *, seed: int = 0) -> float
     det = in_major.astype(np.float64) * out_minor - in_minor.astype(np.float64) * out_major
     denom = r1 * r2 * tot_major * tot_minor
     chi2 = np.where(denom > 0, n * det**2 / np.where(denom > 0, denom, 1), 0.0)
-    return float((np.count_nonzero(chi2 >= observed) + 1) / (k + 1))
+    return int(np.count_nonzero(chi2 >= observed))
+
+
+def maxchi_pvalue(steps: np.ndarray, observed: float, *, seed: int = 0) -> float:
+    """Scan-aware permutation ``P(chi-square >= observed)``: each permutation of the walk
+    finds its own maximal-drawdown tract and that tract's chi-square (vectorised).
+
+    The permutations are evaluated in batches sized so no intermediate exceeds
+    :data:`_MAX_PERM_CELLS`. Batching bounds peak memory *without* reducing the number
+    of permutations: each row is independent, so the exceedance counts simply add.
+    Capping the count instead was tried and reverted -- it engaged above a mere 1000
+    discriminating sites, which is an ordinary panel, and the coarser null cost real
+    detections on the specificity harness's positive control.
+    """
+    if observed <= 0.0 or steps.size < 2:
+        return 1.0
+    rng = np.random.default_rng(seed)
+    length = steps.size
+    batch = max(1, min(_PERMUTATIONS, _MAX_PERM_CELLS // max(1, length)))
+    exceed = 0
+    remaining = _PERMUTATIONS
+    while remaining > 0:
+        this = min(batch, remaining)
+        exceed += _exceedances(steps, observed, this, rng)
+        remaining -= this
+    return float((exceed + 1) / (_PERMUTATIONS + 1))
 
 
 def call_regions_maxchi(result: WindowSimilarity, analysis, params):
