@@ -30,6 +30,22 @@ All notable changes to Tessera are recorded here. The format follows
 
 ### Fixed
 
+- **NCBI requests are now paced, identified and retried.** Recruitment issued remote BLAST
+  submissions back to back across gaps and sub-tiles, against a shared public service whose
+  guidance is not to be contacted more than once every 10 seconds, with no retries and no way
+  to supply an API key. A tool installed on many machines that ignores those limits is
+  indistinguishable from abuse, and the practical result is a blocked address for whoever is
+  running it. Requests to each service are now spaced (10 s between BLAST submissions,
+  configurable with `TESSERA_BLAST_INTERVAL`; NCBI's 3-or-10 per second for E-utilities
+  depending on whether a key is set), `NCBI_API_KEY` and a contact address are passed to
+  EDirect through the environment -- which is how `efetch` and `datasets` accept them -- and
+  transient failures are retried with exponential backoff instead of losing the coverage gap
+  or seed window they were serving. A failure that persists is still raised: a search that
+  could not run and a search that found nothing are different outcomes.
+  Note that `--email` never reached the BLAST search and still cannot: Biopython's `qblast`
+  accepts neither an e-mail nor an API key, so the BLAST URL API is unauthenticated and
+  pacing is the only lever there. This is now stated in `docs/reference-panels.md` rather
+  than implied otherwise.
 - **`recombination_regions.tsv` rows now name the test behind their own `pvalue`.** The four
   callers do not share a statistic -- a one-sided sign test on discordant sites, an exact or
   permuted max-descent test, a scan-aware chi-square permutation, and a block-permutation run

@@ -12,6 +12,7 @@ import logging
 from dataclasses import dataclass
 
 from ..core.errors import TesseraError
+from ..core.ncbi import blast_throttle, resolve_email, with_retries
 
 
 class BlastError(TesseraError):
@@ -58,19 +59,30 @@ def blast_subsequence(
     except ImportError as exc:  # pragma: no cover - biopython is a hard dependency
         raise BlastError(f"Biopython BLAST is unavailable: {exc}") from exc
 
-    if email:
+    resolved_email = resolve_email(email)
+    if resolved_email:
         from Bio import Entrez
 
-        Entrez.email = email
+        # Sets the contact address for Entrez calls. Note that Biopython's `qblast`
+        # takes neither an email nor an api_key parameter, so the BLAST URL API below
+        # is unauthenticated whatever is passed here; pacing is the only lever we have.
+        Entrez.email = resolved_email
 
     logger.info("Submitting %d bp to NCBI %s/%s (this can take minutes)...",
                 len(seq), program, database)
     qblast_kwargs = {"hitlist_size": max_hits}
     if entrez_query:
         qblast_kwargs["entrez_query"] = entrez_query
-    try:
+
+    def _submit():
+        # Space submissions: this runs on every machine Tessera is installed on, and a
+        # gap-by-subtile sweep would otherwise fire them back to back.
+        blast_throttle.wait(logger)
         handle = NCBIWWW.qblast(program, database, seq, **qblast_kwargs)
-        record = NCBIXML.read(handle)
+        return NCBIXML.read(handle)
+
+    try:
+        record = with_retries(_submit, what="NCBI BLAST request", logger=logger)
     except Exception as exc:  # noqa: BLE001 - any failure becomes a clean skip
         raise BlastError(f"NCBI BLAST request failed: {exc}") from exc
 

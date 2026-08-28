@@ -27,6 +27,7 @@ from pathlib import Path
 from ..core.binaries import BinarySpec
 from ..core.errors import UserInputError
 from ..core.io import read_fasta, strip_sequence_extension, write_fasta_record
+from ..core.ncbi import eutils_env, eutils_throttle
 from ..core.plugins import ToolCapabilities
 from ..core.process import FETCH_TIMEOUT, default_timeout, run_tool
 from ..recomb.typing import is_recombinant_lineage
@@ -155,8 +156,9 @@ def fetch_ncbi_virus(
         command += _scope_flags(refseq, complete_only, released_after)
         scope = "RefSeq" if refseq else ("complete" if complete_only else "all")
         logger.info("Fetching %s '%s' genomes from NCBI Virus...", scope, taxon)
+        eutils_throttle.wait(logger)
         run_tool(DATASETS, command, logger=logger, log_prefix="datasets",
-                 timeout=default_timeout(FETCH_TIMEOUT))
+                 timeout=default_timeout(FETCH_TIMEOUT), extra_env=eutils_env())
         with zipfile.ZipFile(zip_path) as zf:
             zf.extractall(tmp)
         data_dir = Path(tmp) / "ncbi_dataset" / "data"

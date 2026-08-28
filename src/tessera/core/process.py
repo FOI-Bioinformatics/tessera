@@ -61,6 +61,7 @@ def run_tool(
     extra_mounts: Sequence[str] | None = None,
     stdout_path: Path | None = None,
     timeout: float | None = None,
+    extra_env: dict[str, str] | None = None,
 ) -> str:
     """Run ``command`` (an argument list) without a shell, returning its output.
 
@@ -78,10 +79,13 @@ def run_tool(
 
     ``timeout`` bounds the run in seconds (``None`` for no limit); exceeding it kills
     the tool and raises :class:`ToolExecutionError` rather than hanging the run.
+    ``extra_env`` adds variables to the child's environment -- some tools (EDirect)
+    take credentials that way rather than as flags.
     """
     cmd = [str(part) for part in command]
     prefix = f"[{log_prefix}] " if log_prefix else ""
     logger.debug("%srunning: %s", prefix, " ".join(cmd))
+    env = {**os.environ, **extra_env} if extra_env else None
 
     if stdout_path is not None:
         # Write beside the target, then rename: a partial file at the final path would
@@ -90,7 +94,8 @@ def run_tool(
         try:
             with open(partial, "w") as out:
                 proc = subprocess.run(
-                    cmd, stdout=out, stderr=subprocess.PIPE, text=True, timeout=timeout
+                    cmd, stdout=out, stderr=subprocess.PIPE, text=True,
+                    timeout=timeout, env=env,
                 )
         except subprocess.TimeoutExpired as exc:
             partial.unlink(missing_ok=True)
@@ -105,7 +110,9 @@ def run_tool(
             partial.unlink(missing_ok=True)
     else:
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=timeout, env=env
+            )
         except subprocess.TimeoutExpired as exc:
             raise _timeout_error(cmd, timeout) from exc
         output = (proc.stdout or "") + (proc.stderr or "")

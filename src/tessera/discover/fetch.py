@@ -14,6 +14,7 @@ from pathlib import Path
 from ..core.binaries import BinarySpec
 from ..core.errors import OutputError
 from ..core.io import strip_sequence_extension
+from ..core.ncbi import eutils_env, eutils_throttle, with_retries
 from ..core.plugins import ToolCapabilities
 from ..core.process import QUERY_TIMEOUT, default_timeout, run_tool
 
@@ -37,12 +38,19 @@ def efetch_fasta(accession: str, collection_dir: Path, logger: logging.Logger) -
     collection_dir.mkdir(parents=True, exist_ok=True)
     label = strip_sequence_extension(accession)
     dest = collection_dir / f"{label}.fasta"
-    run_tool(
-        EFETCH,
-        ["efetch", "-db", "nuccore", "-id", accession, "-format", "fasta"],
-        logger=logger, log_prefix=f"efetch:{accession}", stdout_path=dest,
-        timeout=default_timeout(QUERY_TIMEOUT),
-    )
+
+    def _fetch() -> None:
+        # Pace E-utilities calls and identify ourselves. EDirect takes the API key from
+        # the environment rather than as a flag, so this is the only way to pass it.
+        eutils_throttle.wait(logger)
+        run_tool(
+            EFETCH,
+            ["efetch", "-db", "nuccore", "-id", accession, "-format", "fasta"],
+            logger=logger, log_prefix=f"efetch:{accession}", stdout_path=dest,
+            timeout=default_timeout(QUERY_TIMEOUT), extra_env=eutils_env(),
+        )
+
+    with_retries(_fetch, what=f"efetch {accession}", logger=logger)
     if not dest.exists() or dest.stat().st_size == 0 or not dest.read_text().startswith(">"):
         raise OutputError(f"efetch returned no FASTA for accession '{accession}'.")
     return dest

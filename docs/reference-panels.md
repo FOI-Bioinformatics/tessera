@@ -116,6 +116,29 @@ tessera fill-references --query CRF01_AE.fasta --output filled/ --aligner mafft 
     --seed-mode parents --curate --email you@example.org
 ```
 
+## Talking to NCBI politely
+
+Recruitment queries public NCBI services that everyone shares, and NCBI publishes usage
+limits for them. Tessera observes those limits itself, because a tool installed on many
+machines that ignored them would be indistinguishable from abuse -- with a blocked
+address as the practical result for whoever is running it.
+
+| Variable | Effect |
+|---|---|
+| `NCBI_API_KEY` | Raises the E-utilities limit from 3 to 10 requests/second. Passed to EDirect (`efetch`, `datasets`) through the environment, which is how those tools accept it. [Get one from your NCBI account.](https://www.ncbi.nlm.nih.gov/account/) |
+| `NCBI_EMAIL` (or `EMAIL`, or `--email`) | Contact address, so NCBI can reach a heavy user before blocking them. |
+| `TESSERA_BLAST_INTERVAL` | Seconds between remote BLAST submissions (default 10, per NCBI's BLAST guidance). Set to `0` only when pointing at a BLAST service of your own. |
+| `TESSERA_TOOL_TIMEOUT` | Seconds before an external tool is stopped, or `none` for no limit. Downloads and queries carry a default; alignment deliberately does not, since a large panel legitimately runs for hours. |
+
+An important caveat: the **BLAST URL API is unauthenticated**. Biopython's `qblast`
+accepts neither an e-mail nor an API key, so `--email` reaches the E-utilities calls but
+not the BLAST search, and pacing is the only lever there. Supplying `NCBI_API_KEY` still
+helps `efetch` and `datasets`, which is where most of the request volume is.
+
+Transient network failures are retried with exponential backoff. A failure that persists
+is still reported: a search that could not run and a search that found nothing are
+different outcomes, and Tessera does not report the first as the second.
+
 ## Seed modes: where the starting references come from
 
 How the seed is chosen (`--seed-mode`) matters for a recombinant query. A whole-query
