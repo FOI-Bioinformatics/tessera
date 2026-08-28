@@ -8,6 +8,14 @@ All notable changes to Tessera are recorded here. The format follows
 
 ### Added
 
+- **`validation/run_caller_benchmark.py`** -- scores the *region callers* on the Jaya et al. (2023)
+  published simulated grid (Dryad doi:10.5061/dryad.d7wm37q6f), the part of Tessera comparable to
+  that study's sequence-level methods and previously never benchmarked. Reports a per-query rate
+  (which does not compound with the number of sampled queries) alongside the alignment-level one.
+  It measured a previously undocumented **upper** divergence bound: at the grid's highest mutation
+  rate the callers fire on 33 % of scans over clonal data and barely separate them from recombining
+  ones, so a high call rate on a saturated panel is noise rather than power. Documented in
+  `docs/detection-methods.md`, "The divergence window".
 - **`validation/run_specificity.py`** -- a harness that measures the false-positive *rate* on
   simulated clonal data, where the ground truth is known by construction: no recombination is
   introduced anywhere, so every region reported is a false positive. Four scenarios escalate the
