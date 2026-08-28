@@ -10,7 +10,11 @@ from __future__ import annotations
 
 import csv
 import logging
+import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 from tessera.recomb.ensemble import consensus_regions
 from tessera.recomb.regions import Region
@@ -121,3 +125,73 @@ def test_regions_tsv_marks_absent_values_na(tmp_path: Path) -> None:
     assert row["qvalue"] == "NA"
     assert row["test"] == "NA"
     assert row["statistic"] == "NA"
+
+
+# --- the other output files -----------------------------------------------
+#
+# Pinned so a change to any of them is deliberate. Two conventions coexist here and
+# the tests record that rather than hide it: snake_case headers in the machine-facing
+# files, Title Case in the two summary tables, and a `#` comment preamble on exactly
+# two files. A consumer has to skip `#` lines on those two.
+
+EXPECTED_HEADERS = {
+    "similarity_stats.tsv": [
+        "Dataset", "Tot windows", "Median similarity", "Windows >0", "Windows >99%",
+        "Windows >95%", "Windows >90%", "Windows >80%", "Windows >70%",
+    ],
+    "window_winners.tsv": ["Dataset", "Number of windows (ties included)"],
+    "coverage_gaps.tsv": [
+        "msa_start", "msa_end", "query_start", "query_end", "length_bp", "n_windows",
+        "best_reference", "mean_best_similarity", "kind",
+    ],
+    "recombination_profile.tsv": ["msa_pos", "query_pos", "phi"],
+    "recombination_methods.tsv": [
+        "minor_parent", "query_start", "query_end",
+        "hmm", "3seq", "maxchi", "bootscan", "parent_free_support",
+    ],
+}
+
+# Files that carry a `#` preamble before the header. Anything not listed must not,
+# so a plain reader keeps working on the rest.
+FILES_WITH_PREAMBLE = {"coverage_gaps.tsv", "recombination_profile.tsv"}
+
+
+@pytest.fixture(scope="module")
+def run_outputs(tmp_path_factory) -> Path:
+    """One real `tessera recomb` run over the shipped example (no aligner needed)."""
+    out = tmp_path_factory.mktemp("outputs") / "out"
+    done = subprocess.run(
+        [sys.executable, "-m", "tessera", "recomb",
+         "--msa", "example_data/divergent.msa.fasta", "--query", "query",
+         "--output", str(out), "--window-size", "300", "--window-step", "30",
+         "--plot-format", "png"],
+        capture_output=True, text=True, timeout=600,
+    )
+    assert done.returncode == 0, done.stderr
+    return out
+
+
+@pytest.mark.parametrize("filename", sorted(EXPECTED_HEADERS))
+def test_tsv_header_schema(run_outputs: Path, filename: str) -> None:
+    lines = (run_outputs / filename).read_text().splitlines()
+    header = next(line for line in lines if line and not line.startswith("#"))
+    assert header.split("\t") == EXPECTED_HEADERS[filename]
+
+
+@pytest.mark.parametrize("filename", sorted(EXPECTED_HEADERS))
+def test_only_the_documented_files_carry_a_comment_preamble(
+    run_outputs: Path, filename: str
+) -> None:
+    starts_with_comment = (run_outputs / filename).read_text().startswith("#")
+    assert starts_with_comment == (filename in FILES_WITH_PREAMBLE)
+
+
+def test_regions_tsv_has_no_preamble_in_a_real_run(run_outputs: Path) -> None:
+    # The most widely parsed output: a leading `#` would break every reader that does
+    # not know to skip it.
+    assert not (run_outputs / "recombination_regions.tsv").read_text().startswith("#")
+
+
+def test_regions_tsv_schema_in_a_real_run(run_outputs: Path) -> None:
+    header = (run_outputs / "recombination_regions.tsv").read_text().splitlines()[0]
+    assert header.split("\t") == REGION_COLUMNS

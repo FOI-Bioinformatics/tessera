@@ -6,7 +6,14 @@ from pathlib import Path
 
 import typer
 
-from .main import _require_choice, _require_range, app, get_logger, stage_errors
+from .main import (
+    _require_choice,
+    _require_file,
+    _require_range,
+    app,
+    get_logger,
+    stage_errors,
+)
 
 
 @app.command()
@@ -140,6 +147,7 @@ def recomb(
 
     logger = get_logger()
     with stage_errors(logger):
+        _require_file(msa, "MSA file")
         _require_choice(plot_format, {"pdf", "png", "svg"}, "--plot-format")
         # Bound the numeric options here: out of range they reach the statistics and
         # surface as an internal exception under "Unexpected error".
