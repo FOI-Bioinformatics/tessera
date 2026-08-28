@@ -63,6 +63,29 @@ def _require_range(
     raise UserInputError(f"Invalid {label} {value:g}. It must be {bounds}.")
 
 
+def _require_file(path: Path, label: str) -> None:
+    """Reject a missing input file before it reaches a reader deep in the pipeline.
+
+    A path that does not exist is the commonest user error there is, and it used to
+    surface as ``Unexpected error: [Errno 2] No such file or directory`` from wherever
+    the file was first opened -- which reads like a defect in Tessera rather than a
+    typo. Raised as :class:`UserInputError` (exit 1) to match how the other input
+    problems are reported.
+    """
+    if not Path(path).exists():
+        raise UserInputError(f"{label} not found: {path}")
+    if Path(path).is_dir():
+        raise UserInputError(f"{label} is a directory, not a file: {path}")
+
+
+def _require_directory(path: Path, label: str) -> None:
+    """Reject a missing or non-directory input directory. See :func:`_require_file`."""
+    if not Path(path).exists():
+        raise UserInputError(f"{label} not found: {path}")
+    if not Path(path).is_dir():
+        raise UserInputError(f"{label} is not a directory: {path}")
+
+
 def _parse_key_values(items: list[str], label: str) -> dict[str, str]:
     """Parse repeated ``key=value`` options into a dict (used for tool extras)."""
     out: dict[str, str] = {}

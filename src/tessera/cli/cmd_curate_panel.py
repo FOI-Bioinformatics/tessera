@@ -6,7 +6,7 @@ from pathlib import Path
 
 import typer
 
-from .main import app, get_logger, stage_errors
+from .main import _require_directory, _require_file, app, get_logger, stage_errors
 
 
 @app.command(name="curate-panel")
@@ -44,6 +44,8 @@ def curate_panel(
 
     logger = get_logger()
     with stage_errors(logger):
+        _require_file(query, "Query file")
+        _require_directory(collection, "Collection directory")
         curate_collection(
             query, collection, output,
             reference=reference, ani_margin=sibling_margin,

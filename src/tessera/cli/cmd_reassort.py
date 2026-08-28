@@ -16,7 +16,7 @@ import typer
 from ..reassort import assign_segments
 from ..reassort.assign import DEFAULT_ANI_FLOOR
 from ..reassort.constellation import DEFAULT_MARGIN
-from .main import app, get_logger, stage_errors
+from .main import _require_file, app, get_logger, stage_errors
 
 
 @app.command(name="reassort")
@@ -53,6 +53,7 @@ def reassort(
     report the per-segment genotype plus a clonal/reassortant verdict."""
     logger = get_logger(output)
     with stage_errors(logger):
+        _require_file(query, "Query file")
         overrides: dict[str, str] = {}
         for item in dataset or []:
             if "=" not in item:

@@ -1,0 +1,21 @@
+# Keep the build context small and the image free of local state.
+.git
+.github
+.venv
+venv
+__pycache__
+*.pyc
+*.egg-info
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage
+.benchmarks
+.cache
+reports
+validation/data
+docs/figures
+tests
+dist
+build
+.DS_Store
