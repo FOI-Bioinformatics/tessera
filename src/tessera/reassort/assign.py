@@ -47,6 +47,26 @@ class ReassortmentResult:
     scans: list[SegmentScan] = field(default_factory=list)
 
 
+def cap_candidates(
+    ranked: list[tuple[str, float]], *, margin: float, top_k: int = TOP_K
+) -> list[tuple[str, float]]:
+    """Bound the candidate list without ever cutting inside the near-best ANI window.
+
+    ``top_k`` exists only to keep the list from growing without limit. The constellation
+    call, though, decides concordance from the strains within ``margin`` ANI of the best
+    (``constellation._near_best``), so a rank cap applied first can drop a genuinely
+    shared parent before the margin is consulted -- and two segments of one clonal strain
+    then look like they have different parents. Densely sampled Nextclade trees routinely
+    put more than ``top_k`` strains inside a half-point window, so the cap is widened to
+    cover the window whenever that happens.
+    """
+    if not ranked:
+        return []
+    floor = ranked[0][1] - margin
+    within = sum(1 for _strain, ani in ranked if ani >= floor)
+    return ranked[: max(top_k, within)]
+
+
 def _clade_of_tip(tip: Path) -> str | None:
     """The clade from a reconstructed tip's header ``>{strain} {clade}`` (2nd token), or None
     when the tip is not clade-typed (an example genome or an untyped tip)."""
@@ -55,7 +75,7 @@ def _clade_of_tip(tip: Path) -> str | None:
     return None if clade in NON_CLADE_MARKERS else clade
 
 
-def _type_segment(seg, seq, overrides, ani_floor, email, cache_dir, tmp, logger):
+def _type_segment(seg, seq, overrides, ani_floor, margin, email, cache_dir, tmp, logger):
     """Type one segment. Returns ``(SegmentAssignment, candidates, universe, dataset)`` where
     ``candidates`` is ``[(strain, ani)]`` best-first (empty if unassigned), ``universe`` is every
     strain in the dataset (empty if unassigned), and ``dataset`` is the resolved Nextclade dataset
@@ -91,7 +111,8 @@ def _type_segment(seg, seq, overrides, ani_floor, email, cache_dir, tmp, logger)
         unassigned = SegmentAssignment(seg, dataset.path, None, None, 0.0, "unassigned")
         return unassigned, [], set(), dataset
 
-    candidates = [(strip_sequence_extension(t.name), ani[t][0]) for t in ranked[:TOP_K]]
+    scored = [(strip_sequence_extension(t.name), ani[t][0]) for t in ranked]
+    candidates = cap_candidates(scored, margin=margin)
     universe = {strip_sequence_extension(t.name) for t in tips}
     best = ranked[0]
     logger.info("[%s] %s -> %s (%s), ANI %.1f%%", seg, dataset.path,
@@ -146,7 +167,7 @@ def assign_segments(
         for name, seq in records:
             seg = name or f"segment_{len(result.segments) + 1}"
             assignment, cand, universe, dataset = _type_segment(
-                seg, seq, overrides, ani_floor, email, cache_dir, tmp, logger)
+                seg, seq, overrides, ani_floor, margin, email, cache_dir, tmp, logger)
             result.segments.append(assignment)
             if assignment.status == "assigned":
                 candidates[seg] = cand

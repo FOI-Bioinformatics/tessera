@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from tessera.reassort import assign
-from tessera.reassort.assign import assign_segments
+from tessera.reassort.assign import assign_segments, cap_candidates
 
 LOG = logging.getLogger("test")
 
@@ -263,3 +263,31 @@ def test_scan_segments_needs_output(tmp_path, monkeypatch):
     q = _write_query(tmp_path, [("HA", "AAAA")])
     with pytest.raises(UserInputError, match="output"):
         assign_segments(q, scan_segments=True, logger=LOG)
+
+
+# --- candidate cap ---------------------------------------------------------
+
+def test_cap_candidates_never_cuts_inside_the_near_best_margin():
+    """The rank cap must not truncate the ANI window the constellation call uses.
+
+    `_near_best` keeps every strain within `margin` ANI of the best. If the rank cap
+    is applied first and more strains than the cap sit inside that window, a genuinely
+    shared parent can be dropped before the margin is ever consulted -- turning a clonal
+    strain into a false reassortant.
+    """
+    # 30 strains inside a 0.5-point window, with the shared parent last.
+    ranked = [(f"tip{i}", 99.9 - i * 0.005) for i in range(29)] + [("SHARED", 99.76)]
+    kept = dict(cap_candidates(ranked, margin=0.5, top_k=25))
+    assert "SHARED" in kept
+
+
+def test_cap_candidates_still_bounds_the_tail():
+    # only 3 strains are inside the window; the long tail beyond it is still capped
+    ranked = [("a", 99.9), ("b", 99.8), ("c", 99.5)] + [(f"far{i}", 90.0 - i) for i in range(50)]
+    kept = cap_candidates(ranked, margin=0.5, top_k=5)
+    assert [s for s, _ in kept[:3]] == ["a", "b", "c"]
+    assert len(kept) == 5
+
+
+def test_cap_candidates_empty():
+    assert cap_candidates([], margin=0.5, top_k=25) == []
