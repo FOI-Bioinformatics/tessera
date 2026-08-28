@@ -272,6 +272,21 @@ The practical readings:
 | `coverage_gaps.tsv` | Stretches where even the closest reference is a poor match -- possible missing references |
 | `similarity_top{N}.{fmt}` | Static plot of the nearest `--top-n` datasets, called regions shaded |
 | `similarity_pair.{fmt}` | Static plot of the major vs leading minor parent, region shaded |
+| `run_provenance.json` | Machine-readable record of the run: Tessera version, parameters, caller description, and -- when the alignment came from `tessera msa` -- the aligner, its version and its arguments |
+
+### Provenance
+
+The TSVs travel: once copied out of the output directory, nothing in them says which
+version or parameters produced them. `run_provenance.json` is the record to keep beside
+them. Its `run` block holds what the report's methods section shows; its `msa` block is
+the sidecar written next to the alignment by `tessera msa`
+(`<msa stem>.provenance.json`), naming the aligner, the resolved binary versions, any
+`--aligner-arg` values and the backbone. For an alignment you built yourself there is no
+sidecar and `msa` is `null` -- the run reports what it knows rather than guessing.
+
+The permutation callers (3SEQ, MaxChi, Bootscan, and the PHI diagnostic) seed their RNG
+per call from fixed values, so a rerun on the same input reproduces the same p-values;
+`run_provenance.json` records this as `permutation seeding`.
 
 Similarity is computed only over columns where both sequences carry a canonical base
 (A/C/G/T); gaps, `N` and IUPAC ambiguity codes are ignored, so an `N` never counts as

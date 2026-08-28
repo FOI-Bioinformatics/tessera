@@ -30,6 +30,31 @@ All notable changes to Tessera are recorded here. The format follows
 
 ### Fixed
 
+- **An interrupted NCBI Virus fetch no longer becomes a permanent partial panel.** Genomes were
+  written one file at a time straight into the shared cache directory, so a run killed part way
+  through -- Ctrl-C, OOM, a dropped connection -- left a truncated set behind. The next run saw a
+  non-empty directory, logged "Using the cached NCBI Virus panel" and carried on. Panel
+  composition decides which donors can be found at all, so this did not produce a slow run but a
+  wrong one, silently narrowing what detection could report. The fetch is now staged in a sibling
+  directory and installed with `os.replace` only once complete, and each entry carries a
+  `tessera_cache.json` manifest; a cache directory without one is ignored rather than trusted,
+  which also rejects partial caches left by earlier versions. Two concurrent runs fetching the
+  same panel no longer race: the first to finish wins and the second reuses it.
+  **This invalidates existing NCBI Virus caches** -- they carry no manifest and will be refetched
+  once. The Nextclade pool cache already worked this way and is unaffected.
+- **The NCBI Virus cache key now covers the fetch scope.** It was `sha1(taxon)` alone, so a
+  `--source-refseq` run and a default run shared one slot and whichever ran second silently
+  received the other's differently-scoped panel.
+- **A result can now name the aligner that produced it.** `core/binaries.py` exists to resolve
+  tool versions for provenance, and `build_msa` called `preflight()` and then only logged the
+  answer, so the scan recorded the alignment as a bare path: given a `report.html` you could not
+  tell which aligner, at which version, with which arguments had built the alignment it
+  described. `tessera msa` now writes a `<msa stem>.provenance.json` sidecar (aligner, resolved
+  versions, `--aligner-arg` values, backbone, genome count) and `tessera recomb` picks it up
+  automatically, showing it in the report and writing the whole run record to
+  `run_provenance.json` beside the TSVs. An alignment you built yourself has no sidecar and the
+  record says so rather than guessing. The run also states that the permutation callers are
+  deterministically seeded, so a reader can tell a reproducible p-value from a lucky one.
 - **A panel too small to test is no longer reported as "no recombination".** Recombination is a
   switch between donors, so it takes two references before there is anything to switch between.
   Below that every caller early-returned on `len(labels) < 2`, `reconcile_major` yielded no major
