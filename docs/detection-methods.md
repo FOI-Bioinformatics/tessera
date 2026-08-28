@@ -263,7 +263,7 @@ The practical readings:
 | File | Contents |
 |---|---|
 | `report.html` | Self-contained report: run provenance, the region table, the per-dataset stats, and an embedded interactive plot |
-| `recombination_regions.tsv` | Called regions: minor/major parent, start/end in **both MSA columns and query bases**, length, support, mean similarities, the calling `methods`, and `parent_free_support` |
+| `recombination_regions.tsv` | Called regions: minor/major parent, start/end in **both MSA columns and query bases**, `length_bp` / `length_msa`, `support`, `pvalue` / `qvalue` with the `test` and `statistic` that produced them, mean similarities, the calling `methods`, and `parent_free_support` |
 | `recombination_methods.tsv` | Ensemble breakdown (only when several methods run): one row per region with a Y/n per method and the parent-free flag |
 | `recombination_profile.tsv` | Parent-free signal: header with the PHI p-value and Rmin, then per-informative-site local incompatibility (the PHI profile) |
 | `similarity_windows.tsv` | Full per-window matrix: `msa_position`, `query_position`, `winner`, and one similarity column per dataset |
@@ -273,6 +273,28 @@ The practical readings:
 | `similarity_top{N}.{fmt}` | Static plot of the nearest `--top-n` datasets, called regions shaded |
 | `similarity_pair.{fmt}` | Static plot of the major vs leading minor parent, region shaded |
 | `run_provenance.json` | Machine-readable record of the run: Tessera version, parameters, caller description, and -- when the alignment came from `tessera msa` -- the aligner, its version and its arguments |
+
+### Reading `pvalue`, `support` and the lengths
+
+The four callers do not share a statistic, and all of them write into the same two
+columns. `pvalue` is a one-sided sign test on discordant sites for the HMM, an exact or
+permuted max-descent test for 3SEQ, a scan-aware chi-square permutation for MaxChi, and
+a block-permutation run length for Bootscan; `support` is correspondingly a
+discordant-site fraction, a tract-match fraction, or mean bootstrap support. **The
+values are not comparable across tests**, so every row names its own in the `test` and
+`statistic` columns. This matters most for an ensemble row: the merge keeps the single
+most significant member's p-value, so a region listing four agreeing callers carries a
+p-value from one of them, and `test` is what says which.
+
+`qvalue` is a Benjamini-Hochberg correction applied **within one caller's own candidate
+segments** -- not across callers, and not across the genome. A run using the default
+ensemble therefore has no single genome-wide false-discovery rate; treat the q-values as
+per-caller. `run_provenance.json` records this under `multiple testing`.
+
+`length_bp` is query bases (`query_end - query_start`) and `length_msa` is alignment
+columns (`msa_end - msa_start`), which include gaps and so is the larger of the two.
+Coordinates are 0-based and end-exclusive in both systems. `NA` marks a value that does
+not apply -- the barcode and heuristic callers report no p-value at all.
 
 ### Provenance
 

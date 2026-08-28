@@ -18,7 +18,7 @@ def mk(minor: str, qs: int, qe: int, method: str, *,
        qvalue: float | None = None, breakpoint_lo: int | None = None) -> Region:
     return Region(
         minor_parent=minor, major_parent=major, msa_start=qs, msa_end=qe,
-        query_start=qs, query_end=qe, length_bp=qe - qs, n_windows=1,
+        query_start=qs, query_end=qe, n_windows=1,
         mean_sim_minor=0.99, mean_sim_major=0.90, margin=0.0,
         support=support, qvalue=qvalue, breakpoint_lo=breakpoint_lo,
         breakpoint_hi=breakpoint_lo, methods=(method,),

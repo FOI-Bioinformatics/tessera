@@ -10,7 +10,7 @@ from tessera.recomb.regions import Region
 def _region(msa_start: int, msa_end: int, *, donor_absent: bool = False) -> Region:
     return Region(
         minor_parent="m", major_parent="M", msa_start=msa_start, msa_end=msa_end,
-        query_start=msa_start, query_end=msa_end, length_bp=msa_end - msa_start,
+        query_start=msa_start, query_end=msa_end,
         n_windows=1, mean_sim_minor=0.98, mean_sim_major=0.93, margin=0.05,
         donor_absent=donor_absent,
     )

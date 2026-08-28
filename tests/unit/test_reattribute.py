@@ -22,7 +22,7 @@ def _enc(seq: str) -> np.ndarray:
 
 def _region(minor: str, major: str, lo: int, hi: int) -> Region:
     return Region(minor_parent=minor, major_parent=major, msa_start=lo, msa_end=hi,
-                  query_start=lo, query_end=hi, length_bp=hi - lo, n_windows=1,
+                  query_start=lo, query_end=hi, n_windows=1,
                   mean_sim_minor=0.5, mean_sim_major=0.9, margin=0.0)
 
 

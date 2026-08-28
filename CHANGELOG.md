@@ -30,6 +30,33 @@ All notable changes to Tessera are recorded here. The format follows
 
 ### Fixed
 
+- **`recombination_regions.tsv` rows now name the test behind their own `pvalue`.** The four
+  callers do not share a statistic -- a one-sided sign test on discordant sites, an exact or
+  permuted max-descent test, a scan-aware chi-square permutation, and a block-permutation run
+  length all wrote into one `pvalue` column, with `support` variously a discordant-site
+  fraction, a tract-match fraction or mean bootstrap support. Only `methods` hinted at which,
+  and for a merged ensemble row that hint was wrong: the merge keeps the single most
+  significant member's p-value, so a region listing four agreeing callers carried a p-value
+  from one of them with no way to tell which. New `test` and `statistic` columns state it per
+  row, and the ensemble merge carries the retained member's names along with its p-value. For
+  3SEQ the column also distinguishes the exact test from the permutation fallback.
+- **`length_bp` had two definitions in one column.** Every caller set it from the MSA span
+  (`msa_end - msa_start`) and the ensemble merge from the query span (`query_end -
+  query_start`), so its meaning depended on which caller produced the row. It is now always
+  query bases, matching its name and the adjacent query coordinates, with the alignment width
+  reported separately as `length_msa`. Both are derived from the coordinate columns rather
+  than stored, so they cannot drift apart again.
+- **p- and q-values are written at full precision.** They were rounded to two significant
+  figures on the way out, which discarded precision a reader cannot recover and made an
+  underflow indistinguishable from an exact zero. The gate that decides which regions are
+  reported always used the untruncated value, so no detection behaviour changes -- only what
+  the file records (`1.4e-12` becomes `1.422084672242363e-12`). The report still formats them
+  for display.
+- **The scope of the FDR correction is now recorded.** Benjamini-Hochberg is applied within
+  one caller's own candidate segments, not across callers or across the genome, so an ensemble
+  run has no single genome-wide false-discovery rate. `run_provenance.json` states this under
+  `multiple testing`, and `docs/detection-methods.md` explains how to read the column. This
+  documents the existing behaviour; it does not change the statistics (see gap G4).
 - **An interrupted NCBI Virus fetch no longer becomes a permanent partial panel.** Genomes were
   written one file at a time straight into the shared cache directory, so a run killed part way
   through -- Ctrl-C, OOM, a dropped connection -- left a truncated set behind. The next run saw a

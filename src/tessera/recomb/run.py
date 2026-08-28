@@ -437,6 +437,12 @@ def run_recomb(
     # rerun on the same input reproduces the same p-values. Say so: a reader cannot
     # otherwise tell a deterministic result from one that happened to land twice.
     provenance["permutation seeding"] = "deterministic (fixed per-call seeds)"
+    # Scope matters and is easy to overstate: BH runs over one caller's own candidate
+    # segments, so it is not a genome-wide or cross-caller false-discovery rate.
+    provenance["multiple testing"] = (
+        f"Benjamini-Hochberg within each caller's candidates, alpha {params.alpha:g}; "
+        "not corrected across callers or across the genome"
+    )
 
     output_dir = Path(params.output)
     logger.info("Writing outputs to %s", output_dir)

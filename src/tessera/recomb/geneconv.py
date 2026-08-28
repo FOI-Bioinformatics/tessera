@@ -79,7 +79,7 @@ def call_regions_geneconv(result: WindowSimilarity, analysis, params):
     Returns ``(regions, major, [])`` to match ``call_regions``.
     """
     from .analyze import rank_datasets
-    from .regions import Region, _signif
+    from .regions import Region
 
     labels = list(result.similarities)
     if len(labels) < 2:
@@ -125,10 +125,12 @@ def call_regions_geneconv(result: WindowSimilarity, analysis, params):
             msa_start=msa_start, msa_end=msa_end,
             query_start=result.column_to_query(msa_start),
             query_end=result.column_to_query(msa_end),
-            length_bp=msa_end - msa_start, n_windows=run_len,
+            n_windows=run_len,
             mean_sim_minor=round(sim_minor, 4), mean_sim_major=round(sim_major, 4),
             margin=round(sim_minor - sim_major, 4),
-            support=1.0, pvalue=_signif(p), qvalue=_signif(q),
+            support=1.0, pvalue=p, qvalue=q,
+            test="GENECONV run length (permutation)",
+            statistic="not applicable (fixed 1.0)",
             breakpoint_lo=min(bp_lo, bp_hi), breakpoint_hi=max(bp_lo, bp_hi),
         ))
     regions.sort(key=lambda r: r.msa_start)

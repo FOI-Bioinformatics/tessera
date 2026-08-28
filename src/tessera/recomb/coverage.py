@@ -197,7 +197,7 @@ def gaps_as_regions(
             minor_parent=g.best_label, major_parent=major or "n/a",
             msa_start=g.msa_start, msa_end=g.msa_end,
             query_start=g.query_start, query_end=g.query_end,
-            length_bp=g.length_bp, n_windows=g.n_windows,
+            n_windows=g.n_windows,
             mean_sim_minor=g.mean_best, mean_sim_major=mean_major, margin=margin,
             donor_undercovered=True, donor_absent=True,
         ))
