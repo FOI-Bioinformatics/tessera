@@ -124,6 +124,8 @@ def stage_genomes(
     if not collection_files:
         raise UserInputError(f"Collection directory is empty: {collection_dir}")
 
+    _reject_colliding_labels(collection_files, query)
+
     target_dir.mkdir(parents=True, exist_ok=True)
     staged: list[Path] = []
     for source in collection_files:
@@ -131,6 +133,28 @@ def stage_genomes(
     query_staged = _stage_one(query, target_dir, logger)
     staged.append(query_staged)
     return staged, query_staged
+
+
+def _reject_colliding_labels(collection_files: list[Path], query: Path) -> None:
+    """Refuse two inputs that would stage to the same label.
+
+    Genomes are staged as ``<label>.fasta`` with the label taken from the filename, so
+    ``X.fa`` and ``X.fasta`` -- or a query whose stem matches a collection member --
+    collide. Staging would then fail on the symlink with a bare ``FileExistsError``,
+    reported to the user as "Unexpected error". The label is also the sequence's name
+    in the alignment, so a collision is genuinely ambiguous rather than something to
+    resolve silently.
+    """
+    seen: dict[str, Path] = {}
+    for source in [*collection_files, Path(query)]:
+        label = strip_sequence_extension(source.name)
+        if label in seen:
+            raise UserInputError(
+                f"Two inputs share the label '{label}': {seen[label]} and {source}. "
+                "Genomes are identified in the alignment by filename without its "
+                "extension, so these cannot be told apart -- rename one."
+            )
+        seen[label] = source
 
 
 def select_reference(

@@ -102,7 +102,6 @@ def _merge_group(group: list[Region], major: str | None) -> Region:
         msa_end=max(r.msa_end for r in group),
         query_start=q_start,
         query_end=q_end,
-        length_bp=q_end - q_start,
         n_windows=max(r.n_windows for r in group),
         mean_sim_minor=best.mean_sim_minor,
         mean_sim_major=best.mean_sim_major,
@@ -118,6 +117,11 @@ def _merge_group(group: list[Region], major: str | None) -> Region:
         minor_cluster_size=best.minor_cluster_size,
         major_cluster_size=best.major_cluster_size,
         methods=methods,
+        # The p/q kept above are `best`'s, so its test names travel with them. Without
+        # this the row would list every agreeing caller beside a p-value from just one
+        # of them, and a reader could not tell which.
+        test=best.test,
+        statistic=best.statistic,
     )
 
 

@@ -60,11 +60,6 @@ def parse_methods(spec: str) -> tuple[str, ...]:
     return tuple(c for c in CALLERS if c in tokens)
 
 
-def _signif(x: float) -> float:
-    """Round a (possibly tiny) p/q-value to two significant figures for display."""
-    return 0.0 if x == 0 else float(f"{x:.2g}")
-
-
 @dataclass
 class RegionParams:
     """Region-calling parameters. Heuristic thresholds default from the window size."""
@@ -136,7 +131,6 @@ class Region:
     msa_end: int
     query_start: int
     query_end: int
-    length_bp: int
     n_windows: int
     mean_sim_minor: float
     mean_sim_major: float
@@ -167,6 +161,28 @@ class Region:
     # Set by the ensemble merge when the region overlaps a Hudson-Kaplan Rmin interval
     # (parent-free corroboration from the PHI/Rmin signal).
     parent_free_support: bool = False
+    # Which test produced `pvalue`, and what `support` counts. The callers do not share a
+    # statistic -- a sign test on discordant sites, a max-descent test, a scan-aware
+    # chi-square and a block-permutation run length all land in the same column -- so a
+    # row is not interpretable without naming its own test. The ensemble merge keeps the
+    # most significant member's p-value, and carries that member's names with it.
+    test: str = ""
+    statistic: str = ""
+
+    @property
+    def length_bp(self) -> int:
+        """Region length in query bases.
+
+        Derived rather than stored: it was set from the MSA span by every caller and
+        from the query span by the ensemble merge, so one column meant two different
+        things depending on which caller produced the row.
+        """
+        return self.query_end - self.query_start
+
+    @property
+    def length_msa(self) -> int:
+        """Region width in alignment columns (includes gaps, so >= ``length_bp``)."""
+        return self.msa_end - self.msa_start
 
 
 @dataclass
@@ -305,13 +321,15 @@ def _call_regions_hmm(
                 minor_parent=seg.state, major_parent=major,
                 msa_start=seg.msa_start, msa_end=seg.msa_end,
                 query_start=seg.query_start, query_end=seg.query_end,
-                length_bp=seg.msa_end - seg.msa_start, n_windows=seg.n_windows,
+                n_windows=seg.n_windows,
                 mean_sim_minor=round(mean_minor, 4), mean_sim_major=round(mean_major, 4),
                 margin=round(mean_minor - mean_major, 4),
                 posterior_support=seg.mean_posterior,
                 breakpoint_lo=seg.breakpoint_lo, breakpoint_hi=seg.breakpoint_hi,
                 support=round(support, 3),
-                pvalue=_signif(pvalue), qvalue=_signif(q),
+                pvalue=pvalue, qvalue=q,
+                test="sign test on discordant sites (one-sided)",
+                statistic="fraction of discordant sites favouring the donor",
                 minor_cluster_size=cluster_size.get(seg.state, 1),
                 major_cluster_size=cluster_size.get(major, 1),
             )
@@ -384,7 +402,6 @@ def _call_regions_heuristic(
                 msa_end=run.msa_end,
                 query_start=result.column_to_query(run.msa_start),
                 query_end=result.column_to_query(run.msa_end),
-                length_bp=length,
                 n_windows=len(run.indices),
                 mean_sim_minor=round(mean_minor, 4),
                 mean_sim_major=round(mean_major, 4),

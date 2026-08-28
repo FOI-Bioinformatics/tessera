@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -10,6 +11,7 @@ from pathlib import Path
 from .. import __version__
 from ..core.errors import UserInputError
 from ..core.io import strip_sequence_extension
+from ..msa.build import read_provenance
 from .analyze import analyze, winners_per_window
 from .coverage import (
     CoverageParams,
@@ -174,6 +176,42 @@ def _discover_lineage_tsv(output: Path, msa: Path) -> Path | None:
     return next((p for p in candidates if p.exists()), None)
 
 
+def _msa_provenance_lines(record: dict | None) -> dict[str, str]:
+    """Human-readable provenance lines describing how the MSA was built.
+
+    Empty when there is no sidecar -- an alignment the user built themselves is a
+    normal input, and the report says what it knows rather than claiming more.
+    """
+    if not record:
+        return {}
+    versions = record.get("aligner versions") or {}
+    detail = ", ".join(f"{name} {ver}" for name, ver in sorted(versions.items()))
+    lines = {"aligner": f"{record.get('aligner', 'unknown')}" + (f" ({detail})" if detail else "")}
+    args = record.get("aligner args") or {}
+    if args:
+        lines["aligner args"] = ", ".join(f"{k}={v}" for k, v in sorted(args.items()))
+    if record.get("backbone"):
+        lines["backbone"] = str(record["backbone"])
+    return lines
+
+
+def _write_run_provenance(
+    output_dir: Path, provenance: dict, msa_record: dict | None, logger: logging.Logger
+) -> Path:
+    """Write the run's parameters as JSON beside the TSVs.
+
+    The TSVs are what downstream analysis consumes, and they travel: once copied out
+    of the output directory nothing in them says which version or parameters produced
+    them. The report carries this, but only as prose inside HTML.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    record = {"run": dict(provenance), "msa": msa_record}
+    path = output_dir / "run_provenance.json"
+    path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+    logger.info("Writing run provenance: %s", path)
+    return path
+
+
 def run_recomb(
     params: RecombParams,
     logger: logging.Logger,
@@ -186,6 +224,8 @@ def run_recomb(
     after the coverage section -- used by ``fill-references`` to show its rounds.
     """
     query_label = strip_sequence_extension(params.query)
+    # Written by `tessera msa`; absent for an alignment supplied by the user.
+    msa_record = read_provenance(Path(params.msa))
 
     lineage_map = params.lineage_map
     if lineage_map is None:
@@ -206,6 +246,18 @@ def run_recomb(
         window_step=params.window_step,
         metric=params.metric,
     )
+    # Recombination is a switch between donors, so it takes two references before there
+    # is anything to switch between. Below that every caller early-returns on
+    # `len(labels) < 2` and the run completes reporting no regions -- indistinguishable
+    # from a genuine clean negative. Refuse, so "could not test" is never read as
+    # "tested and found nothing".
+    if len(bp_result.similarities) < 2:
+        raise UserInputError(
+            f"The alignment holds {len(bp_result.similarities)} reference(s) besides the "
+            f"query '{query_label}'; detection needs at least 2 so there are two donors "
+            "to switch between. Add references to the panel -- this scan could not "
+            "report recombination even if it were present."
+        )
     # Only canonical bases count toward a window, so a record that is mostly something
     # else contributes almost nothing. Say so rather than let it drop out in silence.
     for label, fraction in low_canonical_records(bp_result.rows):
@@ -362,6 +414,7 @@ def run_recomb(
         **({"organism": params.organism} if params.organism else {}),
         "query": query_label,
         "MSA": str(params.msa),
+        **_msa_provenance_lines(msa_record),
         "datasets": str(len(result.similarities)),
         "window / step": f"{params.window_size} / {params.window_step}",
         "metric": params.metric,
@@ -380,9 +433,20 @@ def run_recomb(
             f"window {signal.phi_window})"
         )
         provenance["min recombination events (Rmin)"] = str(signal.rmin)
+    # The four permutation callers seed their own RNG per call from a fixed value, so a
+    # rerun on the same input reproduces the same p-values. Say so: a reader cannot
+    # otherwise tell a deterministic result from one that happened to land twice.
+    provenance["permutation seeding"] = "deterministic (fixed per-call seeds)"
+    # Scope matters and is easy to overstate: BH runs over one caller's own candidate
+    # segments, so it is not a genome-wide or cross-caller false-discovery rate.
+    provenance["multiple testing"] = (
+        f"Benjamini-Hochberg within each caller's candidates, alpha {params.alpha:g}; "
+        "not corrected across callers or across the genome"
+    )
 
     output_dir = Path(params.output)
     logger.info("Writing outputs to %s", output_dir)
+    _write_run_provenance(output_dir, provenance, msa_record, logger)
     write_reports(
         result, analysis, regions, per_window_winners, provenance, output_dir,
         top_n=params.top_n, plot_format=params.plot_format, logger=logger,

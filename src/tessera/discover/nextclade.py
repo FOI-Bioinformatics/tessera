@@ -30,7 +30,7 @@ from ..core.cache import cached_genomes
 from ..core.errors import UserInputError
 from ..core.io import write_fasta_record
 from ..core.plugins import ToolCapabilities
-from ..core.process import run_tool
+from ..core.process import QUERY_TIMEOUT, default_timeout, run_tool
 from .pool import detect_taxon
 
 _BASE_URL = "https://data.clades.nextstrain.org/v3"
@@ -163,7 +163,8 @@ def _sort_dataset(query: Path, index: dict[str, dict], logger) -> str | None:
         try:
             run_tool(NEXTCLADE,
                      ["nextclade", "sort", str(query), "--output-results-tsv", str(out)],
-                     logger=logger, log_prefix="nextclade-sort")
+                     logger=logger, log_prefix="nextclade-sort",
+                     timeout=default_timeout(QUERY_TIMEOUT))
         except Exception as exc:  # noqa: BLE001 - any failure becomes a clean fallback
             logger.warning("nextclade sort failed (%s); falling back to BLAST detection.", exc)
             return None

@@ -97,6 +97,17 @@ def _breakpoint_str(region: Region) -> str:
     return f"{region.breakpoint_lo}-{region.breakpoint_hi}"
 
 
+def _pvalue_str(x: float) -> str:
+    """Full-precision p/q-value for the TSVs.
+
+    These were rounded to two significant figures on the way out, which made an
+    underflow to zero indistinguishable from an exact zero and threw away precision
+    a reader cannot recover. The report still formats them for display; the file
+    keeps what was computed.
+    """
+    return repr(float(x))
+
+
 def _region_row(region: Region) -> tuple[str, list]:
     support = "-" if region.support is None else f"{region.support:.2f}"
     qval = "-" if region.qvalue is None else f"{region.qvalue:.2g}"
@@ -195,22 +206,30 @@ def write_regions_tsv(regions: list[Region], output_dir: Path, logger: logging.L
     logger.info("Writing recombination regions: %s", path)
     header = [
         "minor_parent", "major_parent", "msa_start", "msa_end",
-        "query_start", "query_end", "length_bp", "n_windows",
+        "query_start", "query_end", "length_bp", "length_msa", "n_windows",
         "mean_sim_minor", "mean_sim_major", "margin",
-        "support", "pvalue", "qvalue", "posterior", "breakpoint_lo", "breakpoint_hi",
+        "support", "pvalue", "qvalue", "test", "statistic",
+        "posterior", "breakpoint_lo", "breakpoint_hi",
         "donor_undercovered", "donor_absent", "methods", "parent_free_support",
     ]
+    # No comment preamble here, deliberately. The `test` and `statistic` columns make
+    # each row self-describing, which is what a consumer actually needs, and this is the
+    # most widely parsed of the outputs -- a leading `#` line would break every reader
+    # that does not know to skip it. The FDR method and coordinate conventions go in
+    # run_provenance.json and the documentation instead.
     with open(path, "w") as fo:
         fo.write("\t".join(header) + "\n")
         for r in regions:
             fo.write(
                 "\t".join(map(str, [
                     r.minor_parent, r.major_parent, r.msa_start, r.msa_end,
-                    r.query_start, r.query_end, r.length_bp, r.n_windows,
+                    r.query_start, r.query_end, r.length_bp, r.length_msa, r.n_windows,
                     r.mean_sim_minor, r.mean_sim_major, r.margin,
                     "NA" if r.support is None else r.support,
-                    "NA" if r.pvalue is None else r.pvalue,
-                    "NA" if r.qvalue is None else r.qvalue,
+                    "NA" if r.pvalue is None else _pvalue_str(r.pvalue),
+                    "NA" if r.qvalue is None else _pvalue_str(r.qvalue),
+                    r.test or "NA",
+                    r.statistic or "NA",
                     r.posterior_support,
                     "NA" if r.breakpoint_lo is None else r.breakpoint_lo,
                     "NA" if r.breakpoint_hi is None else r.breakpoint_hi,

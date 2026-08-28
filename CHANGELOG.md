@@ -30,6 +30,95 @@ All notable changes to Tessera are recorded here. The format follows
 
 ### Fixed
 
+- **NCBI requests are now paced, identified and retried.** Recruitment issued remote BLAST
+  submissions back to back across gaps and sub-tiles, against a shared public service whose
+  guidance is not to be contacted more than once every 10 seconds, with no retries and no way
+  to supply an API key. A tool installed on many machines that ignores those limits is
+  indistinguishable from abuse, and the practical result is a blocked address for whoever is
+  running it. Requests to each service are now spaced (10 s between BLAST submissions,
+  configurable with `TESSERA_BLAST_INTERVAL`; NCBI's 3-or-10 per second for E-utilities
+  depending on whether a key is set), `NCBI_API_KEY` and a contact address are passed to
+  EDirect through the environment -- which is how `efetch` and `datasets` accept them -- and
+  transient failures are retried with exponential backoff instead of losing the coverage gap
+  or seed window they were serving. A failure that persists is still raised: a search that
+  could not run and a search that found nothing are different outcomes.
+  Note that `--email` never reached the BLAST search and still cannot: Biopython's `qblast`
+  accepts neither an e-mail nor an API key, so the BLAST URL API is unauthenticated and
+  pacing is the only lever there. This is now stated in `docs/reference-panels.md` rather
+  than implied otherwise.
+- **`recombination_regions.tsv` rows now name the test behind their own `pvalue`.** The four
+  callers do not share a statistic -- a one-sided sign test on discordant sites, an exact or
+  permuted max-descent test, a scan-aware chi-square permutation, and a block-permutation run
+  length all wrote into one `pvalue` column, with `support` variously a discordant-site
+  fraction, a tract-match fraction or mean bootstrap support. Only `methods` hinted at which,
+  and for a merged ensemble row that hint was wrong: the merge keeps the single most
+  significant member's p-value, so a region listing four agreeing callers carried a p-value
+  from one of them with no way to tell which. New `test` and `statistic` columns state it per
+  row, and the ensemble merge carries the retained member's names along with its p-value. For
+  3SEQ the column also distinguishes the exact test from the permutation fallback.
+- **`length_bp` had two definitions in one column.** Every caller set it from the MSA span
+  (`msa_end - msa_start`) and the ensemble merge from the query span (`query_end -
+  query_start`), so its meaning depended on which caller produced the row. It is now always
+  query bases, matching its name and the adjacent query coordinates, with the alignment width
+  reported separately as `length_msa`. Both are derived from the coordinate columns rather
+  than stored, so they cannot drift apart again.
+- **p- and q-values are written at full precision.** They were rounded to two significant
+  figures on the way out, which discarded precision a reader cannot recover and made an
+  underflow indistinguishable from an exact zero. The gate that decides which regions are
+  reported always used the untruncated value, so no detection behaviour changes -- only what
+  the file records (`1.4e-12` becomes `1.422084672242363e-12`). The report still formats them
+  for display.
+- **The scope of the FDR correction is now recorded.** Benjamini-Hochberg is applied within
+  one caller's own candidate segments, not across callers or across the genome, so an ensemble
+  run has no single genome-wide false-discovery rate. `run_provenance.json` states this under
+  `multiple testing`, and `docs/detection-methods.md` explains how to read the column. This
+  documents the existing behaviour; it does not change the statistics (see gap G4).
+- **An interrupted NCBI Virus fetch no longer becomes a permanent partial panel.** Genomes were
+  written one file at a time straight into the shared cache directory, so a run killed part way
+  through -- Ctrl-C, OOM, a dropped connection -- left a truncated set behind. The next run saw a
+  non-empty directory, logged "Using the cached NCBI Virus panel" and carried on. Panel
+  composition decides which donors can be found at all, so this did not produce a slow run but a
+  wrong one, silently narrowing what detection could report. The fetch is now staged in a sibling
+  directory and installed with `os.replace` only once complete, and each entry carries a
+  `tessera_cache.json` manifest; a cache directory without one is ignored rather than trusted,
+  which also rejects partial caches left by earlier versions. Two concurrent runs fetching the
+  same panel no longer race: the first to finish wins and the second reuses it.
+  **This invalidates existing NCBI Virus caches** -- they carry no manifest and will be refetched
+  once. The Nextclade pool cache already worked this way and is unaffected.
+- **The NCBI Virus cache key now covers the fetch scope.** It was `sha1(taxon)` alone, so a
+  `--source-refseq` run and a default run shared one slot and whichever ran second silently
+  received the other's differently-scoped panel.
+- **A result can now name the aligner that produced it.** `core/binaries.py` exists to resolve
+  tool versions for provenance, and `build_msa` called `preflight()` and then only logged the
+  answer, so the scan recorded the alignment as a bare path: given a `report.html` you could not
+  tell which aligner, at which version, with which arguments had built the alignment it
+  described. `tessera msa` now writes a `<msa stem>.provenance.json` sidecar (aligner, resolved
+  versions, `--aligner-arg` values, backbone, genome count) and `tessera recomb` picks it up
+  automatically, showing it in the report and writing the whole run record to
+  `run_provenance.json` beside the TSVs. An alignment you built yourself has no sidecar and the
+  record says so rather than guessing. The run also states that the permutation callers are
+  deterministically seeded, so a reader can tell a reproducible p-value from a lucky one.
+- **A panel too small to test is no longer reported as "no recombination".** Recombination is a
+  switch between donors, so it takes two references before there is anything to switch between.
+  Below that every caller early-returned on `len(labels) < 2`, `reconcile_major` yielded no major
+  parent and the coverage threshold collapsed to zero, so the scan finished successfully and
+  reported nothing found -- a result indistinguishable from a genuine clean negative on an
+  adequate panel. `run_recomb` now refuses an alignment carrying fewer than two references and
+  says why. The similarity engine itself is unchanged: computing per-window identity against a
+  single reference is still a meaningful operation, it is *calling recombination* on it that is
+  not.
+- **Duplicate sequence identifiers are rejected instead of silently discarding data.**
+  `Bio.AlignIO` preserves repeated headers, but the alignment was stored as a label to sequence
+  mapping, so only the last record with a given name survived: panel members vanished without a
+  message, the reported dataset count disagreed with the input FASTA, and a duplicated *query*
+  label meant the row actually analysed was whichever came last. Reading now collects duplicates
+  and raises, naming them.
+- **A ragged (unaligned) FASTA now names the offending record.** The check that does so was
+  unreachable: `AlignIO.read` raised `Sequences must all be the same length` first, which
+  identifies no record and surfaced through the CLI as an "Unexpected error". Records are read
+  with `SeqIO.parse` so Tessera's own message -- which gives the record and both lengths -- is
+  the one that fires. Non-ASCII input is likewise reported against the record rather than as a
+  raw `UnicodeEncodeError`.
 - **Bootscan is now gated on a null model.** It previously carried no significance test at all:
   `benjamini_hochberg` was applied in the HMM, 3SEQ and MaxChi callers but absent from
   `bootscan.py`, whose regions were built with neither `pvalue` nor `qvalue` and gated only on a

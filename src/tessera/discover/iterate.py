@@ -18,6 +18,7 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .. import __version__
 from ..core.errors import UserInputError
 from ..core.io import read_fasta, strip_sequence_extension
 from ..msa.build import MsaParams, build_msa
@@ -591,17 +592,29 @@ def _fetch_diverse(params: FillParams, logger: logging.Logger) -> list[Path]:
     representative set, broadening to the full set of complete genomes when RefSeq is
     too thin.
 
-    The fetched panel is cached on disk by taxon, so a repeat run skips the network.
-    The full set is dereplicated locally during regional selection, so a heavily
-    sequenced taxon is reduced to diverse representatives rather than truncated to a
-    biased sample.
+    The fetched panel is cached on disk by taxon and fetch scope, so a repeat run
+    skips the network. The full set is dereplicated locally during regional selection,
+    so a heavily sequenced taxon is reduced to diverse representatives rather than
+    truncated to a biased sample.
+
+    The fetch is staged and installed atomically. Panel composition decides which
+    donors are findable at all, so a half-written cache is not a slow run but a wrong
+    one: it would be reused in silence and quietly narrow what detection can report.
     """
-    from ..core.cache import cached_genomes, ncbi_virus_cache
+    from ..core.cache import (
+        atomic_cache_dir,
+        cached_genomes,
+        ncbi_virus_cache,
+        write_cache_manifest,
+    )
     from .pool import detect_taxon, fetch_ncbi_virus
 
     taxon = params.taxon or detect_taxon(params.query, email=params.email, logger=logger)
-    cache = ncbi_virus_cache(taxon, override=params.cache_dir)
-    existing = cached_genomes(cache)
+    # Keyed by what was asked for, not by what the fetch settled on: the RefSeq ->
+    # complete broadening below is how a request is satisfied, not a separate request.
+    scope = {"source_refseq": params.source_refseq, "fetch_limit": params.fetch_limit}
+    cache = ncbi_virus_cache(taxon, scope=scope, override=params.cache_dir)
+    existing = cached_genomes(cache, manifest_required=True)
     if existing:
         logger.info(
             "Using the cached NCBI Virus panel for '%s' (%d genome(s)): %s",
@@ -609,29 +622,42 @@ def _fetch_diverse(params: FillParams, logger: logging.Logger) -> list[Path]:
         )
         _record_ncbi_lineages(params.output, cache)
         return existing
-    cache.mkdir(parents=True, exist_ok=True)
-    if params.source_refseq:
-        fetched = fetch_ncbi_virus(taxon, cache, refseq=True, logger=logger)
-        if len(fetched) >= SEED_MIN_DIVERSE:
-            _record_ncbi_lineages(params.output, cache)
-            return fetched
-        logger.info(
-            "RefSeq set for '%s' has only %d genome(s); broadening to complete genomes.",
-            taxon, len(fetched),
+
+    with atomic_cache_dir(cache) as staging:
+        source = "complete"
+        if params.source_refseq:
+            fetched = fetch_ncbi_virus(taxon, staging, refseq=True, logger=logger)
+            source = "refseq"
+            if len(fetched) < SEED_MIN_DIVERSE:
+                logger.info(
+                    "RefSeq set for '%s' has only %d genome(s); broadening to complete "
+                    "genomes.", taxon, len(fetched),
+                )
+                for g in fetched:
+                    g.unlink()  # private staging tree; no reader can see this
+                fetched = fetch_ncbi_virus(
+                    taxon, staging, refseq=False, complete_only=True, logger=logger
+                )
+                source = "refseq->complete"
+        else:
+            fetched = fetch_ncbi_virus(
+                taxon, staging, refseq=False, complete_only=True, logger=logger
+            )
+        if len(fetched) > params.fetch_limit:
+            logger.info(
+                "Fetched %d '%s' complete genomes (a heavily sequenced taxon); "
+                "dereplicating locally to a diverse panel -- this can take a few "
+                "minutes.", len(fetched), taxon,
+            )
+        write_cache_manifest(
+            staging, taxon=taxon, source=source, genomes=len(fetched),
+            tessera_version=__version__, **scope,
         )
-        for g in fetched:
-            g.unlink()
-    fetched = fetch_ncbi_virus(
-        taxon, cache, refseq=False, complete_only=True, logger=logger
-    )
-    if len(fetched) > params.fetch_limit:
-        logger.info(
-            "Fetched %d '%s' complete genomes (a heavily sequenced taxon); dereplicating "
-            "locally to a diverse panel -- this can take a few minutes.",
-            len(fetched), taxon,
-        )
+
+    # The staged paths are gone; re-list from the installed cache directory.
+    genomes = cached_genomes(cache, manifest_required=True)
     _record_ncbi_lineages(params.output, cache)
-    return fetched
+    return genomes
 
 
 def _select_from(params: FillParams, genomes: list[Path], logger: logging.Logger):

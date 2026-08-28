@@ -28,10 +28,10 @@ def curate_panel(
         help="A reference is a sibling if its query-ANI beats the backbone's by this many %.",
     ),
     af_min: float = typer.Option(
-        80.0, "--af-min", help="... over at least this %% of the query (whole-genome match)."
+        80.0, "--af-min", help="... over at least this % of the query (whole-genome match)."
     ),
     derep_ani: float = typer.Option(
-        99.0, "--derep-ani", help="skDER: collapse references at or above this ANI %%."
+        99.0, "--derep-ani", help="skDER: collapse references at or above this ANI %."
     ),
 ) -> None:
     """Curate a collection into a diverse panel for recombination detection.

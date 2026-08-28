@@ -149,10 +149,11 @@ def call_regions_barcode(result: WindowSimilarity, analysis, window_size: int, p
                 minor_parent=minor_lbl, major_parent=major_lbl,
                 msa_start=msa_start, msa_end=msa_end,
                 query_start=q_start, query_end=q_end,
-                length_bp=msa_end - msa_start, n_windows=j - w,
+                n_windows=j - w,
                 mean_sim_minor=round(sim_minor, 4), mean_sim_major=round(sim_major, 4),
                 margin=round(sim_minor - sim_major, 4),
                 support=round(float(np.mean(supports[w:j])), 3),
+                statistic="mean clade-barcode marker support",
                 breakpoint_lo=q_start, breakpoint_hi=q_end,
             ))
         w = j

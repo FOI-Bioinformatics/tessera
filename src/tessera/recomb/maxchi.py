@@ -93,7 +93,7 @@ def call_regions_maxchi(result: WindowSimilarity, analysis, params):
     ``(regions, major, [])`` to match ``call_regions``.
     """
     from .analyze import rank_datasets
-    from .regions import Region, _signif
+    from .regions import Region
 
     labels = list(result.similarities)
     if len(labels) < 2:
@@ -145,10 +145,12 @@ def call_regions_maxchi(result: WindowSimilarity, analysis, params):
             msa_start=msa_start, msa_end=msa_end,
             query_start=result.column_to_query(msa_start),
             query_end=result.column_to_query(msa_end),
-            length_bp=msa_end - msa_start, n_windows=trough - peak,
+            n_windows=trough - peak,
             mean_sim_minor=round(sim_minor, 4), mean_sim_major=round(sim_major, 4),
             margin=round(sim_minor - sim_major, 4),
-            support=round(support, 3), pvalue=_signif(p), qvalue=_signif(q),
+            support=round(support, 3), pvalue=p, qvalue=q,
+            test="MaxChi chi-square (scan-aware permutation)",
+            statistic="fraction of tract sites matching the minor parent",
             breakpoint_lo=min(bp_lo, bp_hi), breakpoint_hi=max(bp_lo, bp_hi),
         ))
     regions.sort(key=lambda r: r.msa_start)

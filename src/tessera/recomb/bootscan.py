@@ -107,7 +107,7 @@ def call_regions_bootscan(result: WindowSimilarity, analysis, window_size: int, 
     and exceeds the major's is a region for that donor. Returns ``(regions, major, [])``.
     """
     from .analyze import rank_by_wins
-    from .regions import Region, _signif
+    from .regions import Region
 
     labels = list(result.similarities)
     if len(labels) < 2:
@@ -182,11 +182,13 @@ def call_regions_bootscan(result: WindowSimilarity, analysis, window_size: int, 
             minor_parent=minor, major_parent=major,
             msa_start=msa_start, msa_end=msa_end,
             query_start=q_start, query_end=q_end,
-            length_bp=msa_end - msa_start, n_windows=j - w,
+            n_windows=j - w,
             mean_sim_minor=round(sim_minor, 4), mean_sim_major=round(sim_major, 4),
             margin=round(sim_minor - sim_major, 4),
             support=round(float(np.mean(support[w:j])), 3),
-            pvalue=_signif(p), qvalue=_signif(q),
+            pvalue=p, qvalue=q,
+            test="Bootscan run length (block permutation)",
+            statistic="mean bootstrap support for the donor",
             breakpoint_lo=q_start, breakpoint_hi=q_end,
         ))
     return regions, major, []

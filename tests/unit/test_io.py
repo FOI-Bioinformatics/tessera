@@ -68,3 +68,31 @@ def test_select_reference_explicit_match_and_miss(tmp_path: Path) -> None:
     assert select_reference(genomes, query, False, "b.fasta").name == "b.fasta"
     with pytest.raises(UserInputError):
         select_reference(genomes, query, False, "missing")
+
+
+def test_colliding_labels_are_rejected(tmp_path: Path) -> None:
+    """Two files reducing to one label cannot be told apart in the alignment.
+
+    Staging would otherwise fail on the symlink with a bare FileExistsError, which
+    the CLI reports as "Unexpected error".
+    """
+    coll = tmp_path / "coll"
+    coll.mkdir()
+    (coll / "refA.fa").write_text(">a\nACGT\n")
+    (coll / "refA.fasta").write_text(">a\nACGT\n")
+    query = tmp_path / "q.fasta"
+    query.write_text(">q\nACGT\n")
+
+    with pytest.raises(UserInputError, match="share the label 'refA'"):
+        stage_genomes(query, coll, tmp_path / "staged", _LOG)
+
+
+def test_query_colliding_with_a_collection_member_is_rejected(tmp_path: Path) -> None:
+    coll = tmp_path / "coll"
+    coll.mkdir()
+    (coll / "sample.fa").write_text(">a\nACGT\n")
+    query = tmp_path / "sample.fasta"
+    query.write_text(">q\nACGT\n")
+
+    with pytest.raises(UserInputError, match="share the label 'sample'"):
+        stage_genomes(query, coll, tmp_path / "staged", _LOG)

@@ -121,10 +121,10 @@ def fill_references(
         help="A candidate is a sibling if its query-ANI beats the backbone's by this many %.",
     ),
     af_min: float = typer.Option(
-        80.0, "--af-min", help="... over at least this %% of the query (whole-genome match)."
+        80.0, "--af-min", help="... over at least this % of the query (whole-genome match)."
     ),
     derep_ani: float = typer.Option(
-        99.0, "--derep-ani", help="skDER: collapse references at or above this ANI %%."
+        99.0, "--derep-ani", help="skDER: collapse references at or above this ANI %."
     ),
     report: bool = typer.Option(
         True, "--report/--no-report",
@@ -140,8 +140,8 @@ def fill_references(
     min_methods: int = typer.Option(
         1, "--min-methods",
         help="Callers that must independently find a region before it is reported "
-        "(default 1: report the union). Raise to 2 to require corroboration -- a large\n"
-        "win on a redundant panel with several near-equidistant relatives of the "
+        "(default 1: report the union). Raise to 2 to require corroboration -- a large win "
+        "on a redundant panel with several near-equidistant relatives of the "
         "query, but it costs true detections on a curated panel, and at very low "
         "divergence only one caller may have power at all. Clamped to the number "
         "of callers actually run.",

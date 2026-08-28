@@ -133,7 +133,11 @@ def scan_segment(
                                 window_size=window, window_step=step, organism=segment,
                                 methods=DEFAULT_METHODS, lineage_map=lineage_map), logger)
     except Exception as exc:  # noqa: BLE001 - a per-segment scan failure is non-fatal
-        logger.info("[%s] intragenic scan failed (%s); not scanned.", segment, exc)
+        # WARNING, not INFO: this catches genuine defects (an AttributeError inside
+        # build_msa or run_recomb) as readily as an unalignable segment, and the run
+        # still reports success afterwards. At INFO a real bug reads as a routine note.
+        logger.warning("[%s] intragenic scan failed (%s); not scanned.", segment, exc)
+        logger.debug("[%s] scan traceback:", segment, exc_info=True)
         return SegmentScan(segment, False, False, 0, f"scan failed: {exc}")
 
     n_regions, recombinant = _summarize_regions(seg_dir / "recombination_regions.tsv")

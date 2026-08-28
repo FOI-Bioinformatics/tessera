@@ -114,8 +114,8 @@ def test_gaps_as_regions_bridges_divergent_only():
 
 def test_flag_undercovered_regions():
     regions = [
-        Region("variola", "cowpox", 0, 100, 0, 100, 100, 5, 0.998, 0.97, 0.028),
-        Region("env", "A1", 200, 300, 200, 300, 100, 5, 0.80, 0.79, 0.01),
+        Region("variola", "cowpox", 0, 100, 0, 100, 5, 0.998, 0.97, 0.028),
+        Region("env", "A1", 200, 300, 200, 300, 5, 0.80, 0.79, 0.01),
     ]
     flag_undercovered_regions(regions, threshold=0.90)
     assert regions[0].donor_undercovered is False  # donor matches well
