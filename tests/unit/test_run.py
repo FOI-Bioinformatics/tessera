@@ -48,3 +48,17 @@ def test_undersized_panel_refuses_rather_than_reporting_a_negative(
     )
     with pytest.raises(UserInputError, match="at least 2"):
         run_recomb(params, logging.getLogger("tessera"))
+
+
+def test_reattribution_skipped_when_no_major_parent_resolves() -> None:
+    """`lineage_of` raises on a None label, and `major_parent` is None when no
+    reference wins a plurality of windows -- so re-attribution has to check first.
+
+    Found by adding mypy: the call site passed `str | None` into a `str` parameter.
+    """
+    import pytest as _pytest
+
+    from tessera.recomb.typing import lineage_of
+
+    with _pytest.raises(AttributeError):
+        lineage_of(None, {"refA": "clade1"})  # type: ignore[arg-type]

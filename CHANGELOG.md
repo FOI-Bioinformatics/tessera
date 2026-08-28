@@ -8,6 +8,46 @@ All notable changes to Tessera are recorded here. The format follows
 
 ### Added
 
+- **`CITATION.cff` and `CONTRIBUTING.md`.** Tessera had no machine-readable citation despite
+  benchmarking against published datasets, and no written contribution guide -- in particular
+  no statement of the rule that a change touching a caller or a default must be validated on
+  `validation/run_hybrids.py` rather than on the unit suite alone.
+- **`py.typed`.** About 91 % of public functions are fully annotated, but without the marker
+  none of that was visible to a consumer -- including the third-party aligner adapters the
+  `tessera.aligners` entry-point group invites. mypy is configured and runs in CI, permissive
+  and non-blocking for now, since a never-type-checked codebase has an existing backlog.
+- **A macOS CI runner and a packaging job.** Every check previously ran on Ubuntu only, while
+  the project is developed on Darwin/arm64 and `docs/aligners.md` records platform-specific
+  aligner problems there. A separate job builds the wheel, runs `twine check`, and installs it
+  into a clean environment to confirm the console script works, so packaging breakage appears
+  on a pull request rather than at release time.
+
+### Changed
+
+- **Three computations that grew unbounded with the panel are now bounded.** The PHI
+  incompatibility matrix is quadratic in informative columns and had no guard at all; above
+  25 M cells the columns are thinned to a sorted, seeded random subsample, which costs
+  resolution rather than validity (`n_informative` reports the count actually used). Reference
+  clustering, an all-pairs comparison gated only by a *lower* bound, gained an upper one.
+  MaxChi's permutation null allocated several `(20000, sites)` int64 arrays per candidate
+  donor; the permutations are now evaluated in batches, which bounds peak memory **without**
+  reducing the null -- capping the permutation count instead was tried and reverted, because
+  it engaged above 1000 discriminating sites (an ordinary panel) and dropped the specificity
+  harness's positive control from 3/3 to 1/3.
+- **The version is single-sourced** from `src/tessera/__init__.py`; it was duplicated in
+  `pyproject.toml` with nothing enforcing agreement. The deprecated PEP 639 `license` form is
+  replaced, and classifiers, keywords and `[project.urls]` are added.
+
+### Fixed
+
+- **Donor re-attribution no longer crashes when no major parent is resolved.** `run_recomb`
+  passed `major_parent` (which is `None` when no reference wins a plurality of windows) into
+  `lineage_of`, which raises `AttributeError` on `None`. Reachable with `--reattribute-donors`
+  on a typed panel. Found by adding mypy.
+- **`.gitignore` no longer lists tracked files.** `README.md` and `example_data/` were both
+  ignored *and* tracked; it worked, but any new file under `example_data/` would have been
+  silently dropped from `git add`, and `tests/conftest.py` depends on that directory.
+
 - **`validation/run_caller_benchmark.py`** -- scores the *region callers* on the Jaya et al. (2023)
   published simulated grid (Dryad doi:10.5061/dryad.d7wm37q6f), the part of Tessera comparable to
   that study's sequence-level methods and previously never benchmarked. Reports a per-query rate

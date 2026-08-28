@@ -93,12 +93,24 @@ class WindowSimilarity:
     # whose windows span a fixed number of informative columns rather than a fixed
     # base-pair width. Only :func:`tessera.recomb.clusters._window_bounds` reads it.
     window_spans: list[tuple[int, int]] = field(default_factory=list)
+    # Lazily built by to_dataframe(); excluded from comparison and repr since it is a
+    # derived view of `similarities`, not state of its own.
+    _frame: pd.DataFrame | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def to_dataframe(self) -> pd.DataFrame:
-        """Return a DataFrame indexed by dataset label, columns = MSA positions."""
-        return pd.DataFrame.from_dict(
-            self.similarities, orient="index", columns=self.positions
-        )
+        """Return a DataFrame indexed by dataset label, columns = MSA positions.
+
+        Cached: the three plot builders each asked for it, rebuilding a
+        references-by-windows frame every time from a result that does not change.
+        Callers treat it as read-only.
+        """
+        if self._frame is None:
+            self._frame = pd.DataFrame.from_dict(
+                self.similarities, orient="index", columns=self.positions
+            )
+        return self._frame
 
     def column_to_query(self, col: int) -> int:
         """Query base offset (0-based) at alignment column ``col``."""

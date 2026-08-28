@@ -23,9 +23,13 @@ infinite-sites model means at least one recombination happened between them.
   four-gamete-incompatible intervals -- a lower bound on the number of recombination
   events, with the intervals themselves as breakpoint candidates.
 
-Everything is numpy; no external tool. Panels here are small (a query plus a handful
-of references) so the z*z incompatibility matrix over the z informative columns is
-cheap even when z runs to a few thousand columns.
+Everything is numpy; no external tool. The z*z incompatibility matrix over the z
+informative columns is cheap for the small panels this was written for (a query plus a
+handful of references), but it is quadratic: a large, divergent panel can reach tens of
+thousands of informative columns, where the matrix and its integer intermediates no
+longer fit in memory. Above :data:`_MAX_MATRIX_CELLS` the informative columns are
+therefore thinned to a deterministic random subsample first, which bounds the cost at
+the price of resolution -- see :func:`subsample_columns`.
 """
 
 from __future__ import annotations
@@ -39,6 +43,10 @@ from .similarity import CANONICAL_BASES
 # Below this many informative columns the statistics are not meaningful.
 _MIN_INFORMATIVE = 10
 _PERMUTATIONS = 1000
+# Cap on cells in the z*z incompatibility matrix. 25M cells is z ~= 5000, which holds
+# the bool matrix at ~25 MB and its int64 gamete-count intermediates at ~200 MB each.
+# Beyond this the matrix alone would run to tens of gigabytes.
+_MAX_MATRIX_CELLS = 25_000_000
 
 
 @dataclass
@@ -86,6 +94,33 @@ def biallelic_columns(rows: dict[str, np.ndarray]) -> tuple[np.ndarray, np.ndarr
         a1_cols.append((column == bases[minor]).astype(np.float64))
         a0_cols.append((column == bases[major]).astype(np.float64))
     return np.array(a1_cols), np.array(a0_cols), keep_cols.astype(int)
+
+
+def max_columns(cap: int = _MAX_MATRIX_CELLS) -> int:
+    """Largest z whose ``z x z`` matrix stays within ``cap`` cells."""
+    return max(_MIN_INFORMATIVE, int(cap**0.5))
+
+
+def subsample_columns(
+    z: int, *, cap: int = _MAX_MATRIX_CELLS, seed: int = 0
+) -> np.ndarray | None:
+    """Indices to keep so the incompatibility matrix stays bounded, or ``None``.
+
+    ``None`` means no thinning is needed. Otherwise a sorted random subsample: sorted
+    so the retained columns keep their genomic order, which is what makes a PHI window
+    of *n* ranks still mean "n nearby informative sites"; random rather than every
+    k-th so a periodic pattern in site density cannot alias with the stride; and
+    seeded, so a rerun on the same input gives the same answer.
+
+    PHI is a mean over column pairs within a window, so a subsample estimates the same
+    quantity with more variance -- it costs resolution, not validity. The permutation
+    null is recomputed on the same subsample, so the p-value stays self-consistent.
+    """
+    limit = max_columns(cap)
+    if z <= limit:
+        return None
+    rng = np.random.default_rng(seed)
+    return np.sort(rng.choice(z, size=limit, replace=False))
 
 
 def incompatibility_matrix(allele1: np.ndarray, allele0: np.ndarray) -> np.ndarray:
@@ -201,6 +236,12 @@ def recombination_signal(
     z = positions.size
     if z < _MIN_INFORMATIVE:
         return None
+    # Bound the quadratic matrix before allocating it. `n_informative` below reports the
+    # number actually used, so the report never claims more resolution than it had.
+    keep = subsample_columns(z, seed=seed)
+    if keep is not None:
+        allele1, allele0, positions = allele1[keep], allele0[keep], positions[keep]
+        z = positions.size
     incompatible = incompatibility_matrix(allele1, allele0)
     p, observed = phi_pvalue(incompatible, window, seed=seed)
     rmin, intervals = hudson_kaplan_rmin(incompatible, positions)

@@ -338,7 +338,10 @@ def run_recomb(
     regions, method_breakdown, suppressed = filter_by_agreement(
         regions, method_breakdown, min_agree
     )
-    if params.reattribute_donors and lineage_map:
+    # `major_parent` is None when no reference won a plurality of windows (an all-nan
+    # query row, say). `lineage_of` would then raise on the None, and re-attribution has
+    # no backbone clade to exclude anyway, so there is nothing to do.
+    if params.reattribute_donors and lineage_map and major_parent:
         # reattribute_donors excludes by clade name, so map the backbone genome to its clade
         regions = reattribute_donors(
             regions, result, lineage_map, lineage_of(major_parent, lineage_map),

@@ -308,6 +308,7 @@ def _curate_download(
     if backbone is None:
         logger.warning("Could not determine a backbone from --collection; skipping curation.")
         return
+    assert params.download is not None  # only called from the `download is not None` branch
     curation = curate_collection_dir(
         qfasta, params.download, backbone,
         ani_margin=params.sibling_margin, af_min=params.af_min,

@@ -183,6 +183,7 @@ def assign_segments(
         for s in result.segments:
             if s.status == "assigned":
                 seq, dataset = to_scan[s.segment]
+                assert output is not None  # guarded above when scan_segments is set
                 result.scans.append(scan_segment(
                     s.segment, seq, dataset, output,
                     aligner=aligner, cache_dir=cache_dir, logger=logger))
