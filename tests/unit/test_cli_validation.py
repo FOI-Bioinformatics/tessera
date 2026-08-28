@@ -7,6 +7,7 @@ a bad argument.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 
@@ -66,9 +67,13 @@ def test_out_of_range_options_exit_cleanly(tmp_path, option, value) -> None:
 def test_python_m_tessera_registers_subcommands() -> None:
     """`python -m tessera.cli.main` bound a second copy of the module, so every
     subcommand registered on a different app than the one `-m` invoked."""
+    # Pin the render width and drop colour: Rich wraps to the terminal, so option
+    # names split across lines at a narrow width and the assertion below would depend
+    # on the runner's terminal rather than on the command being registered.
+    env = {**os.environ, "COLUMNS": "200", "NO_COLOR": "1", "TERM": "dumb"}
     done = subprocess.run(
         [sys.executable, "-m", "tessera", "curate-panel", "--help"],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True, timeout=60, env=env,
     )
     assert done.returncode == 0, done.stderr
     assert "No such command" not in done.stdout + done.stderr
@@ -80,4 +85,6 @@ def test_help_text_renders_percent_signs_literally() -> None:
     result = runner.invoke(app, ["curate-panel", "--help"])
     assert result.exit_code == 0
     assert "%%" not in result.output
-    assert "% of the query" in result.output
+    # Collapse whitespace: Rich wraps to the terminal width, so the phrase may be
+    # split across lines depending on where this runs.
+    assert "% of the query" in " ".join(result.output.split())
