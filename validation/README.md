@@ -15,6 +15,7 @@ validation/
   run_validation.py    build MSA + run recomb per dataset, check, print a table
   run_benchmark.py     PHI/Rmin power+specificity on a published simulated set
   run_specificity.py   false-positive RATE on simulated clonal data (no aligner needed)
+  run_caller_benchmark.py  region callers on the Jaya 2023 grid (per-query power/FP)
   run_coalescent_benchmark.py   Posada & Crandall coalescent design (msprime)
   run_recombinhunt_benchmark.py RecombinHunt noise-robustness of breakpoint detection
   run_reassort_benchmark.py     reassort verdict precision/recall/F1 (flu HA+NA)
@@ -330,6 +331,45 @@ F1 0.91** -- every reassortant is caught, and the two false positives quantify t
 cross-typing-coverage limit (a clonal isolate whose exact strain is not in both segments' nearest
 top-k can read `reassortant`; see `docs/reference-panels.md`). The pure confusion/F1 scorer is
 unit-tested in CI. Recorded as measured, not tuned.
+
+## Region callers on the published benchmark (`run_caller_benchmark.py`)
+
+`run_benchmark.py` scores the parent-free PHI test on the Jaya 2023 grid. This scores the
+**region callers** -- the part of Tessera comparable to that study's sequence-level methods
+(3SEQ, GENECONV, RDP, MaxChi, Chimaera), which had never been measured against a published
+benchmark. Same Dryad data, same filename parser, and the same `power_specificity`
+aggregation, so the two Tessera numbers are directly comparable to each other.
+
+```
+python validation/run_caller_benchmark.py                 # all 360 alignments
+python validation/run_caller_benchmark.py --queries 3 --rows grid.tsv
+```
+
+**Read the per-query column.** Tessera scans one query against a panel, so the harness
+samples `--queries` sequences per alignment. The *alignment-level* rate ("any sampled query
+fired") compounds with that number -- measured, the `mut=0.1` stratum reports 60/60
+alignments at ten queries and 38/60 at three -- so it is not comparable to the study's
+PhiPack column, which runs one test per alignment. The *per-query* rate does not compound.
+
+Measured (3 queries, full grid), per-query detection on clonal versus recombining:
+
+| mut rate | clonal | recombining | discrimination |
+|---|---|---|---|
+| 0 to 1e-05 | 0 % | 0 % | 0 pt |
+| 0.0001 | 3 % | 3 % | -1 pt |
+| 0.001 | 0 % | 1 % | +1 pt |
+| **0.01** | 7 % | 17 % | **+11 pt** |
+| 0.1 | 33 % | 37 % | +4 pt |
+
+Detection needs diversity, but it also **degrades at saturation**: at `mut=0.1` the callers
+fire on a third of clonal scans and barely separate them from recombining ones. The one
+stratum with real discriminating power is `mut=0.01`. The aggregate power/specificity line
+the harness prints averages three regimes that behave completely differently (no signal,
+signal, saturation) and should not be quoted alone. See `docs/detection-methods.md`,
+"The divergence window".
+
+For contrast, PHI on the same grid: **power 0.04, specificity 1.00** -- far less powerful,
+but it does not degrade at saturation. Recorded as measured, not tuned.
 
 ## Method comparison (`run_method_comparison.py`)
 

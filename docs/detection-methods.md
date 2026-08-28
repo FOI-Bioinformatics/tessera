@@ -224,6 +224,40 @@ This all remains an **indicative screen**: the built-in HMM and 3SEQ tests are f
 triplet/segmentation screens, not a full tree-based analysis (such as GARD). Treat
 regions as candidates to confirm.
 
+## The divergence window: too little signal, and too much
+
+Detection needs the references to be diverse enough to carry discriminating sites, and
+that lower bound is well known -- Posada & Crandall (2001) put it around 5 % divergence,
+and Tessera switches to informative-site windowing below ~8 % precisely to hold on longer.
+
+There is an **upper** bound too, and it is easier to miss because it does not look like
+failure. Measured on the Jaya et al. (2023) simulated grid
+(`validation/run_caller_benchmark.py`, per-query detection rates):
+
+| simulated mutation rate | clonal (no recombination) | recombining | discrimination |
+|---|---|---|---|
+| 0 to 1e-05 | 0 % | 0 % | 0 pt |
+| 0.0001 | 3 % | 3 % | -1 pt |
+| 0.001 | 0 % | 1 % | +1 pt |
+| **0.01** | 7 % | 17 % | **+11 pt** |
+| 0.1 | 33 % | 37 % | +4 pt |
+
+At the top of that range the callers fire on **a third of scans over data containing no
+recombination at all**, and barely separate those from genuinely recombinant ones. The
+sequences are saturated: homoplasy is everywhere, the closest reference flips between
+windows as noise, and a high detection rate reflects that noise rather than power.
+
+The practical readings:
+
+- A high call rate on a very divergent panel is **not** evidence of lots of recombination.
+  Check the divergence first (`similarity_stats.tsv` medians) before trusting a busy region
+  table.
+- The parent-free PHI test is the better instrument at high divergence: it stayed at
+  specificity 1.00 on the same grid where the region callers reached a 33 % per-query false
+  rate. When PHI is non-significant and the panel is saturated, treat regions sceptically.
+- Panels assembled by `build-panel` / `curate-panel` are dereplicated and typically sit
+  inside the usable window; a hand-assembled panel spanning very distant taxa may not.
+
 ## Output files
 
 | File | Contents |
