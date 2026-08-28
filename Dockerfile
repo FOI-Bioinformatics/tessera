@@ -9,8 +9,16 @@
 # Build:
 #   docker build -t tessera:1.1.0 .
 # Run (mount your data, write results back out):
-#   docker run --rm -v "$PWD:/data" tessera:1.1.0 \
+#   docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" tessera:1.1.0 \
 #     recomb --msa /data/panel.msa.fasta --query query --output /data/out
+#
+# `--user` is not optional on Linux. The image runs as a non-root user, and a bind
+# mount keeps its ownership from the host, so without it the container cannot write
+# its results into your directory. Passing your own uid/gid also means the outputs
+# come back owned by you rather than by root. (Docker Desktop on macOS maps uids
+# behind the scenes and hides this, which is exactly how it reaches Linux users
+# unnoticed.) Everything the image needs at runtime is world-readable so any uid
+# works.
 #
 # Excluded on purpose: Cactus (a pipeline in its own right, with Toil and its own
 # containers) and progressiveMauve (no conda build for linux-aarch64). Both remain
@@ -52,7 +60,16 @@ RUN pip install --no-cache-dir .
 # Cache location inside the container; mount over it to persist recruited panels
 # between runs (otherwise every run refetches).
 ENV TESSERA_CACHE=/cache
-RUN mkdir -p /cache /data && chmod 777 /cache /data
+# An arbitrary --user uid has no home directory, so anything that caches under $HOME
+# either warns or falls back on every run: matplotlib wants MPLCONFIGDIR, and
+# fontconfig (pulled in by the plotting stack) wants XDG_CACHE_HOME. Point both at a
+# writable path so a normal run is quiet.
+ENV MPLCONFIGDIR=/tmp/matplotlib \
+    XDG_CACHE_HOME=/tmp/xdg-cache \
+    HOME=/tmp
+RUN mkdir -p /cache /data /tmp/matplotlib /tmp/xdg-cache \
+    && chmod 777 /cache /data /tmp/matplotlib /tmp/xdg-cache \
+    && chmod -R a+rX /opt/conda
 
 # Identify the caller to NCBI. Supply your own at run time:
 #   docker run -e NCBI_API_KEY=... -e NCBI_EMAIL=you@example.org ...

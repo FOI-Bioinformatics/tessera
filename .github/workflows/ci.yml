@@ -97,10 +97,14 @@ jobs:
               target = Path("ctr/query.fasta") if name == "query" else Path(f"ctr/coll/{name}.fasta")
               target.write_text(f">{name}\n{ungapped}\n")
           PY
-          docker run --rm -v "$PWD/ctr:/data" tessera:ci \
+          # --user is how a Linux caller writes into a bind mount they own; the
+          # README documents the same form. Running without it is the failure this
+          # job caught on its first run.
+          UID_GID="$(id -u):$(id -g)"
+          docker run --rm --user "$UID_GID" -v "$PWD/ctr:/data" tessera:ci \
             msa --query /data/query.fasta --collection /data/coll \
                 --output /data/panel.msa.fasta --aligner mafft
-          docker run --rm -v "$PWD/ctr:/data" tessera:ci \
+          docker run --rm --user "$UID_GID" -v "$PWD/ctr:/data" tessera:ci \
             recomb --msa /data/panel.msa.fasta --query query --output /data/out \
                    --window-size 300 --window-step 30
           python - <<'PY'

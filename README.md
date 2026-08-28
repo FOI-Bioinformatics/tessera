@@ -53,13 +53,15 @@ depends on, so there is an image with them pinned:
 
 ```
 docker build -t tessera .
-docker run --rm -v "$PWD:/data" tessera \
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" tessera \
     recomb --msa /data/panel.msa.fasta --query query --output /data/out
 ```
 
 It carries mafft, minimap2, SibeliaZ, skani, skDER, Entrez Direct and the `datasets`
-CLI at fixed versions, and builds natively on x86 and Apple silicon. Mount a volume
-over `/cache` to keep recruited panels between runs. Cactus and progressiveMauve are
+CLI at fixed versions, and builds natively on x86 and Apple silicon. `--user` matters
+on Linux: the image runs unprivileged, so without it the container cannot write into a
+directory you own (Docker Desktop on macOS hides this). Mount a volume over `/cache` to
+keep recruited panels between runs. Cactus and progressiveMauve are
 left out (see the Dockerfile for why) and remain available through `environment.yml`.
 
 See [docs/aligners.md](docs/aligners.md) for the backend options and when to use each.
