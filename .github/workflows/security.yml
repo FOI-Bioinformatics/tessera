@@ -1,0 +1,50 @@
+name: Security
+
+# Dependency vulnerability scanning. Separate from CI because it needs a different
+# cadence: a pull request can only tell you about advisories that existed when it was
+# opened, and most advisories arrive while nobody is touching the repository.
+#
+# This job is blocking on purpose. A security scan whose failures can be ignored is
+# decoration, and the dependency set here is small and well known, so a red run is far
+# more likely to be real than noise. If an advisory has no fixed version yet and is
+# blocking unrelated work, add it to the `--ignore-vuln` list below with a note saying
+# why and when to remove it -- an explicit, reviewable exception rather than a disabled
+# check.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Mondays, 06:00 UTC. Catches advisories published since the last change.
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+      - name: Install the package and the auditor
+        run: |
+          # Also the build tooling: a stale bundled pip/setuptools is the runner's
+          # own bootstrap, not something this project ships, and its advisories
+          # would otherwise drown the ones that are actually ours to fix.
+          python -m pip install --upgrade pip setuptools
+          python -m pip install -e ".[dev]"
+      - name: Audit installed dependencies
+        # Audits what is actually installed -- runtime and dev, transitive included --
+        # rather than only what pyproject.toml names directly.
+        #
+        # `--skip-editable` skips Tessera itself, which is installed editable above; its
+        # dependencies are still audited. Deliberately not `--strict`: that makes a
+        # *collection* failure fatal, and Tessera is not on PyPI by design, so it can
+        # never be resolved there. Vulnerabilities still fail the run -- that is a
+        # separate exit path -- so dropping it costs no detection.
+        run: pip-audit --skip-editable --progress-spinner=off
