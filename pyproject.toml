@@ -31,7 +31,7 @@ classifiers = [
 # not pip-installable, so a fully reproducible environment comes from
 # environment.yml plus the aligner versions recorded in the run provenance.
 dependencies = [
-    "typer>=0.12,<1.0",
+    "typer>=0.27.1,<1.0",
     "numpy>=1.26,<3.0",
     "pandas>=2.0,<4.0",
     "matplotlib>=3.8,<4.0",
