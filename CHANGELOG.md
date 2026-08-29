@@ -8,6 +8,23 @@ All notable changes to Tessera are recorded here. The format follows
 
 ### Added
 
+- **Dependency vulnerability scanning and Dependabot.** A `Security` workflow runs `pip-audit`
+  over the installed dependency tree on every pull request, on `main`, and weekly on a
+  schedule -- most advisories arrive while nobody is touching the repository, so a
+  pull-request-only scan would miss them. It is blocking: a security check whose failures can
+  be ignored is decoration. `.github/dependabot.yml` proposes monthly updates for both pip
+  dependencies and GitHub Actions, excluding major bumps, which stay a deliberate decision.
+- **Every GitHub Action is pinned to a commit SHA** rather than a floating major tag, with the
+  tag kept as a trailing comment so the pins stay readable and Dependabot can update both
+  together. A tag can be moved; a commit cannot, so this is what stops a supply-chain change
+  from silently altering what runs in CI.
+
+### Changed
+
+- **The `pytest` cap is widened to `<10.0`.** pytest 8.x carries PYSEC-2026-1845, whose fix is
+  9.0.3, so the previous `<9.0` cap blocked a security fix -- worse than the surprise major it
+  was guarding against. Verified: the full suite passes on pytest 9.1.1.
+
 - **Remote BLAST results are cached on disk.** BLAST is the slowest step in recruitment --
   minutes per search, and now deliberately paced at one submission per 10 seconds to respect
   NCBI's guidance -- and every re-run, resumed run, or later round asking about the same

@@ -50,10 +50,13 @@ Changelog = "https://github.com/FOI-Bioinformatics/tessera/blob/main/CHANGELOG.m
 # Capped to the next major like the runtime deps, and for the same reason: an
 # unbounded dev tool means a ruff or pytest release can red CI with no code change.
 dev = [
-    "pytest>=8.0,<9.0",
+    # <10 rather than <9: pytest 8.x carries PYSEC-2026-1845, whose fix is 9.0.3.
+    # A cap that blocks a security fix is worse than the surprise it guards against.
+    "pytest>=8.0,<10.0",
     "pytest-cov>=5.0,<8.0",
     "ruff>=0.6,<1.0",
     "mypy>=1.11,<2.0",
+    "pip-audit>=2.7,<3.0",
     "build>=1.2,<2.0",
     "twine>=5.1,<7.0",
 ]

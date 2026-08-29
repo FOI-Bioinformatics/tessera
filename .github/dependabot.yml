@@ -1,0 +1,32 @@
+# Automated dependency updates.
+#
+# The `github-actions` ecosystem is the reason this file matters most here: the
+# workflows pin every action to a commit SHA, which is what stops a moved tag from
+# silently changing what runs in CI -- but a pin nobody updates is a pin that rots.
+# Dependabot rewrites the SHA and the trailing `# v5` comment together, so the pins stay
+# both current and readable.
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"
+    labels: ["dependencies"]
+
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "deps"
+    labels: ["dependencies"]
+    # Runtime dependencies are capped to the next major on purpose (see the comment in
+    # pyproject.toml): Tessera is an application, and a surprise major from numpy or
+    # biopython should not reach a fresh install. Let Dependabot propose patch and minor
+    # bumps within those caps, and leave major bumps to a deliberate decision.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
