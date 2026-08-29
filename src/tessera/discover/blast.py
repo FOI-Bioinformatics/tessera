@@ -9,10 +9,12 @@ the network and is slow; it is only invoked by ``tessera find-references``.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
+from ..core.cache import blast_cache_path, read_blast_cache, write_blast_cache
 from ..core.errors import TesseraError
-from ..core.ncbi import blast_throttle, resolve_email, with_retries
+from ..core.ncbi import blast_cache_days, blast_throttle, resolve_email, with_retries
 
 
 class BlastError(TesseraError):
@@ -44,6 +46,7 @@ def blast_subsequence(
     program: str = "blastn",
     database: str = "nt",
     entrez_query: str | None = None,
+    cache_dir: str | Path | None = None,
 ) -> list[Hit]:
     """BLAST ``seq`` against NCBI ``database`` and return up to ``max_hits`` hits.
 
@@ -51,9 +54,27 @@ def blast_subsequence(
     ``'Norovirus[Organism] NOT GII.P16-GII.1'``), used to exclude the query's own
     over-represented lineage so the divergent parents surface.
 
+    Results are cached on disk, keyed by the sequence and every parameter that changes
+    what comes back. This is the slowest step in recruitment -- minutes per search, and
+    paced at one submission per 10 seconds -- so a re-run, a resumed run, or a second
+    round asking about the same window would otherwise pay for it again. Entries expire
+    (see :data:`BLAST_CACHE_DAYS`) because ``nt`` grows.
+
     Raises :class:`BlastError` on any network/NCBI/parse failure so the caller can
     skip a gap and carry on.
     """
+    cache_path = blast_cache_path(
+        (program, database, max_hits, entrez_query or "", seq), override=cache_dir
+    )
+    cached = read_blast_cache(cache_path, max_age_days=blast_cache_days())
+    if cached is not None:
+        payload, age_days = cached
+        logger.info(
+            "Reusing a cached BLAST result (%d hit(s), %.1f day(s) old). Delete %s to "
+            "force a fresh search.", len(payload), age_days, cache_path,
+        )
+        return [Hit(**row) for row in payload]
+
     try:
         from Bio.Blast import NCBIWWW, NCBIXML
     except ImportError as exc:  # pragma: no cover - biopython is a hard dependency
@@ -97,4 +118,7 @@ def blast_subsequence(
             query_coverage=round(100.0 * hsp.align_length / qlen, 1),
             evalue=hsp.expect,
         ))
+    # Cached even when empty: "this search returned nothing" is a real answer and cost
+    # the same minutes to obtain as any other.
+    write_blast_cache(cache_path, [asdict(hit) for hit in hits])
     return hits

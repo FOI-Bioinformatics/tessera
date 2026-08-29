@@ -111,7 +111,7 @@ def test_fresh_start_seeds_collection_from_whole_query_blast(monkeypatch, tmp_pa
 
     blasted: dict[str, str] = {}
 
-    def fake_blast(seq, *, max_hits, logger, email=None, entrez_query=None):
+    def fake_blast(seq, *, max_hits, logger, email=None, entrez_query=None, cache_dir=None):
         blasted["seq"] = seq
         blasted["max_hits"] = max_hits
         return [
@@ -192,7 +192,7 @@ def test_saturation_auto_switches_to_ncbi_virus_diversity(monkeypatch, tmp_path,
     assert (out / "collection" / "DIVERSE.fasta").exists()
 
 
-def _regional_blast(seq, *, max_hits, logger, email=None, entrez_query=None):
+def _regional_blast(seq, *, max_hits, logger, email=None, entrez_query=None, cache_dir=None):
     # one sibling present in every window (near-identical, full coverage) + a distinct
     # regional parent per window (lower identity).
     sib = Hit("SIB", "sibling", 98.0, 99.0, 0.0)
@@ -218,7 +218,7 @@ def test_windowed_mode_keeps_per_window_best_including_siblings(monkeypatch, tmp
 
 def test_parents_mode_falls_back_when_only_siblings(monkeypatch, tmp_path, logger):
     # every window returns only a sibling -> nothing to suppress down to -> seed the best.
-    def only_siblings(seq, *, max_hits, logger, email=None, entrez_query=None):
+    def only_siblings(seq, *, max_hits, logger, email=None, entrez_query=None, cache_dir=None):
         return [Hit("SIB", "sibling", 98.0, 99.0, 0.0)]
 
     seeded = _seed_run(monkeypatch, tmp_path, logger, seed_mode="parents", fake_blast=only_siblings)
@@ -360,7 +360,7 @@ def test_negative_lineage_seeding_recruits_parents(monkeypatch, tmp_path, logger
     query.write_text(">q\n" + "ACGT" * 200 + "\n")
     captured = {}
 
-    def fake_blast(seq, *, max_hits, logger, email=None, entrez_query=None):
+    def fake_blast(seq, *, max_hits, logger, email=None, entrez_query=None, cache_dir=None):
         if entrez_query is None:  # the whole-query probe -> the saturating lineage
             return [Hit("SIB1", "Norovirus GII isolate Hu/GII.P16-GII.1/A", 98.0, 99.0, 0.0),
                     Hit("SIB2", "Norovirus GII isolate Hu/GII.P16-GII.1/B", 98.0, 99.0, 0.0)]

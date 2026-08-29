@@ -128,6 +128,7 @@ address as the practical result for whoever is running it.
 | `NCBI_API_KEY` | Raises the E-utilities limit from 3 to 10 requests/second. Passed to EDirect (`efetch`, `datasets`) through the environment, which is how those tools accept it. [Get one from your NCBI account.](https://www.ncbi.nlm.nih.gov/account/) |
 | `NCBI_EMAIL` (or `EMAIL`, or `--email`) | Contact address, so NCBI can reach a heavy user before blocking them. |
 | `TESSERA_BLAST_INTERVAL` | Seconds between remote BLAST submissions (default 10, per NCBI's BLAST guidance). Set to `0` only when pointing at a BLAST service of your own. |
+| `TESSERA_BLAST_CACHE_DAYS` | How long a cached BLAST result is reused (default 14). `0` disables reuse and searches every time. |
 | `TESSERA_TOOL_TIMEOUT` | Seconds before an external tool is stopped, or `none` for no limit. Downloads and queries carry a default; alignment deliberately does not, since a large panel legitimately runs for hours. |
 
 An important caveat: the **BLAST URL API is unauthenticated**. Biopython's `qblast`
@@ -138,6 +139,24 @@ helps `efetch` and `datasets`, which is where most of the request volume is.
 Transient network failures are retried with exponential backoff. A failure that persists
 is still reported: a search that could not run and a search that found nothing are
 different outcomes, and Tessera does not report the first as the second.
+
+### Re-running recruitment
+
+BLAST is the expensive step -- minutes per search, and paced above -- so its results are
+cached on disk under `$TESSERA_CACHE/blast`, keyed by the query sequence and every
+parameter that changes what comes back. A re-run with different detection settings, a
+resumed run after a crash, or a later round asking about the same window costs nothing
+and contacts nobody. Empty results are cached too: "nothing matched here" took just as
+long to establish. Entries expire after two weeks, because `nt` grows and a hit list
+reused indefinitely would quietly stop reflecting the database being searched. Reuse is
+logged with the entry's age, and deleting the directory forces a fresh search.
+
+The recruited `<output>/collection` directory is *not* reused: `detect` and
+`fill-references` rebuild it each run. That is deliberate -- it keeps your input
+collection untouched and guarantees a known starting state rather than an unknown mix of
+two runs' downloads. Rebuilding it costs only the `efetch` downloads, which are small and
+run at NCBI's several-per-second limit; the part that used to make a re-run expensive was
+the BLAST, and that is now cached.
 
 ## Seed modes: where the starting references come from
 

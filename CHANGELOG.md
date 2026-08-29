@@ -6,6 +6,20 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Remote BLAST results are cached on disk.** BLAST is the slowest step in recruitment --
+  minutes per search, and now deliberately paced at one submission per 10 seconds to respect
+  NCBI's guidance -- and every re-run, resumed run, or later round asking about the same
+  window re-issued all of them. Results are cached under `$TESSERA_CACHE/blast`, keyed by the
+  query sequence and every parameter that changes what comes back, so a hit is only ever
+  reused for an identical request. Empty results are cached too: "nothing matched here" took
+  just as long to establish. Unlike the panel caches this one expires (14 days, configurable
+  with `TESSERA_BLAST_CACHE_DAYS`, `0` to disable) because `nt` grows continuously and a hit
+  list reused indefinitely would quietly stop reflecting the database being searched. Reuse
+  is logged with the entry's age. `--cache-dir` now reaches this cache as well, so isolating
+  the cache directory isolates all of it.
+
 ## [1.1.0] - 2026-08-28
 
 ### Added

@@ -35,7 +35,7 @@ def _msa(tmp_path: Path) -> Path:
 def test_find_references_blasts_the_gap_and_marks_existing(monkeypatch, tmp_path, logger):
     captured: dict[str, str] = {}
 
-    def fake_blast(seq, *, max_hits, logger, email=None):
+    def fake_blast(seq, *, max_hits, logger, email=None, cache_dir=None):
         captured["seq"] = seq
         return [
             Hit("refA", "cowpox-like [refA]", 95.0, 90.0, 1e-50),  # already present
@@ -65,7 +65,7 @@ def test_find_references_blasts_the_gap_and_marks_existing(monkeypatch, tmp_path
 
 def test_self_hit_is_auto_skipped(monkeypatch, tmp_path, logger):
     # A near-identical, near-full-coverage hit is the query's own record -> skipped.
-    def fake_blast(seq, *, max_hits, logger, email=None):
+    def fake_blast(seq, *, max_hits, logger, email=None, cache_dir=None):
         return [
             Hit("SELF999", "the query itself", 99.8, 100.0, 0.0),  # self-hit
             Hit("NEW123", "novel donor", 90.0, 95.0, 1e-40),       # genuine candidate
@@ -91,7 +91,7 @@ def test_self_hit_is_auto_skipped(monkeypatch, tmp_path, logger):
 
 
 def test_exclude_drops_accession_version_insensitively(monkeypatch, tmp_path, logger):
-    def fake_blast(seq, *, max_hits, logger, email=None):
+    def fake_blast(seq, *, max_hits, logger, email=None, cache_dir=None):
         return [
             Hit("U54771.1", "query own strain", 95.0, 90.0, 0.0),
             Hit("NEW123", "novel donor", 90.0, 95.0, 1e-40),
@@ -124,7 +124,7 @@ def test_no_gap_means_no_blast(monkeypatch, tmp_path, logger):
 
 
 def test_download_writes_a_manifest_of_added_references(monkeypatch, tmp_path, logger):
-    def fake_blast(seq, *, max_hits, logger, email=None):
+    def fake_blast(seq, *, max_hits, logger, email=None, cache_dir=None):
         return [Hit("NEW123", "novel donor virus", 90.0, 95.0, 1e-40)]
 
     def fake_efetch(accession, collection_dir, logger):
@@ -186,7 +186,7 @@ def test_collect_candidates_subtiling_surfaces_per_region_donors(monkeypatch, lo
         length_bp=800, n_windows=8, best_label="ref", mean_best=0.9, kind="divergent",
     )
 
-    def fake_blast(seq, *, max_hits, logger, email=None):
+    def fake_blast(seq, *, max_hits, logger, email=None, cache_dir=None):
         if "C" not in seq:
             donor = Hit("FLANK_A", "a", 90.0, 95.0, 1e-9)
         elif "A" not in seq:

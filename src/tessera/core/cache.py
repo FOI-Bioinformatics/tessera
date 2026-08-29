@@ -25,7 +25,7 @@ import os
 import re
 import shutil
 import tempfile
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -78,6 +78,61 @@ def nextclade_cache(path: str, tag: str, *, override: str | Path | None = None) 
     """Cache directory for a reconstructed Nextclade pool, keyed by ``path@tag``."""
     key = hashlib.sha1(f"{path}@{tag}".encode()).hexdigest()[:12]  # noqa: S324 - non-cryptographic
     return cache_root(override) / "nextclade" / f"{_slug(path)}_{key}"
+
+
+def blast_cache_path(
+    key_parts: Sequence[object], *, override: str | Path | None = None
+) -> Path:
+    """Cache file for one remote BLAST request, keyed by everything that defines it.
+
+    Remote BLAST is by far the slowest step in recruitment -- minutes per search, and
+    deliberately paced at one submission per 10 seconds to respect NCBI's guidance --
+    yet a repeated or resumed run re-issued every one of them. The key covers the query
+    sequence and every parameter that changes what comes back, so a hit is only ever
+    reused for an identical request.
+    """
+    key = hashlib.sha1(  # noqa: S324 - non-cryptographic
+        "|".join(str(part) for part in key_parts).encode()
+    ).hexdigest()
+    return cache_root(override) / "blast" / f"{key}.json"
+
+
+def read_blast_cache(path: Path, *, max_age_days: float) -> tuple[list[dict], float] | None:
+    """Cached hits and the entry's age in days, or ``None`` if absent, stale or unusable.
+
+    Unlike the panel caches this one expires. NCBI's ``nt`` grows continuously, so an
+    indefinitely-reused hit list would quietly stop reflecting the database being
+    searched -- and a search that silently answers from months ago is the kind of
+    invisible staleness this codebase is trying to remove, not add.
+    """
+    try:
+        payload = json.loads(path.read_text())
+        fetched = datetime.fromisoformat(payload["fetched (UTC)"])
+        hits = payload["hits"]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return None
+    if not isinstance(hits, list):
+        return None
+    age_days = (datetime.now(UTC) - fetched).total_seconds() / 86400.0
+    if age_days > max_age_days or age_days < 0:
+        return None
+    return hits, age_days
+
+
+def write_blast_cache(path: Path, hits: Sequence[dict]) -> Path:
+    """Store BLAST hits for reuse. Written atomically; a failure is not fatal."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "fetched (UTC)": datetime.now(UTC).isoformat(),
+            "hits": list(hits),
+        }
+        tmp = path.with_suffix(".partial")
+        tmp.write_text(json.dumps(payload, indent=2))
+        os.replace(tmp, path)
+    except OSError:
+        pass  # a cache that cannot be written must not fail the search it served
+    return path
 
 
 def pango_alias_path(override: str | Path | None = None) -> Path:

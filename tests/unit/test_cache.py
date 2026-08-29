@@ -9,10 +9,13 @@ import pytest
 from tessera.core.cache import (
     CACHE_MANIFEST,
     atomic_cache_dir,
+    blast_cache_path,
     cached_genomes,
     ncbi_virus_cache,
     nextclade_cache,
+    read_blast_cache,
     read_cache_manifest,
+    write_blast_cache,
     write_cache_manifest,
 )
 
@@ -124,3 +127,78 @@ def test_atomic_cache_dir_keeps_a_concurrent_winner(tmp_path: Path):
 
     kept = [p.name for p in cached_genomes(cache, manifest_required=True)]
     assert kept == ["theirs.fasta"]
+
+
+# --- BLAST result cache ---------------------------------------------------
+
+def test_blast_key_covers_everything_that_changes_the_answer(tmp_path: Path):
+    """A cached hit list must never be served for a different question."""
+    base = ("blastn", "nt", 5, "", "ACGTACGT")
+    same = blast_cache_path(base, override=tmp_path)
+    assert blast_cache_path(base, override=tmp_path) == same  # deterministic
+
+    for changed in (
+        ("blastp", "nt", 5, "", "ACGTACGT"),          # program
+        ("blastn", "refseq", 5, "", "ACGTACGT"),      # database
+        ("blastn", "nt", 10, "", "ACGTACGT"),         # hit limit
+        ("blastn", "nt", 5, "Norovirus[Organism]", "ACGTACGT"),  # entrez filter
+        ("blastn", "nt", 5, "", "TTTTTTTT"),          # the sequence itself
+    ):
+        assert blast_cache_path(changed, override=tmp_path) != same
+
+
+def test_blast_cache_roundtrip(tmp_path: Path):
+    path = blast_cache_path(("blastn", "nt", 5, "", "ACGT"), override=tmp_path)
+    hits = [{"accession": "NC_1", "title": "a hit", "pct_identity": 98.0,
+             "query_coverage": 95.0, "evalue": 1e-30}]
+    write_blast_cache(path, hits)
+
+    cached = read_blast_cache(path, max_age_days=14.0)
+    assert cached is not None
+    payload, age_days = cached
+    assert payload == hits
+    assert age_days < 1.0
+
+
+def test_blast_cache_stores_an_empty_result(tmp_path: Path):
+    # "this search found nothing" is a real answer that cost the same minutes.
+    path = blast_cache_path(("blastn", "nt", 5, "", "ACGT"), override=tmp_path)
+    write_blast_cache(path, [])
+    cached = read_blast_cache(path, max_age_days=14.0)
+    assert cached is not None and cached[0] == []
+
+
+def test_blast_cache_expires(tmp_path: Path):
+    """nt grows, so an indefinitely reused hit list would quietly stop reflecting it."""
+    import json
+    from datetime import UTC, datetime, timedelta
+
+    path = blast_cache_path(("blastn", "nt", 5, "", "ACGT"), override=tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    old = datetime.now(UTC) - timedelta(days=30)
+    path.write_text(json.dumps({"fetched (UTC)": old.isoformat(), "hits": []}))
+
+    assert read_blast_cache(path, max_age_days=14.0) is None  # too old
+    assert read_blast_cache(path, max_age_days=60.0) is not None  # within a longer window
+
+
+def test_blast_cache_zero_days_disables_reuse(tmp_path: Path):
+    path = blast_cache_path(("blastn", "nt", 5, "", "ACGT"), override=tmp_path)
+    write_blast_cache(path, [{"accession": "NC_1", "title": "x", "pct_identity": 1.0,
+                              "query_coverage": 1.0, "evalue": 0.0}])
+    assert read_blast_cache(path, max_age_days=0.0) is None
+
+
+def test_blast_cache_survives_a_corrupt_entry(tmp_path: Path):
+    path = blast_cache_path(("blastn", "nt", 5, "", "ACGT"), override=tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    for junk in ("{ truncated", "[]", '{"hits": "not a list"}', '{"fetched (UTC)": "nope"}'):
+        path.write_text(junk)
+        assert read_blast_cache(path, max_age_days=14.0) is None  # falls back to searching
+
+
+def test_blast_cache_write_failure_is_not_fatal(tmp_path: Path):
+    # A cache that cannot be written must not fail the search it was serving.
+    blocked = tmp_path / "blocked"
+    blocked.write_text("i am a file, not a directory")
+    write_blast_cache(blocked / "sub" / "x.json", [])  # must not raise

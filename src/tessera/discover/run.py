@@ -144,6 +144,7 @@ def collect_candidates(
     keep_self_hits: bool,
     logger: logging.Logger,
     subtile: int = 0,
+    cache_dir: str | Path | None = None,
 ) -> list[Candidate]:
     """BLAST each gap's query subsequence and return the kept candidate hits.
 
@@ -175,7 +176,10 @@ def collect_candidates(
             if len(tile_seq) < MIN_SUBSEQ:
                 continue
             try:
-                hits = blast_subsequence(tile_seq, max_hits=max_hits, logger=logger, email=email)
+                hits = blast_subsequence(
+                    tile_seq, max_hits=max_hits, logger=logger, email=email,
+                    cache_dir=cache_dir,
+                )
             except BlastError as exc:
                 logger.warning("  BLAST failed for a sub-interval, skipping: %s", exc)
                 continue

@@ -339,7 +339,7 @@ def _grow_collection(
             targets, query_row, existing,
             max_hits=params.max_hits, email=params.email,
             exclude=exclude, keep_self_hits=params.keep_self_hits, logger=logger,
-            subtile=params.subtile,
+            subtile=params.subtile, cache_dir=params.cache_dir,
         )
         # Pick the backbone from the pre-download (curated, sibling-free) collection
         # so a freshly-downloaded sibling cannot be mistaken for it.
@@ -609,7 +609,9 @@ def _fetch_diverse(params: FillParams, logger: logging.Logger) -> list[Path]:
     )
     from .pool import detect_taxon, fetch_ncbi_virus
 
-    taxon = params.taxon or detect_taxon(params.query, email=params.email, logger=logger)
+    taxon = params.taxon or detect_taxon(
+        params.query, email=params.email, logger=logger, cache_dir=params.cache_dir
+    )
     # Keyed by what was asked for, not by what the fetch settled on: the RefSeq ->
     # complete broadening below is how a request is satisfied, not a separate request.
     scope = {"source_refseq": params.source_refseq, "fetch_limit": params.fetch_limit}
@@ -695,7 +697,7 @@ def _blast_or_none(
     try:
         return blast_subsequence(
             seq, max_hits=params.seed_hits, logger=logger, email=params.email,
-            entrez_query=entrez_query,
+            entrez_query=entrez_query, cache_dir=params.cache_dir,
         )
     except BlastError as exc:
         logger.warning("  BLAST failed for a seed search, skipping: %s", exc)
