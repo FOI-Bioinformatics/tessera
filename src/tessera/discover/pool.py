@@ -78,7 +78,10 @@ def iter_pool_genomes(pool: Path) -> list[Path]:
     return genomes
 
 
-def detect_taxon(query_fasta: Path, *, email: str | None, logger: logging.Logger) -> str:
+def detect_taxon(
+    query_fasta: Path, *, email: str | None, logger: logging.Logger,
+    cache_dir: str | Path | None = None,
+) -> str:
     """Infer the query's taxon name from the top BLAST hit's title (one search)."""
     records = read_fasta(query_fasta)
     if not records:
@@ -86,7 +89,9 @@ def detect_taxon(query_fasta: Path, *, email: str | None, logger: logging.Logger
     probe = records[0][1].replace("-", "")[:1500]
     logger.info("Detecting the query's taxon from a short BLAST probe...")
     try:
-        hits = blast_subsequence(probe, max_hits=1, logger=logger, email=email)
+        hits = blast_subsequence(
+            probe, max_hits=1, logger=logger, email=email, cache_dir=cache_dir
+        )
     except BlastError as exc:
         raise UserInputError(
             f"Could not detect the taxon (BLAST failed): {exc}. Pass --taxon."

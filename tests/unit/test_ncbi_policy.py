@@ -145,3 +145,73 @@ def test_a_call_that_succeeds_is_not_retried(monkeypatch) -> None:
 
     assert with_retries(fine, what="test call", logger=LOG) == "ok"
     assert calls["n"] == 1
+
+
+# --- BLAST result cache ---------------------------------------------------
+
+def test_blast_cache_days_defaults_and_overrides(monkeypatch) -> None:
+    from tessera.core.ncbi import BLAST_CACHE_DAYS, blast_cache_days
+
+    monkeypatch.delenv("TESSERA_BLAST_CACHE_DAYS", raising=False)
+    assert blast_cache_days() == BLAST_CACHE_DAYS
+
+    monkeypatch.setenv("TESSERA_BLAST_CACHE_DAYS", "1.5")
+    assert blast_cache_days() == 1.5
+
+    monkeypatch.setenv("TESSERA_BLAST_CACHE_DAYS", "0")
+    assert blast_cache_days() == 0.0  # disables reuse
+
+    monkeypatch.setenv("TESSERA_BLAST_CACHE_DAYS", "nonsense")
+    assert blast_cache_days() == BLAST_CACHE_DAYS  # a typo must not change the policy
+
+
+# --- the cache actually spares the network --------------------------------
+
+def test_a_repeated_search_does_not_hit_the_network(tmp_path, monkeypatch, caplog):
+    """The point of the whole exercise: the second identical search is free.
+
+    Remote BLAST is minutes per search and paced at one submission per 10 seconds,
+    so a re-run or a second round asking about the same window used to pay again.
+    """
+    import logging
+
+    from tessera.discover import blast as blast_mod
+
+    calls = {"n": 0}
+
+    class _Aln:
+        accession, hit_def = "NC_1", "a relative"
+        class _H:
+            identities, align_length, expect = 95, 100, 1e-30
+        hsps = [_H()]
+
+    class _Record:
+        query_length = 100
+        alignments = [_Aln()]
+
+    def fake_qblast(*a, **k):
+        calls["n"] += 1
+        return object()
+
+    monkeypatch.setattr(blast_mod, "blast_throttle", type("T", (), {"wait": lambda *a: None})())
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "Bio.Blast",
+        type("M", (), {"NCBIWWW": type("W", (), {"qblast": staticmethod(fake_qblast)}),
+                       "NCBIXML": type("X", (), {"read": staticmethod(lambda h: _Record())})}),
+    )
+
+    log = logging.getLogger("tessera")
+    kwargs = dict(max_hits=5, logger=log, cache_dir=tmp_path)
+
+    first = blast_mod.blast_subsequence("ACGTACGTAC", **kwargs)
+    assert calls["n"] == 1
+    assert [h.accession for h in first] == ["NC_1"]
+
+    second = blast_mod.blast_subsequence("ACGTACGTAC", **kwargs)
+    assert calls["n"] == 1, "the second identical search should have been served from cache"
+    assert second == first  # and identical, not merely cheap
+
+    # a different sequence is a different question, so it does search
+    blast_mod.blast_subsequence("TTTTTTTTTT", **kwargs)
+    assert calls["n"] == 2

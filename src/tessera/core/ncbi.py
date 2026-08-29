@@ -40,6 +40,11 @@ EUTILS_INTERVAL = 1.0 / 3.0
 EUTILS_INTERVAL_WITH_KEY = 1.0 / 10.0
 
 _INTERVAL_ENV = "TESSERA_BLAST_INTERVAL"
+# How long a cached BLAST result stays usable. Long enough that a re-run, a resumed
+# run or a second round costs nothing, short enough that a hit list does not quietly
+# stop reflecting a database that grows daily.
+BLAST_CACHE_DAYS = 14.0
+_CACHE_DAYS_ENV = "TESSERA_BLAST_CACHE_DAYS"
 _RETRIES = 3
 _BACKOFF_BASE = 2.0
 
@@ -83,6 +88,18 @@ def blast_interval() -> float:
     except ValueError:
         return BLAST_INTERVAL
     return max(0.0, seconds)
+
+
+def blast_cache_days() -> float:
+    """Cached-BLAST lifetime in days (``$TESSERA_BLAST_CACHE_DAYS``; 0 disables reuse)."""
+    raw = os.environ.get(_CACHE_DAYS_ENV)
+    if raw is None:
+        return BLAST_CACHE_DAYS
+    try:
+        days = float(raw.strip())
+    except ValueError:
+        return BLAST_CACHE_DAYS
+    return max(0.0, days)
 
 
 class Throttle:
