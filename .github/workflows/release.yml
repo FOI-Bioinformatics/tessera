@@ -3,11 +3,15 @@ name: Release
 # Fires on a version tag. Builds the distribution, checks it, verifies the console
 # script runs from the built wheel, and attaches the artifacts to the GitHub Release.
 #
-# It deliberately does NOT publish to PyPI. A release to a public index cannot be
-# undone -- the version name is burned even if the file is yanked -- so that step
-# should be a decision, not a side effect of pushing a tag. To enable it later:
-# configure a trusted publisher for this repository on PyPI, add a `pypi`
-# environment here with whatever approvals you want, and append a job with
+# Tessera is distributed through GitHub releases, not PyPI. That is a settled choice,
+# not a gap: the package is only half the tool -- the aligners it shells out to are not
+# pip-installable -- so `pip install tessera` would hand someone a CLI that cannot
+# align, while the release artifacts and the container carry what a run actually needs.
+# A release to a public index also cannot be undone, the version name being burned even
+# if the file is yanked.
+#
+# Should that ever change: configure a trusted publisher for this repository on PyPI,
+# add a `pypi` environment with whatever approvals you want, and append a job with
 # `permissions: id-token: write` running `pypa/gh-action-pypi-publish`.
 
 on:

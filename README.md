@@ -31,17 +31,33 @@ looks for intragenic recombination within each segment. See
 
 ## Installation
 
+Tessera is distributed through
+[GitHub releases](https://github.com/FOI-Bioinformatics/tessera/releases) and the
+container below, **not** through PyPI -- `pip install tessera` will not work. The
+Python package is only half the tool: the aligners it delegates to are not
+pip-installable, so an index install would hand you a CLI that cannot align.
+
 Tessera needs Python (>= 3.11) and at least one aligner backend, most easily installed
 with conda:
 
 ```
 conda create -n tessera -c conda-forge -c bioconda python">=3.11" mauve "boost-cpp=1.74.0"
 conda activate tessera
-pip install .
+pip install git+https://github.com/FOI-Bioinformatics/tessera.git@v1.1.0
 ```
 
-Or install Python, all backends, and Tessera in one step from the provided
-environment file:
+Pinning the tag is deliberate -- it is what makes the install reproducible, and it is
+what `run_provenance.json` will record. To install a built wheel instead, take it from
+the [release page](https://github.com/FOI-Bioinformatics/tessera/releases) or by tag:
+
+```
+pip install https://github.com/FOI-Bioinformatics/tessera/releases/download/v1.1.0/tessera-1.1.0-py3-none-any.whl
+```
+
+From a clone, `pip install .` works as usual.
+
+To install Python, all backends, and Tessera in one step from the provided environment
+file:
 
 ```
 conda env create -f environment.yml
