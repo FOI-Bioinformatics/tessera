@@ -373,6 +373,12 @@ def run_recomb(
             regions, result, lineage_map, lineage_of(major_parent, lineage_map),
             margin=params.reattribute_margin, logger=logger,
         )
+        # The breakdown rows were built from the regions before re-attribution and are
+        # written to recombination_methods.tsv and the report's method table. Keep the
+        # donor they name in step with the region. reattribute_donors returns one region
+        # per input region in the same order, so the two lists stay parallel.
+        for region, row in zip(regions, method_breakdown, strict=True):
+            row["minor_parent"] = region.minor_parent
     if excluded_siblings:
         logger.info(
             "Excluded %d whole-genome sibling(s) of the query (its own lineage) from the "
