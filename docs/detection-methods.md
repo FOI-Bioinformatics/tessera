@@ -94,6 +94,18 @@ the references differ at less than ~8 % of columns, and controllable with
 -- you cannot localise a switch more finely than the spacing of the discriminating
 sites.
 
+**Informative-site identity is not similarity.** A window of polymorphic columns leaves
+out every column where the references agree, so a reference that is 98-99 % identical to
+the query genome-wide typically scores 0.4-0.8 there. That contrast is what the HMM
+needs, but the number says nothing about how similar the genomes are and must not be
+compared with ANI. Tessera therefore keeps the two apart: everything named *similarity*
+(`similarity_windows.tsv`, `similarity_stats.tsv`, `window_winners.tsv`, the similarity
+plots, and `mean_sim_minor` / `mean_sim_major` in the region table) is identity over all
+comparable columns, whichever windowing ran. The windows the HMM segmented are written
+to `informative_site_windows.tsv` and drawn as a separate "Identity at informative
+sites" track in the report. Up to and including v1.1.0 the informative-site values
+were written under the similarity names in this mode.
+
 ## 3SEQ caller (`--method 3seq`, scan-aware triplet test)
 
 A second caller, complementary to the HMM, after Boni, Posada & Feldman (2007). For
@@ -266,11 +278,13 @@ The practical readings:
 | `recombination_regions.tsv` | Called regions: minor/major parent, start/end in **both MSA columns and query bases**, `length_bp` / `length_msa`, `support`, `pvalue` / `qvalue` with the `test` and `statistic` that produced them, mean similarities, the calling `methods`, and `parent_free_support` |
 | `recombination_methods.tsv` | Ensemble breakdown (only when several methods run): one row per region with a Y/n per method and the parent-free flag |
 | `recombination_profile.tsv` | Parent-free signal: header with the PHI p-value and Rmin, then per-informative-site local incompatibility (the PHI profile) |
-| `similarity_windows.tsv` | Full per-window matrix: `msa_position`, `query_position`, `winner`, and one similarity column per dataset |
+| `similarity_windows.tsv` | Full per-window matrix: `msa_position`, `query_position`, `winner`, and one similarity column per dataset. Always base-pair windows (identity over all comparable columns) |
+| `informative_site_windows.tsv` | Only under informative-site windowing: the windows the HMM segmented -- `msa_position`, `query_position`, the window's `msa_start` / `msa_end` (end-exclusive), `winner`, and per dataset the query's identity **at polymorphic columns only**. Not comparable with similarity or ANI |
 | `similarity_stats.tsv` | Per-dataset similarity statistics (median, windows above identity thresholds) |
 | `window_winners.tsv` | Per-dataset count of windows won (ties included) |
 | `coverage_gaps.tsv` | Stretches where even the closest reference is a poor match -- possible missing references |
 | `similarity_top{N}.{fmt}` | Static plot of the nearest `--top-n` datasets, called regions shaded |
+| `informative_sites_top{N}.{fmt}` | Only under informative-site windowing: the same plot for identity at informative sites |
 | `similarity_pair.{fmt}` | Static plot of the major vs leading minor parent, region shaded |
 | `run_provenance.json` | Machine-readable record of the run: Tessera version, parameters, caller description, and -- when the alignment came from `tessera msa` -- the aligner, its version and its arguments |
 

@@ -6,6 +6,27 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **On near-identical panels, values reported as "similarity" were not similarity** (#67).
+  Below ~8 % divergence the HMM windows over polymorphic columns only, where a reference
+  98-99 % identical to the query typically scores 0.4-0.8. Those values were written to
+  `similarity_windows.tsv`, `similarity_stats.tsv`, `window_winners.tsv` and both similarity
+  plots, so a panel of near-identical genomes was shown at 50-70 % "similarity". Everything
+  named similarity is now identity over all comparable columns, whichever windowing ran. The
+  windows the HMM segmented are kept, under their own name: a new
+  `informative_site_windows.tsv`, an `informative_sites_top{N}` plot, and a separate, labelled
+  track in the report. **In this mode the contents of the three similarity tables change**;
+  on panels above the threshold (base-pair windowing) every output is byte-identical.
+- **A near-identical donor could be flagged `donor_undercovered`.** In the same mode the HMM
+  reported a region's `mean_sim_minor` / `mean_sim_major` as the mean of its informative-site
+  windows, and the coverage check compared that against a base-pair threshold -- so a donor
+  99.8 % identical to the query over the region was marked as a poor match. Those columns are
+  now identity over the region's columns, as the site-based callers already reported them.
+  Which regions are called, and their coordinates and p-values, are unchanged.
+- A donor-absent row's `mean_sim_major` and `margin` are now read from the same base-pair
+  scan that called the coverage gap, rather than mixing it with informative-site values.
+
 ### Added
 
 - **Dependency vulnerability scanning and Dependabot.** A `Security` workflow runs `pip-audit`

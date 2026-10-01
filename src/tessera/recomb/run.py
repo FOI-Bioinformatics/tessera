@@ -288,7 +288,7 @@ def run_recomb(
             )
 
     analysis = analyze(result)
-    per_window_winners = winners_per_window(result)
+    per_window_winners = winners_per_window(bp_result)
     # 3seq / heuristic assume base-pair window geometry; the HMM uses the selected
     # (possibly informative-site) result. Reuse the same analysis when they coincide.
     analysis_bp = analysis if result is bp_result else analyze(bp_result)
@@ -388,8 +388,11 @@ def run_recomb(
     # overlapping a confident region caveats it as donor_undercovered (the
     # reported donor is the closest available, not necessarily the real one);
     # a gap covering no called region is reported as a donor-absent region.
+    # The gaps were called on the base-pair scan, so the major parent's similarity
+    # over a gap is read from the same scan (not the informative-site one, whose
+    # values are on a different scale).
     absent = reconcile_gaps(
-        regions, gaps_as_regions(coverage_gaps, result, major_parent)
+        regions, gaps_as_regions(coverage_gaps, bp_result, major_parent)
     )
     regions = sorted(regions + absent, key=lambda r: r.msa_start)
     if absent:
@@ -397,7 +400,7 @@ def run_recomb(
                     len(absent))
 
     # Summary + regions go to the logger (so they reach the run log) and stdout.
-    print_summary(analysis, echo=logger.info)
+    print_summary(analysis_bp, echo=logger.info)
     print_regions(regions, major_parent, echo=logger.info)
     print_coverage(coverage_gaps, coverage_threshold, echo=logger.info)
 
@@ -450,10 +453,17 @@ def run_recomb(
     output_dir = Path(params.output)
     logger.info("Writing outputs to %s", output_dir)
     _write_run_provenance(output_dir, provenance, msa_record, logger)
+    # Everything reported as "similarity" is identity over all comparable columns
+    # (the base-pair scan). Under informative-site windowing the windows the HMM
+    # segmented are identity at polymorphic columns only -- a 98 %-identical reference
+    # reads ~0.5 there -- so they are reported as a separate, explicitly named track.
+    site_result = result if result is not bp_result else None
     write_reports(
-        result, analysis, regions, per_window_winners, provenance, output_dir,
+        bp_result, analysis_bp, regions, per_window_winners, provenance, output_dir,
         top_n=params.top_n, plot_format=params.plot_format, logger=logger,
         ctx=ReportContext(
+            site_result=site_result,
+            site_analysis=analysis if site_result is not None else None,
             coverage_gaps=coverage_gaps, coverage_threshold=coverage_threshold,
             extra_sections=extra_sections, lineage_map=lineage_map,
             query_lineage=query_lineage, signal=signal, organism=params.organism,

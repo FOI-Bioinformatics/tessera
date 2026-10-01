@@ -181,6 +181,38 @@ def write_windows_tsv(
             fo.write("\t".join(map(str, row)) + "\n")
 
 
+def write_site_windows_tsv(
+    site_result: WindowSimilarity,
+    per_window_winners: list[list[str]],
+    output_dir: Path,
+    logger: logging.Logger,
+) -> None:
+    """Write the informative-site windows the HMM segmented, under their own name.
+
+    Each value is the query's identity to a reference at the polymorphic columns of
+    one window (``msa_start``..``msa_end``, end-exclusive). It is far below identity
+    over all columns by construction, so it is kept out of ``similarity_windows.tsv``.
+    """
+    datasets = list(site_result.similarities)
+    path = output_dir / "informative_site_windows.tsv"
+    logger.info("Writing informative-site window matrix: %s", path)
+    with open(path, "w") as fo:
+        fo.write("\t".join(
+            ["msa_position", "query_position", "msa_start", "msa_end", "winner", *datasets]
+        ) + "\n")
+        for i, (msa_pos, q_pos) in enumerate(
+            zip(site_result.positions, site_result.query_positions, strict=True)
+        ):
+            start, end = site_result.window_spans[i]
+            row = [msa_pos, q_pos, start, end, winner_label(per_window_winners[i])]
+            row += [
+                "NA" if isnan(site_result.similarities[ds][i])
+                else f"{site_result.similarities[ds][i]:.4f}"
+                for ds in datasets
+            ]
+            fo.write("\t".join(map(str, row)) + "\n")
+
+
 def write_stats_tsv(analysis: AnalysisResult, output_dir: Path, logger: logging.Logger) -> None:
     path = output_dir / "similarity_stats.tsv"
     logger.info("Writing per-dataset similarity stats: %s", path)
