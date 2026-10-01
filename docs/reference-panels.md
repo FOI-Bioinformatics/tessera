@@ -105,7 +105,10 @@ It stops when the gaps close, when no new reference can be found, or when a roun
 longer improves the worst gap (so a genuinely hypervariable region is reported, not
 chased forever). Each round is recorded in `filled/fill_summary.tsv`, and the query's
 own record is auto-excluded from its FASTA header. This needs an aligner and Entrez
-Direct, and rebuilds the alignment every round.
+Direct, and rebuilds the alignment every round. If the last permitted round
+(`--max-rounds`) still downloaded references, one more alignment (`final.msa.fasta`) is
+built from them without a further search, so `panel.msa.fasta` holds every reference the
+run reports.
 
 Omit `--collection` to **start fresh** with no suggested references: the first round
 seeds the collection from an NCBI search, then the loop fills the remaining gaps as
@@ -277,9 +280,16 @@ SARS-CoV-2 sublineages (<1 % apart) alike. The curated `curated/collection/` and
 `panel_lineages.tsv` (each reference's role and ANI/coverage) are written; rebuild with
 `tessera msa` then `tessera recomb`.
 
-The same curation runs inside the fill loop with `fill-references --curate`, which
-keeps the growing panel diverse and sibling-free each round and adds a "Reference
-panel" section to the report. Both need skani (and skDER for dereplication):
+The same curation runs inside the fill loop with `fill-references --curate`, and adds a
+"Reference panel" section to the report. It runs before an alignment is built whenever the
+working collection holds genomes that have not been through it: the collection you
+supplied (before round 1), and each round's downloads (before the next build). A panel
+seeded from scratch is not curated before round 1, because seeding applies its own sibling
+filter. With `--reference`, that genome is the curation backbone and is never removed.
+`find-references --download ... --curate` curates only what that run downloaded: genomes
+already in the download directory are compared against but kept, and appear in
+`panel_lineages.tsv` as `sibling-kept` or `redundant-kept` if curation would otherwise
+have dropped them. Both need skani (and skDER for dereplication):
 `conda install -c bioconda skani skder`.
 
 ## Make a collection lineage-ready (`type-lineages`)
@@ -333,7 +343,7 @@ group); a `parent_group` column in `out/reassortment.tsv` records each segment's
 segments are linked only transitively (segment A shares a strain with B, B with C, but A and C share
 none) has no single spanning strain, so its `parent_strains` is empty and the text mosaic shows `?`
 for it; the verdict is still `clonal` because no pair disagrees. Segments
-below `--ani-floor` to every tip, or aligning over too little of their length, or with no resolvable
+below `--ani-floor` to every tip, or aligning over less than 50 % of their length, or with no resolvable
 dataset, are reported `unassigned` and excluded from the call. Because there is no influenza taxon
 alias, flu auto-typing needs the `nextclade` CLI (for `nextclade sort`) or explicit `--dataset
 SEGMENT=path` overrides; without either, each flu segment resolves to nothing and is left

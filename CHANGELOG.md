@@ -6,6 +6,53 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **The MAFFT backend ignored strand.** A genome, or one contig of a draft assembly, on the
+  opposite strand to the backbone was aligned as given and came out at chance-level identity
+  (about 0.40 against 0.97 for the same genome in forward orientation), which the scan then
+  read as a divergent region. MAFFT now runs with `--adjustdirection`.
+- **`reassort` never applied its alignment-fraction filter.** The threshold was written as a
+  fraction (0.5) and compared with skani's percentage, so a tip aligning over a fifth of a
+  segment could outrank a full-length match and become the segment's nearest strain. The
+  threshold is now 50 %.
+- **`fill-references` did not align the last round's downloads.** On a `--max-rounds` exit the
+  final downloads were counted in `fill_summary.tsv`, the report and `lineages.tsv` but were
+  absent from `panel.msa.fasta`, so detection ran without them. One more alignment
+  (`final.msa.fasta`) is now built from them, without a further search.
+- **`fill-references --curate` did nothing unless a round both found a gap and downloaded a
+  reference.** A supplied collection that contains a whole-genome sibling of the query has
+  no coverage gap, so the loop converged before curation ran. Curation now runs before the
+  first alignment for a supplied collection and before each later build for that round's
+  downloads. A panel seeded from scratch is unchanged: seeding has its own sibling filter.
+- **`fill-references --curate --reference X` could delete X** and fail the next round with
+  "Reference 'X' not found". The given reference is now the curation backbone.
+- **`find-references --download <collection> --curate` deleted genomes that were already in
+  the collection.** Curation now removes only what the run downloaded; genomes already
+  present are reported as `sibling-kept` / `redundant-kept` in `panel_lineages.tsv`. A
+  downloaded sibling can no longer be picked as the curation backbone either.
+- **`reassort --scan-segments` could write outside the output directory.** A segment record
+  named `..` resolved the scan directory to the parent of the output and replaced its
+  `collection/`. Segment names are sanitised by one shared helper, and two names that
+  sanitise alike no longer share a scan directory.
+- **MAF-based backends (`sibeliaz`, `cactus`) could drop rows and columns.** A genome placed in
+  no alignment block had no row at all; it is now an all-gap row, named in a warning. With
+  `sibeliaz`, a multi-contig backbone was laid out in sorted-name order and lost any contig
+  that no block covered, shifting later coordinates; it is now laid out as its FASTA file is,
+  with uncovered contigs kept as gap columns.
+- **`progressivemauve` named rows after the resolved input path.** Symlinked collections,
+  unrecognised extensions and whitespace in a path gave wrong or duplicate row names, and a
+  genome whose link target shared the backbone's name was dropped. Rows are now named from
+  the staged genome label. (Checked against a simulated XMFA; the tool itself was not
+  available.)
+- **Whitespace in sequence lines was read as sequence.** A reference saved with trailing
+  spaces, tabs or Windows line endings produced a ragged alignment. Such a genome is now
+  aligned from a cleaned copy (a warning names it), and the FASTA reader ignores whitespace
+  in sequence lines.
+- A header line `> ` (no name), a truncated MAF block, an XMFA that does not list the
+  reference and an empty MAFFT result are reported as input/output errors that name the
+  file, instead of "Unexpected error".
+
 ## [1.2.0] - 2026-10-01
 
 ### Fixed
