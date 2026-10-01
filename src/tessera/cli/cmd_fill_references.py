@@ -11,6 +11,8 @@ from .main import (
     _require_directory,
     _require_file,
     _require_lineage_map,
+    _require_range,
+    _require_scan_windows,
     app,
     get_logger,
     stage_errors,
@@ -205,6 +207,11 @@ def fill_references(
     with stage_errors(logger):
         _require_file(query, "Query file")
         _require_lineage_map(lineage_map)
+        # Checked here, before any network or aligner work: a round count of zero
+        # builds nothing and still exits 0, and a bad window otherwise surfaces only
+        # after the panel has been recruited and aligned.
+        _require_range(max_rounds, "--max-rounds", lo=1)
+        _require_scan_windows(window_size, window_step)
         if collection is not None:
             _require_directory(collection, "Collection directory")
         _require_choice(aligner, set(aligner_registry.names()), "--aligner")

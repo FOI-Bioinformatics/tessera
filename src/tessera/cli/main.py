@@ -98,6 +98,22 @@ def _require_directory(path: Path, label: str) -> None:
         raise UserInputError(f"{label} is not a directory: {path}")
 
 
+def _require_output_directory(path: Path) -> None:
+    """Reject an output path that exists and is not a directory.
+
+    The writers create the directory if it is missing; given an existing file they fail
+    with ``[Errno 17] File exists`` from wherever the first output is written.
+    """
+    if Path(path).exists() and not Path(path).is_dir():
+        raise UserInputError(f"Output path exists and is not a directory: {path}")
+
+
+def _require_scan_windows(window_size: int, window_step: int) -> None:
+    """The window options every scanning command shares; see :func:`_require_range`."""
+    _require_range(window_size, "--window-size", lo=1)
+    _require_range(window_step, "--window-step", lo=1)
+
+
 def _parse_key_values(items: list[str], label: str) -> dict[str, str]:
     """Parse repeated ``key=value`` options into a dict (used for tool extras)."""
     out: dict[str, str] = {}

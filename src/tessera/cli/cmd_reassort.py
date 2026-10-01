@@ -14,10 +14,11 @@ from pathlib import Path
 import typer
 
 from ..core.errors import UserInputError
+from ..core.io import read_fasta
 from ..reassort import assign_segments
 from ..reassort.assign import DEFAULT_ANI_FLOOR
 from ..reassort.constellation import DEFAULT_MARGIN
-from .main import _require_file, app, get_logger, stage_errors
+from .main import _require_file, _require_range, app, get_logger, stage_errors
 
 
 @app.command(name="reassort")
@@ -55,12 +56,26 @@ def reassort(
     logger = get_logger(output)
     with stage_errors(logger):
         _require_file(query, "Query file")
+        # ANI is a percentage. Above 100 nothing can be assigned; a negative margin
+        # leaves every near-best set empty, so a clonal pair reads as undetermined.
+        _require_range(ani_floor, "--ani-floor", lo=0.0, hi=100.0)
+        _require_range(margin, "--margin", lo=0.0)
         overrides: dict[str, str] = {}
         for item in dataset or []:
             if "=" not in item:
                 raise UserInputError(f"--dataset must be SEGMENT=path, got {item!r}")
             seg, path = item.split("=", 1)
             overrides[seg.strip()] = path.strip()
+        if overrides:
+            # An override is looked up by segment name; one that matches no record would
+            # be ignored and that segment's dataset auto-detected instead.
+            segments = [name for name, _seq in read_fasta(query) if name]
+            unknown = sorted(set(overrides) - set(segments))
+            if unknown:
+                raise UserInputError(
+                    f"--dataset names segment(s) not in the query: {', '.join(unknown)}. "
+                    f"Segments in {query.name}: {', '.join(segments) or '(none)'}."
+                )
 
         result = assign_segments(
             query, dataset_overrides=overrides,
@@ -102,7 +117,10 @@ def reassort(
                 fo.write("segment\tintragenic_recombination\tn_regions\tnote\n")
                 for sc in result.scans:
                     flag = "yes" if sc.recombinant else ("no" if sc.scanned else "n/a")
-                    fo.write(f"{sc.segment}\t{flag}\t{sc.n_regions}\t{sc.note}\n")
+                    # A failure note quotes the aligner's own message, which can span
+                    # lines and hold tabs; keep it to one cell.
+                    note = " ".join(sc.note.split())
+                    fo.write(f"{sc.segment}\t{flag}\t{sc.n_regions}\t{note}\n")
             rollup = " | ".join(f"{sc.segment}: {sc.note}" for sc in result.scans)
             logger.info("Intragenic scan: %s", rollup)
             logger.info("Wrote %s", stsv)

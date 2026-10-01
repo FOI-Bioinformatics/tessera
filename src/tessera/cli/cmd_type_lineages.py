@@ -14,6 +14,7 @@ from pathlib import Path
 import typer
 
 from ..core.errors import UserInputError
+from ..core.io import _require_fasta, collection_genomes
 from .main import _require_directory, _require_lineage_map, app, get_logger, stage_errors
 
 
@@ -52,12 +53,14 @@ def type_lineages(
     with stage_errors(logger):
         _require_directory(collection, "Collection directory")
         _require_lineage_map(lineage_map)
-        genomes = sorted(
-            p for p in collection.iterdir()
-            if p.is_file() and p.suffix.lower() in (".fasta", ".fa", ".fna")
-        )
+        # The same reading of a collection as every other command: each non-hidden
+        # file is a genome, whatever its extension and gzip-compressed or not, and a
+        # file that is not FASTA is an error rather than something to skip.
+        genomes = collection_genomes(collection)
         if not genomes:
-            raise UserInputError(f"No FASTA genomes found in {collection}")
+            raise UserInputError(f"No genome files found in {collection}")
+        for genome in genomes:
+            _require_fasta(genome)
         rows = assign_lineages(
             genomes, user_lineage_map=lineage_map, taxon=taxon,
             nextclade_dataset=nextclade_dataset, ref_ani_floor=ref_ani_floor,
