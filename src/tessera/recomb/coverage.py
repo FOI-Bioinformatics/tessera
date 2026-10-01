@@ -117,20 +117,20 @@ def call_coverage_gaps(
 
     low_info = max(20, int(0.05 * window_size))
     gaps: list[CoverageGap] = []
-    for run in merged:
-        length = run["end"] - run["start"]
+    for block in merged:
+        length = block["end"] - block["start"]
         if length < params.min_gap:
             continue
-        idx = run["idx"]
+        idx = block["idx"]
         labels = [result.best_label[i] for i in idx if result.best_label[i]]
         best_label = Counter(labels).most_common(1)[0][0] if labels else "n/a"
         sims = [best[i] for i in idx if not isnan(best[i])]
         med_info = median(info[i] for i in idx) if idx else 0
         gaps.append(
             CoverageGap(
-                msa_start=run["start"], msa_end=run["end"],
-                query_start=result.column_to_query(run["start"]),
-                query_end=result.column_to_query(run["end"]),
+                msa_start=block["start"], msa_end=block["end"],
+                query_start=result.column_to_query(block["start"]),
+                query_end=result.column_to_query(block["end"]),
                 length_bp=length, n_windows=len(idx),
                 best_label=best_label,
                 mean_best=round(mean(sims), 4) if sims else float("nan"),

@@ -26,6 +26,43 @@ All notable changes to Tessera are recorded here. The format follows
   Which regions are called, and their coordinates and p-values, are unchanged.
 - A donor-absent row's `mean_sim_major` and `margin` are now read from the same base-pair
   scan that called the coverage gap, rather than mixing it with informative-site values.
+- **A collection inside the output directory was deleted.** `curate-panel`, `fill-references`
+  and `build-panel` rebuild `<output>/collection` on every run by clearing it and copying the
+  input in. Given `--collection <output>/collection` -- the natural way to continue from an
+  earlier run -- the clear removed the input before the copy, and the run then failed with the
+  references gone. Such a collection (the working copy itself, a parent of it, or a directory
+  inside it) is now refused before anything is touched.
+- **Every file in a collection directory was staged as a genome**, including hidden ones. A
+  `.DS_Store` left by Finder could be picked as the backbone and then crash the aligner.
+  Hidden files are now skipped, and any other file that does not start with `>` is rejected
+  by name before alignment.
+- **`--deep-typing --cache-dir X` built the Nextclade pool in the cache root itself** rather
+  than in a per-dataset directory, so a second dataset was answered with the first one's tips
+  (references typed against the wrong dataset), or the build failed once the root held
+  another cache.
+- **A cache directory without a manifest blocked its own replacement.** The fresh fetch could
+  not be installed over it and was discarded, so every run re-downloaded the set and then
+  reported an empty candidate pool. A manifest-less directory is now replaced; a complete
+  cache written by a concurrent run is still kept.
+- A failed `efetch` no longer leaves an empty file in the collection, where the next round
+  would stage it as a genome.
+- The `panel.msa.fasta` published by `detect` / `fill-references` now carries its provenance
+  sidecar, so `run_provenance.json` names the aligner and version for those commands too.
+- `reassort`: a segment name taken from a FASTA header is sanitised before it is used as a
+  file name. A header containing `/` failed with "Unexpected error", and one containing `../`
+  wrote outside the temporary directory.
+- `sibeliaz`: a sequence ID shared by two genomes is rejected. SibeliaZ names rows by sequence
+  ID alone, so the genomes were merged under one label and the other vanished from the MSA.
+- A gzipped query is now readable everywhere a query is read (it was accepted by staging but
+  failed in the readers that look inside it), and Windows line endings are tolerated.
+- A reference already in the collection under a versioned name (`NC_045512.2`) is recognised
+  when a search returns the bare accession, instead of being downloaded again.
+- Seeding no longer reports "only siblings found" when every BLAST search failed or returned
+  nothing; that outcome switched the seed source under a false explanation. It now ends with
+  the "could not seed" error, after the per-search failure warnings.
+- A missing external binary is reported as such (`MissingBinaryError`) from every tool call,
+  and a missing `--query` in `detect`, `build-panel` and `fill-references` as a missing file,
+  rather than as `Unexpected error: [Errno 2]`.
 
 ### Added
 
@@ -42,6 +79,13 @@ All notable changes to Tessera are recorded here. The format follows
 
 ### Changed
 
+- **The type check is blocking in CI.** The 17-error backlog is cleared (annotation-only
+  changes; no defect among them), so `mypy` no longer runs with `continue-on-error`.
+- **Dependabot no longer raises the lower bound of a range requirement.** With ranges and no
+  lockfile its default is to move the floor to the newest release (`typer>=0.12` became
+  `>=0.27.1`), which narrows what an existing environment may hold and changes nothing for a
+  fresh install. `versioning-strategy: increase-if-necessary` limits pip updates to releases
+  that fall outside the declared range.
 - **The `pytest` cap is widened to `<10.0`.** pytest 8.x carries PYSEC-2026-1845, whose fix is
   9.0.3, so the previous `<9.0` cap blocked a security fix -- worse than the surprise major it
   was guarding against. Verified: the full suite passes on pytest 9.1.1.

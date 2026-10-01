@@ -23,6 +23,13 @@ updates:
     commit-message:
       prefix: "deps"
     labels: ["dependencies"]
+    # Requirements here are ranges, not pins, and there is no lockfile. Dependabot's
+    # default for that shape is to raise the *lower* bound to the newest release
+    # (typer >=0.12 became >=0.27.1), which narrows what an existing environment may
+    # hold and gains nothing: a fresh install already resolves to the newest version
+    # the range allows. Only touch a requirement when the new release falls outside
+    # it. Known vulnerabilities are caught by the pip-audit workflow, not by this.
+    versioning-strategy: increase-if-necessary
     # Runtime dependencies are capped to the next major on purpose (see the comment in
     # pyproject.toml): Tessera is an application, and a surprise major from numpy or
     # biopython should not reach a fresh install. Let Dependabot propose patch and minor

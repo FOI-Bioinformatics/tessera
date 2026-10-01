@@ -110,7 +110,7 @@ class Throttle:
     call never waits.
     """
 
-    def __init__(self, interval: float, name: str = "") -> None:
+    def __init__(self, interval: float | Callable[[], float], name: str = "") -> None:
         self._interval = interval
         self._name = name
         self._lock = threading.Lock()

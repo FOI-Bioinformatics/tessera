@@ -163,13 +163,23 @@ def atomic_cache_dir(cache_dir: Path) -> Iterator[Path]:
     try:
         os.replace(build_dir, cache_dir)
     except OSError:
-        # A concurrent run finished the same fetch first. Its copy answers the same
-        # request as ours, so keep it rather than fail; only re-raise if the
-        # destination is not in fact a populated cache.
         if not cache_dir.is_dir():
             shutil.rmtree(build_dir, ignore_errors=True)
             raise
-        shutil.rmtree(build_dir, ignore_errors=True)
+        if read_cache_manifest(cache_dir) is not None:
+            # A concurrent run finished the same fetch first. Its copy answers the
+            # same request as ours, so keep it rather than fail.
+            shutil.rmtree(build_dir, ignore_errors=True)
+            return
+        # The directory in the way carries no (readable) manifest, so no reader will
+        # ever accept it -- and left in place it would block every later install too:
+        # each run would fetch, fail to install, and report an empty panel. Replace it.
+        shutil.rmtree(cache_dir, ignore_errors=True)
+        try:
+            os.replace(build_dir, cache_dir)
+        except OSError:
+            shutil.rmtree(build_dir, ignore_errors=True)
+            raise
 
 
 def write_cache_manifest(directory: Path, **fields: object) -> Path:

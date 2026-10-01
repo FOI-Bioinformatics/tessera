@@ -31,7 +31,7 @@ from pathlib import Path
 
 from ..core.binaries import BinarySpec
 from ..core.errors import UserInputError
-from ..core.io import strip_sequence_extension
+from ..core.io import collection_genomes, copy_collection, strip_sequence_extension
 from ..core.plugins import ToolCapabilities
 from ..core.process import run_tool
 from ..recomb.typing import LineageMap, lineage_of
@@ -273,7 +273,7 @@ def curate_collection_dir(
     Runs :func:`curate_panel`, then deletes the dropped genome files from disk so a
     subsequent MSA rebuild sees only the diverse, sibling-free panel.
     """
-    genomes = sorted(p for p in collection.iterdir() if p.is_file())
+    genomes = collection_genomes(collection)
     result = curate_panel(
         query_fasta, genomes, backbone,
         ani_margin=ani_margin, af_min=af_min, derep_ani=derep_ani, logger=logger,
@@ -319,18 +319,17 @@ def curate_collection(
         )
     output.mkdir(parents=True, exist_ok=True)
     dest = output / "collection"
-    if dest.exists():
-        shutil.rmtree(dest)
-    shutil.copytree(collection, dest)
-    genomes = sorted(p for p in dest.iterdir() if p.is_file())
+    copy_collection(collection, dest)
+    genomes = collection_genomes(dest)
     if not genomes:
         raise UserInputError(f"Collection {collection} has no genome files.")
     if reference:
         backbone = _resolve_backbone(genomes, reference)
     else:
-        backbone = pick_backbone(query_fasta, genomes, af_min=af_min, logger=logger)
-        if backbone is None:
+        picked = pick_backbone(query_fasta, genomes, af_min=af_min, logger=logger)
+        if picked is None:
             raise UserInputError("Could not determine a backbone; pass --reference.")
+        backbone = picked
     logger.info(
         "Backbone (query's whole-genome anchor): %s", strip_sequence_extension(backbone.name)
     )

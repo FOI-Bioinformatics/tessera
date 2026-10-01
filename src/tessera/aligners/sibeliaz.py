@@ -15,7 +15,7 @@ from pathlib import Path
 
 from ..converters.maf_to_fasta import maf_to_fasta
 from ..core.binaries import BinarySpec
-from ..core.errors import OutputError
+from ..core.errors import OutputError, UserInputError
 from ..core.io import normalize_reference
 from ..core.plugins import ToolCapabilities
 from ..core.process import run_tool
@@ -151,5 +151,15 @@ def _build_seqid_map(genomes) -> dict[str, str]:
             for line in fo:
                 if line.startswith(">"):
                     seqid = line[1:].split()[0]
-                    name_map[seqid] = stem
+                    owner = name_map.setdefault(seqid, stem)
+                    if owner != stem:
+                        # SibeliaZ names alignment rows by sequence ID alone, so two
+                        # genomes sharing one would be merged under a single label
+                        # and the other would vanish from the MSA without a word.
+                        raise UserInputError(
+                            f"Sequence ID '{seqid}' occurs in both '{owner}' and "
+                            f"'{stem}'. The sibeliaz backend identifies genomes by "
+                            "sequence ID, so IDs must be unique across the query and "
+                            "collection -- rename one, or use another --aligner."
+                        )
     return name_map

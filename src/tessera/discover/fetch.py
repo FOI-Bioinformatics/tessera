@@ -52,5 +52,8 @@ def efetch_fasta(accession: str, collection_dir: Path, logger: logging.Logger) -
 
     with_retries(_fetch, what=f"efetch {accession}", logger=logger)
     if not dest.exists() or dest.stat().st_size == 0 or not dest.read_text().startswith(">"):
+        # Callers log the failure and carry on, so an empty or non-FASTA file left here
+        # would be staged as a genome by the next round.
+        dest.unlink(missing_ok=True)
         raise OutputError(f"efetch returned no FASTA for accession '{accession}'.")
     return dest

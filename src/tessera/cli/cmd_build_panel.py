@@ -13,7 +13,7 @@ from pathlib import Path
 
 import typer
 
-from .main import _require_choice, app, get_logger, stage_errors
+from .main import _require_choice, _require_file, app, get_logger, stage_errors
 
 
 def _seed_source(candidate_pool, nextclade: bool, nextclade_dataset: str | None) -> str:
@@ -83,6 +83,7 @@ def build_panel(
 
     logger = get_logger(output)
     with stage_errors(logger):
+        _require_file(query, "Query file")
         _require_choice(aligner, set(aligner_registry.names()), "--aligner")
         params = FillParams(
             query=query, collection=collection, output=output,

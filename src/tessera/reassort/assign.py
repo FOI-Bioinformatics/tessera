@@ -10,6 +10,7 @@ model that the intragenic recombination scan uses.
 from __future__ import annotations
 
 import logging
+import re
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -82,7 +83,10 @@ def _type_segment(seg, seq, overrides, ani_floor, margin, email, cache_dir, tmp,
     (``None`` if no dataset maps). Returns an unassigned row for genuine per-segment skips (no
     dataset, or a skani rejection of a short/odd segment); a transient failure (a download/network
     error, or any unexpected error) propagates so it surfaces rather than reading as unassigned."""
-    seg_fasta = Path(tmp) / f"{strip_sequence_extension(seg)}.fasta"
+    # The segment name comes from a FASTA header, which may hold path separators
+    # ("A/California/07/2009|HA") or climb out of the temp directory ("../x").
+    safe = re.sub(r"[^\w.-]+", "_", strip_sequence_extension(seg)).strip(".") or "segment"
+    seg_fasta = Path(tmp) / f"{safe}.fasta"
     with open(seg_fasta, "w") as fo:
         write_fasta_record(fo, seg, seq)
     try:

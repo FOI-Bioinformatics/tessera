@@ -6,7 +6,14 @@ from pathlib import Path
 
 import typer
 
-from .main import _require_choice, app, get_logger, stage_errors
+from .main import (
+    _require_choice,
+    _require_directory,
+    _require_file,
+    app,
+    get_logger,
+    stage_errors,
+)
 
 
 @app.command(name="fill-references")
@@ -193,6 +200,9 @@ def fill_references(
 
     logger = get_logger()
     with stage_errors(logger):
+        _require_file(query, "Query file")
+        if collection is not None:
+            _require_directory(collection, "Collection directory")
         _require_choice(aligner, set(aligner_registry.names()), "--aligner")
         _require_choice(seed_mode, {"whole", "windowed", "parents"}, "--seed-mode")
         _require_choice(seed_source, {"blast", "local", "ncbi-virus", "nextclade"}, "--seed-source")

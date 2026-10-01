@@ -106,12 +106,11 @@ def descent_pvalue_exact(m: int, n: int, depth: int) -> float:
         down[: depth - 1] = prev[j - 1][1:depth]  # delta -> delta+1, (depth-1) forbidden
         prev[j] = down
     for i in range(1, m + 1):
-        cur = [None] * (n + 1)
         # j == 0: only up-steps remain.
         up0 = np.empty(depth)
         up0[0] = prev[0][0]
         up0[1:] = prev[0][: depth - 1]  # delta -> max(0, delta-1)
-        cur[0] = up0
+        cur: list[np.ndarray] = [up0]
         for j in range(1, n + 1):
             total = i + j
             up = np.empty(depth)
@@ -119,7 +118,7 @@ def descent_pvalue_exact(m: int, n: int, depth: int) -> float:
             up[1:] = prev[j][: depth - 1]
             down = np.zeros(depth)
             down[: depth - 1] = cur[j - 1][1:depth]
-            cur[j] = (i / total) * up + (j / total) * down
+            cur.append((i / total) * up + (j / total) * down)
         prev = cur
     return float(1.0 - prev[n][0])
 

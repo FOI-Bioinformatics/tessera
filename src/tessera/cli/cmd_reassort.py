@@ -13,6 +13,7 @@ from pathlib import Path
 
 import typer
 
+from ..core.errors import UserInputError
 from ..reassort import assign_segments
 from ..reassort.assign import DEFAULT_ANI_FLOOR
 from ..reassort.constellation import DEFAULT_MARGIN
@@ -57,7 +58,7 @@ def reassort(
         overrides: dict[str, str] = {}
         for item in dataset or []:
             if "=" not in item:
-                raise typer.BadParameter(f"--dataset must be SEGMENT=path, got {item!r}")
+                raise UserInputError(f"--dataset must be SEGMENT=path, got {item!r}")
             seg, path = item.split("=", 1)
             overrides[seg.strip()] = path.strip()
 

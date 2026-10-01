@@ -72,7 +72,7 @@ class Registry(Generic[T]):
         return cls
 
     def create(self, name: str) -> T:
-        return self.get(name)()  # type: ignore[call-arg]
+        return self.get(name)()
 
 
 class _BrokenPlugin:

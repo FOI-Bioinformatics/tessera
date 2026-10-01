@@ -107,10 +107,9 @@ exclude_lines = [
 python_version = "3.11"
 files = ["src/tessera"]
 ignore_missing_imports = true
-# Deliberately permissive to start: the codebase is ~91% annotated but has never been
-# type-checked, so a strict configuration would report a large backlog and get
-# switched off. This catches contradictions in what is already declared; tighten it
-# once the baseline is clean.
+# Deliberately permissive: this catches contradictions in what is already declared
+# (the codebase is ~91% annotated). The baseline is clean and CI blocks on it; tighten
+# the configuration only together with the annotations it would then require.
 warn_redundant_casts = true
 warn_unused_ignores = true
 no_implicit_optional = true

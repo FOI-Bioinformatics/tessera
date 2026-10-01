@@ -20,8 +20,13 @@ from pathlib import Path
 
 from .. import __version__
 from ..core.errors import UserInputError
-from ..core.io import read_fasta, strip_sequence_extension
-from ..msa.build import MsaParams, build_msa
+from ..core.io import (
+    collection_genomes,
+    copy_collection,
+    read_fasta,
+    strip_sequence_extension,
+)
+from ..msa.build import MsaParams, build_msa, provenance_path
 from ..recomb.coverage import CoverageParams, call_coverage_gaps
 from ..recomb.pango import crosscheck_html, expand_recombinant, load_alias_key
 from ..recomb.regions import DEFAULT_METHODS
@@ -201,11 +206,11 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
     # Grow a copy of the collection so the user's input is left untouched. With no
     # starting collection, begin with an empty directory and seed it below.
     collection = params.output / "collection"
-    if collection.exists():
-        shutil.rmtree(collection)
     if params.collection is not None:
-        shutil.copytree(params.collection, collection)
+        copy_collection(params.collection, collection)
     else:
+        if collection.exists():
+            shutil.rmtree(collection)
         collection.mkdir(parents=True)
 
     exclude = {_base_accession(e) for e in params.exclude}
@@ -220,9 +225,9 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
 
     # Start fresh: seed an empty collection from a whole-query NCBI search so the
     # first MSA has something to align against.
-    if not any(collection.iterdir()):
+    if not collection_genomes(collection):
         _seed_collection(params, collection, query_records, exclude, logger)
-        if not any(collection.iterdir()):
+        if not collection_genomes(collection):
             raise UserInputError(
                 "Could not seed any reference from NCBI; provide a starting --collection."
             )
@@ -232,7 +237,7 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
     )
 
     _write_trace(params.output, trace, logger)
-    final_size = sum(1 for _ in collection.iterdir())
+    final_size = len(collection_genomes(collection))
 
     lineage_map, query_lineage = _type_panel(params, collection, query_label, logger)
     extra_sections = _report_sections(
@@ -244,6 +249,11 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
     panel_msa = params.output / "panel.msa.fasta"
     if last_msa is not None:
         shutil.copyfile(last_msa, panel_msa)
+        # The sidecar is found by the alignment's own name, so a copy under a new name
+        # loses it -- and with it the aligner and version in the run's provenance.
+        sidecar = provenance_path(last_msa)
+        if sidecar.exists():
+            shutil.copyfile(sidecar, provenance_path(panel_msa))
     if last_msa is not None and params.report:
         logger.info("Writing the final report for the expanded collection...")
         run_recomb(
@@ -297,7 +307,7 @@ def _grow_collection(
     for rnd in range(1, params.max_rounds + 1):
         msa = params.output / f"round{rnd}.msa.fasta"
         logger.info("=== Round %d: building MSA from %d reference(s) ===",
-                    rnd, sum(1 for _ in collection.iterdir()))
+                    rnd, len(collection_genomes(collection)))
         build_msa(
             MsaParams(
                 query=params.query, collection=collection, output=msa,
@@ -346,7 +356,7 @@ def _grow_collection(
         backbone = None
         if params.curate:
             backbone = pick_backbone(
-                params.query, [p for p in collection.iterdir() if p.is_file()],
+                params.query, collection_genomes(collection),
                 af_min=params.af_min, logger=logger,
             )
         downloaded = _download(candidates, collection, logger)
@@ -363,7 +373,7 @@ def _grow_collection(
             for row in curation.table:
                 panel_rows[row["genome"]] = row
             dropped = {c.hit.accession for c in downloaded} - {
-                strip_sequence_extension(p.name) for p in collection.iterdir() if p.is_file()
+                strip_sequence_extension(p.name) for p in collection_genomes(collection)
             }
             rr.added = [a for a in rr.added if a not in dropped]
     else:
@@ -412,7 +422,7 @@ def _type_panel(
     later standalone recomb can name parents by lineage instead of bare
     accession. Returns the resolved lineage map and the query's own lineage.
     """
-    coll_files = [p for p in collection.iterdir() if p.is_file()]
+    coll_files = collection_genomes(collection)
     if params.deep_typing:
         # The consolidated sidecar records the full fetched NCBI-Virus set; restrict the
         # datasets rows to accessions that survived selection so lineages.tsv describes the
@@ -810,11 +820,13 @@ def _seed_windowed(
         len(chunks), label,
     )
     per_window_hits: list[list] = []
+    any_hits = False  # did any search return anything, before filtering?
     for chunk in chunks:
         if len(chunk) < MIN_SUBSEQ:
             continue
-        kept = [h for h in _blast_or_none(chunk, params, logger) if _keep(h, exclude, params)]
-        per_window_hits.append(kept)
+        hits = _blast_or_none(chunk, params, logger)
+        any_hits = any_hits or bool(hits)
+        per_window_hits.append([h for h in hits if _keep(h, exclude, params)])
 
     selected: list[str] = []
     dropped_siblings: set[str] = set()
@@ -847,7 +859,10 @@ def _seed_windowed(
             "Suppressed %d sibling hit(s) (>= %.0f%% identity over near-full coverage) to "
             "recruit parental lineages.", len(dropped_siblings), SEED_SIBLING_IDENTITY,
         )
-    saturated = bool(per_window_hits) and not any(
+    # "Only siblings were found" needs something to have been found. When every
+    # search failed or came back empty there is no evidence about what NCBI holds, and
+    # calling that saturation would switch the seed source under a false explanation.
+    saturated = any_hits and not any(
         not _is_sibling_hit(h) for kept in per_window_hits for h in kept
     )
     return selected[:SEED_TOTAL_CAP], saturated
