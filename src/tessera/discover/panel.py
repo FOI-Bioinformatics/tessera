@@ -26,6 +26,7 @@ import html
 import logging
 import shutil
 import tempfile
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -266,22 +267,48 @@ def curate_collection_dir(
     ani_margin: float = DEFAULT_SIBLING_MARGIN,
     af_min: float = DEFAULT_AF_MIN,
     derep_ani: float = DEFAULT_DEREP_ANI,
+    protect: Iterable[Path] = (),
     logger: logging.Logger,
 ) -> CurationResult:
     """Curate the genomes in ``collection`` in place: drop siblings/redundant files.
 
     Runs :func:`curate_panel`, then deletes the dropped genome files from disk so a
     subsequent MSA rebuild sees only the diverse, sibling-free panel.
+
+    ``protect`` lists files that must stay on disk whatever the comparison says -- the
+    genomes a directory held before this run added to it. They still take part in the
+    sibling and redundancy comparison (a new download that duplicates one is dropped),
+    and a protected genome that would have been removed is reported with the role
+    ``sibling-kept`` / ``redundant-kept`` instead, so the table says what is on disk.
     """
     genomes = collection_genomes(collection)
     result = curate_panel(
         query_fasta, genomes, backbone,
         ani_margin=ani_margin, af_min=af_min, derep_ani=derep_ani, logger=logger,
     )
+    protected = {Path(p).resolve() for p in protect}
     keep = {p.resolve() for p in result.kept} | {backbone.resolve()}
+    spared: list[Path] = []
     for g in genomes:
-        if g.resolve() not in keep:
+        if g.resolve() in keep:
+            continue
+        if g.resolve() in protected:
+            spared.append(g)
+        else:
             g.unlink()
+    if spared:
+        spared_labels = {strip_sequence_extension(g.name) for g in spared}
+        for row in result.table:
+            if row["genome"] in spared_labels:
+                row["role"] = row["role"].replace("-dropped", "-kept")
+        spared_set = {g.resolve() for g in spared}
+        result.kept = [*result.kept, *spared]
+        result.siblings = [g for g in result.siblings if g.resolve() not in spared_set]
+        result.redundant = [g for g in result.redundant if g.resolve() not in spared_set]
+        logger.info(
+            "Kept %d pre-existing genome(s) that curation would have dropped: %s.",
+            len(spared), ", ".join(sorted(spared_labels)),
+        )
     return result
 
 
@@ -372,10 +399,15 @@ def write_panel_tsv(
 _ROLE_LABEL = {
     "backbone": "backbone",
     "representative": "kept (parent)",
+    "sibling-kept": "kept (sibling, pre-existing)",
+    "redundant-kept": "kept (redundant, pre-existing)",
     "sibling-dropped": "dropped (sibling)",
     "redundant-dropped": "dropped (redundant)",
 }
-_ROLE_ORDER = {"backbone": 0, "representative": 1, "sibling-dropped": 2, "redundant-dropped": 3}
+_ROLE_ORDER = {
+    "backbone": 0, "representative": 1, "sibling-kept": 2, "redundant-kept": 3,
+    "sibling-dropped": 4, "redundant-dropped": 5,
+}
 
 
 def panel_table_html(table: list[dict], lineage_map: LineageMap | None = None) -> str:

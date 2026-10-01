@@ -61,8 +61,9 @@ def find_references(
     ),
     curate: bool = typer.Option(
         False, "--curate",
-        help="After download, drop the query's siblings and dereplicate (needs skani/skDER, "
-        "--collection as the backbone source).",
+        help="After download, drop the query's siblings and near-duplicates among the "
+        "new downloads (needs skani/skDER, --collection as the backbone source). Genomes "
+        "already in the download directory are never removed.",
     ),
     sibling_margin: float = typer.Option(
         3.0, "--sibling-margin",

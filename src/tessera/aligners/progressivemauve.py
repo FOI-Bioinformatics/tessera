@@ -17,6 +17,7 @@ from pathlib import Path
 
 from ..converters.xmfa_to_fasta import xmfa_to_fasta
 from ..core.binaries import BinarySpec
+from ..core.errors import OutputError
 from ..core.executors import parallel_map
 from ..core.io import normalize_reference, read_fasta, write_fasta_record
 from ..core.plugins import ToolCapabilities
@@ -68,7 +69,7 @@ class ProgressiveMauveAligner(Aligner):
         # resolved a yet-unexplained progressiveMauve error on some systems.
         workers = 1 if params.flag("single") else params.threads
 
-        def align_query(query: Path) -> Path:
+        def align_query(query: Path) -> tuple[str, Path]:
             stem = query.stem
             xmfa = xmfa_dir / f"{stem}.xmfa"
             fa = xmfa_dir / f"{stem}.fa"
@@ -79,25 +80,37 @@ class ProgressiveMauveAligner(Aligner):
                 log_prefix=f"progressivemauve:{stem}",
             )
             xmfa_to_fasta(xmfa, ref_arg, 0, fa, reference_length=ref_length)
-            return fa
+            return stem, fa
 
-        per_query_fastas = parallel_map(align_query, queries, workers, logger=logger)
+        per_query = parallel_map(align_query, queries, workers, logger=logger)
 
         msa = out_dir / "msa.fasta"
-        _concatenate(per_query_fastas, reference, msa)
+        _concatenate(per_query, reference.stem, msa)
         return AlignResult(msa_fasta=msa)
 
 
-def _concatenate(per_query_fastas: list[Path], reference: Path, out_path: Path) -> None:
-    """Write the reference row once, then each query row; leaf names are stems."""
-    ref_stem = reference.stem
-    written_ref = False
+def _concatenate(
+    per_query: list[tuple[str, Path]], reference_label: str, out_path: Path
+) -> None:
+    """Write the reference row once, then one row per query, named by staged label.
+
+    Each per-query FASTA holds exactly two records, in a fixed order: the reference
+    projection, then the query's. The names inside those files are the paths
+    progressiveMauve echoed from its command line -- resolved symlink targets, which can
+    carry an unrecognised extension, whitespace, or a basename shared with another
+    genome -- so rows are identified by position and labelled from the staged file,
+    never from those names.
+    """
     with open(out_path, "w") as out:
-        for fa in per_query_fastas:
-            for name, seq in read_fasta(fa):
-                leaf = Path(name).stem
-                if leaf == ref_stem:
-                    if written_ref:
-                        continue
-                    written_ref = True
-                write_fasta_record(out, leaf, seq)
+        for i, (label, fa) in enumerate(per_query):
+            records = read_fasta(fa)
+            if len(records) != 2:
+                raise OutputError(
+                    f"Expected a reference row and one query row in {fa} (the "
+                    f"projection of '{label}' onto '{reference_label}'), found "
+                    f"{len(records)} record(s). progressiveMauve's output is not a "
+                    "pairwise alignment."
+                )
+            if i == 0:
+                write_fasta_record(out, reference_label, records[0][1])
+            write_fasta_record(out, label, records[1][1])

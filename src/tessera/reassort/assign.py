@@ -10,22 +10,28 @@ model that the intragenic recombination scan uses.
 from __future__ import annotations
 
 import logging
-import re
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..core.cache import nextclade_cache
 from ..core.errors import ToolExecutionError, UserInputError
-from ..core.io import read_fasta, strip_sequence_extension, write_fasta_record
+from ..core.io import (
+    read_fasta,
+    safe_filename_stem,
+    strip_sequence_extension,
+    write_fasta_record,
+)
 from ..discover.nextclade import NON_CLADE_MARKERS, build_pool, resolve_dataset
 from ..discover.panel import skani_available, skani_query_ani
 from ..recomb.typing import first_header
 from .constellation import DEFAULT_MARGIN, ParentGroup, call_constellation
-from .scan import SegmentScan, require_aligner, scan_segment
+from .scan import SegmentScan, require_aligner, scan_segment, unique_scan_dirs
 
 DEFAULT_ANI_FLOOR = 80.0  # a segment below this ANI to every tip is left unassigned
-MIN_AF = 0.5              # a tip aligning over less than this fraction of the segment is ignored
+# A tip aligning over less than this share of the segment is ignored. In PERCENT (0-100),
+# the unit skani reports Align_fraction_query in and `skani_query_ani` returns.
+MIN_AF = 50.0
 TOP_K = 25                # internal cap on candidate strains kept per segment
 
 
@@ -85,7 +91,7 @@ def _type_segment(seg, seq, overrides, ani_floor, margin, email, cache_dir, tmp,
     error, or any unexpected error) propagates so it surfaces rather than reading as unassigned."""
     # The segment name comes from a FASTA header, which may hold path separators
     # ("A/California/07/2009|HA") or climb out of the temp directory ("../x").
-    safe = re.sub(r"[^\w.-]+", "_", strip_sequence_extension(seg)).strip(".") or "segment"
+    safe = safe_filename_stem(strip_sequence_extension(seg), fallback="segment")
     seg_fasta = Path(tmp) / f"{safe}.fasta"
     with open(seg_fasta, "w") as fo:
         write_fasta_record(fo, seg, seq)
@@ -184,13 +190,15 @@ def assign_segments(
     result.pair_notes = call.pair_notes
 
     if scan_segments:
+        scan_dirs = unique_scan_dirs([s.segment for s in result.segments])
         for s in result.segments:
             if s.status == "assigned":
                 seq, dataset = to_scan[s.segment]
                 assert output is not None  # guarded above when scan_segments is set
                 result.scans.append(scan_segment(
                     s.segment, seq, dataset, output,
-                    aligner=aligner, cache_dir=cache_dir, logger=logger))
+                    aligner=aligner, cache_dir=cache_dir, logger=logger,
+                    dir_name=scan_dirs[s.segment]))
             else:
                 result.scans.append(SegmentScan(s.segment, False, False, 0, "unassigned"))
     return result

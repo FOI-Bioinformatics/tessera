@@ -98,3 +98,102 @@ def test_maf_name_map_relabels_to_real_stems(tmp_path: Path) -> None:
     seqs = _read_fasta(out)
     assert set(seqs) == {"cowpox_KC813504", "sample.1"}  # dotted stem restored
     assert seqs["sample.1"] == "ACGA"
+
+
+# --- multi-contig backbone layout and unplaced genomes ---------------------------
+
+def test_maf_backbone_contigs_follow_file_order_when_given(tmp_path: Path) -> None:
+    # The backbone FASTA lists contig_2 then contig_10. Sorted by name, contig_10 comes
+    # first, which puts the backbone in a different order from its own file (and from
+    # the minimap2 / mafft backends on the same input).
+    maf = tmp_path / "order.maf"
+    maf.write_text(
+        "a\n"
+        "s ref.contig_2 0 4 + 4 AAAA\n"
+        "s qry.x 0 4 + 8 AAAA\n"
+        "\n"
+        "a\n"
+        "s ref.contig_10 0 4 + 4 CCCC\n"
+        "s qry.x 4 4 + 8 CCCC\n"
+    )
+    seqs = _read_fasta(maf_to_fasta(
+        maf, "ref", tmp_path / "msa.fasta",
+        ref_contigs=[("ref.contig_2", 4), ("ref.contig_10", 4)],
+    ))
+    assert seqs["ref"] == "AAAACCCC"
+    assert seqs["qry"] == "AAAACCCC"
+
+
+def test_maf_backbone_contig_without_a_block_keeps_its_columns(tmp_path: Path) -> None:
+    # c2 has no homolog in any genome, so no MAF block mentions it. It is still part of
+    # the backbone: dropping it would make the MSA 8 wide and shift c3 from 8-11 to 4-7.
+    maf = tmp_path / "missing.maf"
+    maf.write_text(
+        "a\n"
+        "s ref.c1 0 4 + 4 AAAA\n"
+        "s qry.x 0 4 + 8 AAAA\n"
+        "\n"
+        "a\n"
+        "s ref.c3 0 4 + 4 CCCC\n"
+        "s qry.x 4 4 + 8 CCCC\n"
+    )
+    seqs = _read_fasta(maf_to_fasta(
+        maf, "ref", tmp_path / "msa.fasta",
+        ref_contigs=[("ref.c1", 4), ("ref.c2", 4), ("ref.c3", 4)],
+    ))
+    assert seqs["ref"] == "AAAA----CCCC"
+    assert seqs["qry"] == "AAAA----CCCC"
+
+
+def test_maf_rejects_a_backbone_contig_it_was_not_told_about(tmp_path: Path) -> None:
+    import pytest
+
+    from tessera.core.errors import OutputError
+
+    maf = tmp_path / "extra.maf"
+    maf.write_text("a\ns ref.c9 0 4 + 4 AAAA\ns qry.x 0 4 + 4 AAAA\n")
+    with pytest.raises(OutputError, match="ref.c9"):
+        maf_to_fasta(maf, "ref", tmp_path / "msa.fasta", ref_contigs=[("ref.c1", 4)])
+
+
+def test_maf_genome_without_any_block_gets_an_all_gap_row(tmp_path: Path, caplog) -> None:
+    # A panel member too divergent to be placed in any block used to have no row at all,
+    # so the panel was silently one genome smaller than the collection.
+    import logging
+
+    maf = tmp_path / "vanish.maf"
+    maf.write_text("a\ns r1 0 4 + 4 AAAA\ns q1 0 4 + 4 AAAT\n")
+    name_map = {"r1": "ref", "q1": "qry", "p1": "divergent_panel"}
+    # Not under the "tessera" logger: the CLI tests switch its propagation off, and
+    # caplog only sees records that reach the root logger.
+    log = logging.getLogger("maf_converter_test")
+    with caplog.at_level(logging.WARNING, logger="maf_converter_test"):
+        seqs = _read_fasta(maf_to_fasta(
+            maf, "ref", tmp_path / "msa.fasta", name_map=name_map,
+            expected=["ref", "qry", "divergent_panel"], logger=log,
+        ))
+    assert seqs == {"ref": "AAAA", "divergent_panel": "----", "qry": "AAAT"}
+    assert "divergent_panel" in caplog.text
+
+
+def test_maf_genome_aligned_only_away_from_the_backbone_is_named(tmp_path: Path, caplog) -> None:
+    # SibeliaZ also emits blocks between non-backbone genomes. A genome seen only in such
+    # blocks projects to an all-gap row just like one seen in no block, and must be named
+    # in the same warning.
+    import logging
+
+    maf = tmp_path / "offref.maf"
+    maf.write_text(
+        "a\ns r1 0 4 + 4 AAAA\ns a1 0 4 + 4 AAAT\n\n"
+        "a\ns a1 0 4 + 4 AAAT\ns b1 0 4 + 4 AAAT\n"
+    )
+    name_map = {"r1": "ref", "a1": "A", "b1": "B"}
+    log = logging.getLogger("maf_converter_test")
+    with caplog.at_level(logging.WARNING, logger="maf_converter_test"):
+        seqs = _read_fasta(maf_to_fasta(
+            maf, "ref", tmp_path / "msa.fasta", name_map=name_map,
+            expected=["ref", "A", "B", "C"], logger=log,
+        ))
+    assert seqs == {"ref": "AAAA", "A": "AAAT", "B": "----", "C": "----"}
+    assert "2 genome(s)" in caplog.text
+    assert "B, C" in caplog.text

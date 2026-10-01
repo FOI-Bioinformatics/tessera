@@ -104,10 +104,16 @@ def find_references(params: FindRefParams, logger: logging.Logger) -> list[Candi
     _print_candidates(candidates, logger)
 
     if params.download is not None:
+        # What the download directory held before this run. It is often the user's own
+        # collection (`--download <collection>` is the documented way to grow one in
+        # place), so curation below may remove only what this run adds to it.
+        preexisting = (
+            collection_genomes(params.download) if params.download.is_dir() else []
+        )
         downloaded = _download(candidates, params.download, logger)
         _write_downloaded(params.output, downloaded, logger)
         if params.curate and downloaded:
-            _curate_download(params, query_label, query_row, logger)
+            _curate_download(params, query_label, query_row, preexisting, logger)
     elif candidates:
         logger.info(
             "Re-run with --download <collection_dir> to add the new references, "
@@ -287,13 +293,18 @@ def _download(
 
 
 def _curate_download(
-    params: FindRefParams, query_label: str, query_row: str, logger: logging.Logger
+    params: FindRefParams, query_label: str, query_row: str,
+    preexisting: list[Path], logger: logging.Logger,
 ) -> None:
-    """Drop the query's siblings and dereplicate the download directory in place.
+    """Drop the query's siblings and near-duplicates among this run's downloads.
 
     The backbone (the query's whole-genome anchor) is chosen from the existing
     ``--collection``, so a freshly-downloaded sibling cannot be mistaken for it. The
     query is reconstructed from its (de-gapped) MSA row, as skani needs a FASTA.
+
+    ``preexisting`` are the files the download directory held before this run; they are
+    compared against but never deleted, so pointing ``--download`` at the collection
+    itself cannot remove the user's own genomes.
     """
     from .panel import (
         curate_collection_dir,
@@ -311,18 +322,26 @@ def _curate_download(
         return
     qfasta = params.output / "query.degapped.fasta"
     qfasta.write_text(f">{query_label}\n{query_row.replace('-', '')}\n")
+    assert params.download is not None  # only called from the `download is not None` branch
+    # When --download is the collection itself, the collection now also holds this run's
+    # downloads; leave them out so a downloaded sibling cannot become the backbone.
+    held_before = {p.resolve() for p in preexisting}
+    new_files = {
+        p.resolve() for p in collection_genomes(params.download)
+        if p.resolve() not in held_before
+    }
     backbone = pick_backbone(
-        qfasta, collection_genomes(params.collection),
+        qfasta,
+        [g for g in collection_genomes(params.collection) if g.resolve() not in new_files],
         af_min=params.af_min, logger=logger,
     )
     if backbone is None:
         logger.warning("Could not determine a backbone from --collection; skipping curation.")
         return
-    assert params.download is not None  # only called from the `download is not None` branch
     curation = curate_collection_dir(
         qfasta, params.download, backbone,
         ani_margin=params.sibling_margin, af_min=params.af_min,
-        derep_ani=params.derep_ani, logger=logger,
+        derep_ani=params.derep_ani, protect=preexisting, logger=logger,
     )
     write_panel_tsv(params.output / "panel_lineages.tsv", curation.table, logger)
 

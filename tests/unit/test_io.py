@@ -96,3 +96,37 @@ def test_query_colliding_with_a_collection_member_is_rejected(tmp_path: Path) ->
 
     with pytest.raises(UserInputError, match="share the label 'sample'"):
         stage_genomes(query, coll, tmp_path / "staged", _LOG)
+
+
+def test_stage_genomes_cleans_whitespace_out_of_sequence_lines(tmp_path: Path) -> None:
+    """The aligner reads the staged file; Tessera reads the same genome through
+    read_fasta. If only one of them ignores a trailing space the two disagree about the
+    genome's length -- minimap2 counted the spaces and every later column was shifted."""
+    coll = tmp_path / "coll"
+    coll.mkdir()
+    (coll / "clean.fasta").write_text(">c desc\nACGT\nTTAA\n")
+    (coll / "spaces.fasta").write_text(">s desc\nACGT \nTT AA\t\n")
+    (coll / "crlf.fasta").write_bytes(b">w desc\r\nACGT\r\nTTAA\r\n")
+    query = tmp_path / "query.fasta"
+    query.write_text(">q\nACGT\n")
+
+    staged, _ = stage_genomes(query, coll, tmp_path / "stage", _LOG)
+    by_stem = {p.stem: p for p in staged}
+
+    assert by_stem["clean"].is_symlink()  # untouched input is still linked, not copied
+    for stem, header in (("spaces", ">s desc"), ("crlf", ">w desc")):
+        assert not by_stem[stem].is_symlink()
+        assert by_stem[stem].read_text() == f"{header}\nACGT\nTTAA\n"
+    # The user's own files are not modified.
+    assert (coll / "spaces.fasta").read_text() == ">s desc\nACGT \nTT AA\t\n"
+
+
+def test_stage_genomes_cleans_a_gzipped_genome(tmp_path: Path) -> None:
+    coll = tmp_path / "coll"
+    coll.mkdir()
+    with gzip.open(coll / "z.fasta.gz", "wt") as fo:
+        fo.write(">z\nACGT \n\nTTAA\n")
+    query = tmp_path / "query.fasta"
+    query.write_text(">q\nACGT\n")
+    staged, _ = stage_genomes(query, coll, tmp_path / "stage", _LOG)
+    assert {p.stem: p for p in staged}["z"].read_text() == ">z\nACGT\nTTAA\n"

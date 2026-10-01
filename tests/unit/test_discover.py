@@ -150,6 +150,109 @@ def test_download_writes_a_manifest_of_added_references(monkeypatch, tmp_path, l
     assert manifest[1].split("\t")[0] == "NEW123"
 
 
+def test_curate_after_download_keeps_the_users_own_genomes(monkeypatch, tmp_path, logger):
+    """`find-references -c C --download C --curate` is the documented way to grow a
+    collection in place. Curation used to prune C itself, deleting the user's files."""
+    from tessera.discover import panel
+
+    coll = tmp_path / "collection"
+    coll.mkdir()
+    for name in ("refA", "refB", "userC"):
+        (coll / f"{name}.fasta").write_text(f">{name}\nACGT\n")
+
+    def fake_blast(seq, *, max_hits, logger, email=None, cache_dir=None):
+        return [
+            Hit("NEW123", "novel donor virus", 90.0, 95.0, 1e-40),
+            Hit("NEWSIB", "a relative of the query", 97.0, 96.0, 1e-60),
+        ]
+
+    def fake_efetch(accession, collection_dir, logger):
+        path = collection_dir / f"{accession}.fasta"
+        path.write_text(f">{accession}\nACGT\n")
+        return path
+
+    def fake_ani(query, refs, logger):
+        # refA is the backbone; refB and userC are its whole-genome twins (would be
+        # dropped as siblings); NEWSIB is a downloaded sibling; NEW123 a regional donor.
+        table = {
+            "refA": (97.0, 95.0), "refB": (96.0, 95.0), "userC": (96.8, 96.0),
+            "NEW123": (88.0, 30.0), "NEWSIB": (99.0, 98.0),
+        }
+        return {r: table[r.name.split(".")[0]] for r in refs}
+
+    monkeypatch.setattr(discover_run, "blast_subsequence", fake_blast)
+    monkeypatch.setattr(discover_run, "efetch_available", lambda: True)
+    monkeypatch.setattr(discover_run, "efetch_fasta", fake_efetch)
+    monkeypatch.setattr(panel, "skani_available", lambda: True)
+    monkeypatch.setattr(panel, "skder_available", lambda: False)
+    monkeypatch.setattr(panel, "skani_query_ani", fake_ani)
+
+    find_references(
+        FindRefParams(
+            msa=_msa(tmp_path), query="q", output=tmp_path / "out",
+            window_size=60, window_step=30, top_gaps=1,
+            collection=coll, download=coll, curate=True,
+        ),
+        logger,
+    )
+
+    assert sorted(p.name for p in coll.iterdir()) == [
+        "NEW123.fasta", "refA.fasta", "refB.fasta", "userC.fasta",
+    ]
+    rows = dict(
+        line.split("\t")[:2]
+        for line in (tmp_path / "out" / "panel_lineages.tsv").read_text().splitlines()[1:]
+    )
+    assert rows["userC"] == "sibling-kept"
+    assert rows["NEWSIB"] == "sibling-dropped"
+
+
+def test_curate_after_download_into_a_new_directory(monkeypatch, tmp_path, logger):
+    """--download may name a directory that does not exist yet. Nothing in it predates
+    the run, so curation is free to drop a downloaded sibling."""
+    from tessera.discover import panel
+
+    coll = tmp_path / "collection"
+    coll.mkdir()
+    (coll / "refA.fasta").write_text(">refA\nACGT\n")
+    fresh = tmp_path / "downloads"
+
+    def fake_blast(seq, *, max_hits, logger, email=None, cache_dir=None):
+        return [
+            Hit("NEW123", "novel donor virus", 90.0, 95.0, 1e-40),
+            Hit("NEWSIB", "a relative of the query", 97.0, 96.0, 1e-60),
+        ]
+
+    def fake_efetch(accession, collection_dir, logger):
+        collection_dir.mkdir(parents=True, exist_ok=True)
+        path = collection_dir / f"{accession}.fasta"
+        path.write_text(f">{accession}\nACGT\n")
+        return path
+
+    def fake_ani(query, refs, logger):
+        table = {"refA": (92.0, 95.0), "NEW123": (88.0, 30.0), "NEWSIB": (99.0, 98.0)}
+        return {r: table[r.name.split(".")[0]] for r in refs}
+
+    monkeypatch.setattr(discover_run, "blast_subsequence", fake_blast)
+    monkeypatch.setattr(discover_run, "efetch_available", lambda: True)
+    monkeypatch.setattr(discover_run, "efetch_fasta", fake_efetch)
+    monkeypatch.setattr(panel, "skani_available", lambda: True)
+    monkeypatch.setattr(panel, "skder_available", lambda: False)
+    monkeypatch.setattr(panel, "skani_query_ani", fake_ani)
+
+    find_references(
+        FindRefParams(
+            msa=_msa(tmp_path), query="q", output=tmp_path / "out",
+            window_size=60, window_step=30, top_gaps=1,
+            collection=coll, download=fresh, curate=True,
+        ),
+        logger,
+    )
+
+    assert sorted(p.name for p in fresh.iterdir()) == ["NEW123.fasta"]
+    assert sorted(p.name for p in coll.iterdir()) == ["refA.fasta"]
+
+
 def test_download_without_efetch_is_a_clear_error(monkeypatch, tmp_path, logger):
     monkeypatch.setattr(discover_run, "efetch_available", lambda: False)
     from tessera.core.errors import UserInputError
