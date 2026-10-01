@@ -104,7 +104,11 @@ exclude_lines = [
 ]
 
 [tool.mypy]
-python_version = "3.11"
+# No `python_version`: each CI job checks under its own interpreter. Pinning 3.11 made
+# mypy reject the stubs of any dependency that had moved on (numpy 2.5 uses the 3.12
+# `type` statement), which stopped the run before it looked at Tessera at all -- on
+# 3.12 and 3.13 the check had been failing unnoticed while it was non-blocking. The
+# 3.11 job still guards the oldest supported version.
 files = ["src/tessera"]
 ignore_missing_imports = true
 # Deliberately permissive: this catches contradictions in what is already declared

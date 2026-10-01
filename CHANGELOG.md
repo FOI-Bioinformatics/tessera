@@ -82,7 +82,10 @@ All notable changes to Tessera are recorded here. The format follows
 ### Changed
 
 - **The type check is blocking in CI.** The 17-error backlog is cleared (annotation-only
-  changes; no defect among them), so `mypy` no longer runs with `continue-on-error`.
+  changes; no defect among them), so `mypy` no longer runs with `continue-on-error`. Making
+  it blocking showed that on Python 3.12 and 3.13 it had not been checking anything: the
+  configuration pinned `python_version = "3.11"`, under which mypy rejects the numpy 2.5
+  stubs and stops. The pin is removed, so each CI job checks under its own interpreter.
 - **Dependabot no longer raises the lower bound of a range requirement.** With ranges and no
   lockfile its default is to move the floor to the newest release (`typer>=0.12` became
   `>=0.27.1`), which narrows what an existing environment may hold and changes nothing for a

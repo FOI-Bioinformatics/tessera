@@ -71,7 +71,11 @@ def test_curate_panel_keeps_a_collection_that_is_the_output_copy(
     assert len(list(collection.iterdir())) == 2
 
 
-def test_fill_references_keeps_a_collection_that_is_the_output_copy(tmp_path: Path) -> None:
+def test_fill_references_keeps_a_collection_that_is_the_output_copy(
+    monkeypatch, tmp_path: Path
+) -> None:
+    # Without this the run stops earlier, on a machine that has no Entrez Direct.
+    monkeypatch.setattr(iterate, "efetch_available", lambda: True)
     out = tmp_path / "out"
     collection = _collection(out / "collection")
     query = tmp_path / "q.fasta"
