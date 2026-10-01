@@ -6,7 +6,16 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+Fixes from the post-1.2.0 audit
+(`docs/superpowers/specs/2026-10-01-post-1.2.0-audit-design.md`, items A1-A10 and B1-B11).
+No region call changes: for a given alignment, which regions are found, and their
+coordinates and p-values, are as before. What reaches the scan can differ -- an alignment
+built with the MAFFT or MAF-based backends, or a panel built with `--curate`, may now be a
+different (corrected) one.
+
 ### Fixed
+
+Data safety and alignment:
 
 - **The MAFFT backend ignored strand.** A genome, or one contig of a draft assembly, on the
   opposite strand to the backbone was aligned as given and came out at chance-level identity
@@ -62,6 +71,68 @@ All notable changes to Tessera are recorded here. The format follows
 - A header line `> ` (no name), a truncated MAF block, an XMFA that does not list the
   reference and an empty MAFFT result are reported as input/output errors that name the
   file, instead of "Unexpected error".
+
+Reporting:
+
+- **The run provenance named the wrong callers.** MaxChi, Bootscan, GENECONV and the barcode
+  caller were each described as `heuristic (min ... / margin ... / merge ...)` in
+  `run_provenance.json` and the report, so a default run recorded
+  `hmm + 3seq + heuristic + heuristic`. Each caller is now described under its own name, and
+  the record gains the settings that change what is reported: the agreement gate
+  (`--min-methods`), sibling exclusion, lineage clustering and donor re-attribution.
+- **A clean recombinant between divergent parents was reported as a possible missing
+  reference.** A window straddling a breakpoint matches neither parent well on its own, so
+  its best similarity fell below the coverage threshold, the stretch was called a `divergent`
+  coverage gap, and the region was marked `donor_undercovered` -- on the shipped
+  `divergent` example the headline read "low confidence" for a donor identical to the query.
+  A gap within one window of a called region boundary that the region's two parents together
+  explain is now labelled `breakpoint` in `coverage_gaps.tsv` and the report; it does not
+  caveat the region, is not turned into a donor-absent region, and is left out of the
+  headline. **`donor_undercovered` and the confidence wording change for such regions.**
+  Reference recruitment (`fill-references`, `find-references`) is unaffected.
+- The report's "covering N kb (P %) of the query" added the lengths of overlapping regions
+  that name different donors; it now reports their union.
+- After `--reattribute-donors`, `recombination_methods.tsv` and the report's method table
+  kept the donor from before re-attribution.
+- `--lineage-map` pointing at a file that does not exist was ignored (exit 0, untyped
+  report) by `recomb`, `type-lineages`, `detect`, `fill-references` and `build-panel`. It
+  is now an error.
+- **The barcode caller on an untyped panel read as a negative.** It named the first record
+  of the alignment as major parent and its column in the method table said `no`. It now
+  reports no major parent; in an ensemble it is logged and shown as `not run`, the
+  agreement gate counts only callers that ran, and a run that selected only `barcode` is
+  refused.
+- The report judged the PHI p-value at alpha 0.05 whatever `--alpha` was.
+- **A PHI test that could not reject was reported as "no signal".** With no more
+  informative sites than the window can hold (`--phi-window`, default 100) the permutation
+  p-value is 1 for any data. This is now reported as `not testable` (`NA` in the
+  `recombination_profile.tsv` header, `phi_p = None` in the API).
+- Plots labelled a donor-absent region "recombinant: <backbone>"; `similarity_pair` showed
+  the two leading window winners rather than the major parent and the leading donor; with
+  `--top-n 1` the donor was drawn grey.
+- The report footer listed `.pdf` plots under `--plot-format png` and files that were not
+  written; the methods text and references described a two-caller ensemble; `--method`
+  help omitted `geneconv`.
+- `sibeliaz` was probed with `-v`, which it rejects, and the error line was recorded as the
+  aligner version. A failed probe is no longer recorded as a version.
+- Input checks: `find-references --msa <missing>` and `recomb -o <existing file>` failed
+  with "Unexpected error"; `--max-rounds 0` exited 0 having built nothing; `reassort`
+  accepted `--ani-floor 500`, `--margin -3` and a `--dataset` key matching no segment;
+  `type-lineages` rejected `.fasta.gz` / `.fas` collections; a multi-line aligner error
+  broke `segment_scan.tsv`.
+
+### Changed
+
+- `RecombinationSignal.phi_p` is `float | None`.
+- `seaborn` is no longer a dependency; nothing imported it.
+
+### Documentation
+
+- `docs/detection-methods.md` describes lineage clustering (including its limit on panels
+  below about 1.5 % divergence), the `breakpoint` coverage kind and the untestable-PHI case.
+- `validation/README.md` states that the specificity harness defaults to `--min-methods 2`
+  while the CLI defaults to 1, gives the measured rate at each, and records that
+  `hcv_clonal_1b` currently fails.
 
 ## [1.2.0] - 2026-10-01
 
