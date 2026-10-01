@@ -31,6 +31,9 @@ class ReportContext:
     signal: RecombinationSignal | None = None
     organism: str | None = None
     methods_run: tuple[str, ...] = ()
+    # Selected callers that could not run (barcode on an untyped panel). They stay in
+    # ``methods_run`` so the method table keeps a column for them, marked "not run".
+    methods_not_run: tuple[str, ...] = ()
     method_breakdown: list[dict] | None = None
     per_major: dict[str, str] | None = None
     # Set only when the scan used informative-site windowing: the per-window identity

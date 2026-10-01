@@ -346,6 +346,29 @@ def run_recomb(
         if method == "hmm":
             excluded_siblings = sibs
 
+    # The barcode caller needs typed references and returns no major parent when it
+    # cannot run. That is "could not test", which must not be reported as "tested and
+    # found nothing": refuse a run that selected nothing else, and say so otherwise.
+    not_run = tuple(m for m in params.methods if m == "barcode" and majors[m] is None)
+    if not_run:
+        reason = (
+            "fewer than two typed clades carry enough characteristic markers"
+            if lineage_map else
+            "it needs typed references (a lineage map: --lineage-map, or a lineages.tsv "
+            "beside the output or the MSA) and none was found"
+        )
+        if len(not_run) == len(params.methods):
+            raise UserInputError(
+                f"The barcode caller could not run: {reason}. No other caller was "
+                "selected, so this scan could not test for recombination. Supply typed "
+                "references or choose another --method."
+            )
+        logger.warning(
+            "The barcode caller could not run (%s); it is reported as 'not run', not as "
+            "a negative.", reason,
+        )
+    n_ran = len(params.methods) - len(not_run)
+
     major_parent, per_major = reconcile_major(majors, window_wins=analysis_bp.winners_with_ties)
     # Parent-free corroboration needs both halves of the diagnostic: PHI to establish
     # that the alignment carries recombination at all, the Rmin intervals to say where.
@@ -360,7 +383,7 @@ def run_recomb(
     # it (clamped, so selecting one caller is not silently self-suppressing). This runs
     # *before* re-attribution: a suppressed region should not be re-attributed, and must
     # not announce a re-attribution in the log for a region nobody will see.
-    min_agree = max(1, min(params.min_methods, len(params.methods)))
+    min_agree = max(1, min(params.min_methods, n_ran))
     regions, method_breakdown, suppressed = filter_by_agreement(
         regions, method_breakdown, min_agree
     )
@@ -477,6 +500,8 @@ def run_recomb(
         "major parent": major_parent or "n/a",
         "coverage threshold / gaps": f"{coverage_threshold:.3f} / {len(coverage_gaps)}",
     }
+    if not_run:
+        provenance["callers not run"] = ", ".join(not_run) + " (needs typed references)"
     if excluded_siblings:
         provenance["excluded siblings (query's own lineage)"] = ", ".join(
             ev.label for ev in excluded_siblings
@@ -516,6 +541,7 @@ def run_recomb(
             extra_sections=extra_sections, lineage_map=lineage_map,
             query_lineage=query_lineage, signal=signal, organism=params.organism,
             methods_run=params.methods, method_breakdown=method_breakdown, per_major=per_major,
+            methods_not_run=not_run,
         ),
     )
     logger.info("All done.")

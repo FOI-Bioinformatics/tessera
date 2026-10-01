@@ -84,7 +84,9 @@ def write_reports(
     if ctx.signal is not None:
         write_profile_tsv(ctx.signal, output_dir, logger)
     if len(ctx.methods_run) > 1 and ctx.method_breakdown is not None:
-        write_methods_tsv(ctx.method_breakdown, ctx.methods_run, output_dir, logger)
+        write_methods_tsv(
+            ctx.method_breakdown, ctx.methods_run, output_dir, logger, ctx.methods_not_run
+        )
 
     # Rank on the windows the caller segmented: on a near-identical panel base-pair
     # windows tie almost everywhere, so they order the references poorly.

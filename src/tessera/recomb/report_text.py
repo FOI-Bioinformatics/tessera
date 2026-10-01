@@ -279,9 +279,14 @@ def write_regions_tsv(regions: list[Region], output_dir: Path, logger: logging.L
 
 def write_methods_tsv(
     breakdown: list[dict], methods_run: tuple[str, ...], output_dir: Path,
-    logger: logging.Logger,
+    logger: logging.Logger, methods_not_run: tuple[str, ...] = (),
 ) -> None:
-    """Write the per-region x per-method agreement matrix (the ensemble breakdown)."""
+    """Write the per-region x per-method agreement matrix (the ensemble breakdown).
+
+    A cell is ``yes`` / ``no`` for a caller that ran, and ``not run`` for one that was
+    selected but could not run -- a ``no`` there would read as a caller that looked and
+    found nothing.
+    """
     path = output_dir / "recombination_methods.tsv"
     logger.info("Writing method comparison: %s", path)
     with open(path, "w") as fo:
@@ -289,7 +294,10 @@ def write_methods_tsv(
                             *methods_run, "parent_free_support"]) + "\n")
         for b in breakdown:
             called = b["per_method_support"]
-            cells = [("yes" if m in called else "no") for m in methods_run]
+            cells = [
+                "not run" if m in methods_not_run else ("yes" if m in called else "no")
+                for m in methods_run
+            ]
             fo.write("\t".join(map(str, [
                 b["minor_parent"], b["query_start"], b["query_end"], *cells,
                 "yes" if b["parent_free_support"] else "no",

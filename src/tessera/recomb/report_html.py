@@ -278,11 +278,19 @@ def _regions_html(
 
 def _method_comparison_html(
     breakdown: list[dict], methods_run: tuple[str, ...], per_major: dict[str, str],
-    lineage_map: LineageMap | None = None,
+    lineage_map: LineageMap | None = None, methods_not_run: tuple[str, ...] = (),
 ) -> str:
     """A compact region x method agreement matrix; omitted for a single-method run."""
     if len(methods_run) < 2:
         return ""
+    not_run_note = ""
+    if methods_not_run:
+        names = ", ".join(html.escape(m) for m in methods_not_run)
+        not_run_note = (
+            f'<p class="cap"><strong>Not run:</strong> {names}. The caller needs typed '
+            f'references and none were available, so it tested nothing; its column below '
+            f'is not a negative result.</p>'
+        )
     majors = ", ".join(
         f'<span class="mono">{html.escape(m)}</span> &rarr; '
         f'{html.escape(typed(per_major.get(m, "n/a"), lineage_map))}'
@@ -291,7 +299,7 @@ def _method_comparison_html(
     intro = (
         f'<p class="cap">Each caller ran independently on the same alignment; a region '
         f'found by more than one is more trustworthy (and raises the confidence above). '
-        f'Backbone per method &mdash; {majors}.</p>'
+        f'Backbone per method &mdash; {majors}.</p>{not_run_note}'
     )
     if not breakdown:
         return intro + '<p class="empty">No regions were called by any method.</p>'
@@ -303,6 +311,7 @@ def _method_comparison_html(
     rows = ""
     for b in breakdown:
         cells = "".join(
+            '<td class="num">not run</td>' if m in methods_not_run else
             f'<td class="num">{"&check;" if m in b["per_method_support"] else "&middot;"}</td>'
             for m in methods_run
         )
@@ -320,10 +329,11 @@ def _method_comparison_html(
 def _method_section(
     method_breakdown: list[dict] | None, methods_run: tuple[str, ...],
     per_major: dict[str, str] | None, lineage_map: LineageMap | None,
+    methods_not_run: tuple[str, ...] = (),
 ) -> str:
     """Wrap the method-comparison table in a report section (empty for one method)."""
     body = _method_comparison_html(
-        method_breakdown or [], methods_run, per_major or {}, lineage_map
+        method_breakdown or [], methods_run, per_major or {}, lineage_map, methods_not_run
     )
     if not body:
         return ""
@@ -578,6 +588,11 @@ def write_html_report(
         for title, body in (ctx.extra_sections or [])
     )
 
+    method_section = _method_section(
+        ctx.method_breakdown, ctx.methods_run, ctx.per_major, lineage_map,
+        ctx.methods_not_run,
+    )
+
     doc = (
         '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
@@ -594,7 +609,7 @@ def write_html_report(
         f"{_mosaic_html(regions, colors, s, caveat_gaps, lineage_map)}</section>"
         '<section class="section"><div class="eyebrow">Recombinant regions</div>'
         f'{_regions_html(regions, colors, s["query_len"], lineage_map)}</section>'
-        f"{_method_section(ctx.method_breakdown, ctx.methods_run, ctx.per_major, lineage_map)}"
+        f"{method_section}"
         '<section class="section"><div class="eyebrow">Reference coverage</div>'
         f"{_coverage_html(gaps, threshold)}</section>"
         f"{extras}"
