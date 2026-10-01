@@ -213,7 +213,8 @@ def test_scan_segments_scans_assigned_only(tmp_path, monkeypatch):
     monkeypatch.setattr(assign, "require_aligner", lambda aligner: None)
     seen = []
 
-    def fake_scan(segment, seq, dataset, out_dir, *, aligner, cache_dir, logger):
+    def fake_scan(segment, seq, dataset, out_dir, *, aligner, cache_dir, logger,
+                  dir_name=None):
         from tessera.reassort.scan import SegmentScan
         seen.append(segment)
         return SegmentScan(segment, True, segment == "HA", 1 if segment == "HA" else 0,
@@ -244,7 +245,8 @@ def test_scan_segments_marks_unassigned(tmp_path, monkeypatch):
                         "NA_pool": {na_tip: (99.0, 99.0)}})
     monkeypatch.setattr(assign, "require_aligner", lambda aligner: None)
 
-    def fake_scan(segment, seq, dataset, out_dir, *, aligner, cache_dir, logger):
+    def fake_scan(segment, seq, dataset, out_dir, *, aligner, cache_dir, logger,
+                  dir_name=None):
         from tessera.reassort.scan import SegmentScan
         return SegmentScan(segment, True, False, 0, "none")
     monkeypatch.setattr(assign, "scan_segment", fake_scan)
@@ -319,3 +321,28 @@ def test_alignment_fraction_filter_uses_skani_percent_scale(tmp_path, monkeypatc
     assert ha.status == "assigned"
     assert ha.strain == "full"
     assert ha.ani == pytest.approx(98.76)
+
+
+def test_scan_segments_gives_alike_named_segments_separate_directories(tmp_path, monkeypatch):
+    # "seg/1" and "seg_1" sanitise to the same directory name; each scan must get its own.
+    tip = tmp_path / "pool" / "strainA.fasta"
+    tip.parent.mkdir(parents=True)
+    tip.write_text(">x\nACGT\n")
+    _patch(monkeypatch,
+           resolve=lambda fasta, override, *, email, logger: _DS("ds"),
+           tips_by_path={"ds": [tip]},
+           ani_by_path={"pool": {tip: (99.0, 99.0)}})
+    monkeypatch.setattr(assign, "require_aligner", lambda aligner: None)
+    dirs = {}
+
+    def fake_scan(segment, seq, dataset, out_dir, *, aligner, cache_dir, logger,
+                  dir_name=None):
+        from tessera.reassort.scan import SegmentScan
+        dirs[segment] = dir_name
+        return SegmentScan(segment, True, False, 0, "none")
+    monkeypatch.setattr(assign, "scan_segment", fake_scan)
+
+    q = _write_query(tmp_path, [("seg/1", "AAAA"), ("seg_1", "CCCC")])
+    assign_segments(q, output=tmp_path / "out", scan_segments=True, logger=LOG)
+
+    assert dirs == {"seg/1": "seg_1", "seg_1": "seg_1_2"}

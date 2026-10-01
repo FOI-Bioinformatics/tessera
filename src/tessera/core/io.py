@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import gzip
 import logging
+import re
 import shutil
 from collections.abc import Sequence
 from pathlib import Path
@@ -97,6 +98,16 @@ def strip_sequence_extension(name: str) -> str:
         if name.endswith(ext):
             return name[: -len(ext)]
     return name
+
+
+def safe_filename_stem(name: str, fallback: str = "sequence") -> str:
+    """A file or directory name derived from an untrusted label (a FASTA header).
+
+    Path separators and other punctuation become ``_``, and leading/trailing dots are
+    removed so the result can never be ``.`` or ``..`` or climb out of the directory it
+    is joined to. ``fallback`` is returned when nothing usable is left.
+    """
+    return re.sub(r"[^\w.-]+", "_", name).strip(".") or fallback
 
 
 def collection_genomes(directory: Path) -> list[Path]:
