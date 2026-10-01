@@ -30,7 +30,7 @@ from .analyze import AnalysisResult, rank_datasets
 from .clusters import all_singletons, cluster_references, clustered_view
 from .hmm import DEFAULT_JUMP_RATE, segment_query
 from .siblings import SiblingEvidence, sibling_aware_states
-from .similarity import WindowSimilarity, discordant_counts
+from .similarity import WindowSimilarity, discordant_counts, region_identity
 from .stats import benjamini_hochberg, sign_test_pvalue
 
 # The region callers, in canonical (display) order; the single source of truth for the
@@ -316,13 +316,27 @@ def _call_regions_hmm(
         if q > params.alpha:
             continue
         support = favor_minor / (favor_minor + favor_major)
-        idx = range(seg.start_window, seg.end_window + 1)
-        minor_sims = [work.similarities[seg.state][i] for i in idx
-                      if not isnan(work.similarities[seg.state][i])]
-        major_sims = [work.similarities[major][i] for i in idx
-                      if not isnan(work.similarities[major][i])]
-        mean_minor = mean(minor_sims) if minor_sims else float("nan")
-        mean_major = mean(major_sims) if major_sims else float("nan")
+        if work.window_spans:
+            # Informative-site windowing: the per-window values are identity at
+            # polymorphic columns only, far below the identity over all columns (a
+            # 99 %-identical donor can sit near 0.8). Reporting their mean as the
+            # region's similarity would misstate it, and the coverage check compares
+            # this value against a base-pair threshold. Use identity over the region's
+            # columns, the same quantity the site-based callers report.
+            mean_minor = region_identity(
+                work.rows, work.query, seg.state, seg.msa_start, seg.msa_end
+            )
+            mean_major = region_identity(
+                work.rows, work.query, major, seg.msa_start, seg.msa_end
+            )
+        else:
+            idx = range(seg.start_window, seg.end_window + 1)
+            minor_sims = [work.similarities[seg.state][i] for i in idx
+                          if not isnan(work.similarities[seg.state][i])]
+            major_sims = [work.similarities[major][i] for i in idx
+                          if not isnan(work.similarities[major][i])]
+            mean_minor = mean(minor_sims) if minor_sims else float("nan")
+            mean_major = mean(major_sims) if major_sims else float("nan")
         regions.append(
             Region(
                 minor_parent=seg.state, major_parent=major,

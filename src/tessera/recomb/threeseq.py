@@ -27,6 +27,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .similarity import WindowSimilarity, _canonical_mask
+from .similarity import region_identity as _region_similarity
 from .stats import benjamini_hochberg
 
 # Above this many DP cells (m * n * depth) the exact recursion is replaced by a
@@ -149,17 +150,6 @@ def descent_pvalue(steps: np.ndarray, descent: Descent, *, seed: int = 0) -> tup
 # deeper than trivial noise; the p-value gate does the real work above these floors.
 _MIN_DISCRIMINATING = 20
 _MIN_DESCENT = 4
-
-
-def _region_similarity(
-    rows: dict[str, np.ndarray], query: str, ref: str, start: int, end: int
-) -> float:
-    """Fraction of canonical columns in ``[start, end)`` where the query matches ``ref``."""
-    q = rows[query][start:end]
-    r = rows[ref][start:end]
-    canon = _canonical_mask(q) & _canonical_mask(r)
-    comparable = int(np.count_nonzero(canon))
-    return float(np.count_nonzero(canon & (q == r)) / comparable) if comparable else float("nan")
 
 
 def call_regions_3seq(result: WindowSimilarity, analysis, params):

@@ -459,6 +459,21 @@ def informative_site_count(rows: dict[str, np.ndarray], query_label: str) -> int
     return int(_informative_column_mask(rows, ref_labels).sum())
 
 
+def region_identity(
+    rows: dict[str, np.ndarray], query: str, ref: str, start: int, end: int
+) -> float:
+    """Fraction of canonical columns in ``[start, end)`` where the query matches ``ref``.
+
+    Identity over *every* comparable column of the span, so it is on the same scale
+    whichever windowing produced the span (``nan`` when nothing is comparable).
+    """
+    q = rows[query][start:end]
+    r = rows[ref][start:end]
+    canon = _canonical_mask(q) & _canonical_mask(r)
+    comparable = int(np.count_nonzero(canon))
+    return float(np.count_nonzero(canon & (q == r)) / comparable) if comparable else float("nan")
+
+
 def discordant_counts(
     rows: dict[str, np.ndarray], query: str, major: str, minor: str,
     start: int, end: int,

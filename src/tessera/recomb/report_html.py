@@ -500,6 +500,35 @@ def _signal_html(signal: RecombinationSignal | None, alpha: float = 0.05) -> str
     )
 
 
+def _site_track_html(
+    ctx: ReportContext, datasets: list[str], regions: list[Region], windowing: str
+) -> str:
+    """The informative-site track, shown only when the scan windowed that way.
+
+    Kept apart from the similarity plot and labelled for what it is: these values sit
+    far below similarity over all columns, and a reader comparing them with a
+    genome-wide identity (ANI) would otherwise conclude the tool is wrong.
+    """
+    if ctx.site_result is None:
+        return ""
+    fig = build_interactive_figure(
+        ctx.site_result, datasets, regions, ctx.gaps,
+        y_title="Identity at informative sites",
+        value_name="identity at informative sites",
+    )
+    return (
+        '<section class="section"><div class="eyebrow">Identity at informative sites</div>'
+        '<p class="cap">The references in this panel are nearly identical, so the HMM '
+        f'caller windowed over the columns where they differ from one another '
+        f'({html.escape(windowing)}). Each line is the query\'s identity to one reference '
+        'at those columns only. The values are well below the similarity above by '
+        'construction &ndash; identical columns are left out &ndash; and are not comparable '
+        'with a genome-wide identity such as ANI. Read the plot for which reference the '
+        'query follows locally, not for how similar the genomes are.</p>'
+        f'{fig.to_html(full_html=False, include_plotlyjs=False)}</section>'
+    )
+
+
 def write_html_report(
     result: WindowSimilarity,
     analysis: AnalysisResult,
@@ -552,6 +581,7 @@ def write_html_report(
         'alignment; coloured bands are called donor regions, hatched bands are low-coverage '
         'stretches. Drag to zoom, hover for values.</p>'
         f"{plot_div}</section>"
+        f'{_site_track_html(ctx, datasets, regions, provenance.get("windowing", ""))}'
         '<section class="section"><div class="eyebrow">Recombination signal (parent-free)</div>'
         f"{_signal_html(ctx.signal)}</section>"
         '<section class="section"><div class="eyebrow">Window winners</div>'

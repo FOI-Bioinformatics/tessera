@@ -62,8 +62,16 @@ def plot_top_n(
     output_dir: Path,
     plot_format: str,
     logger: logging.Logger,
+    *,
+    ylabel: str = "Similarity to query",
+    title: str | None = None,
+    stem: str = "similarity_top",
 ) -> Path | None:
-    """Static top-N similarity plot with called regions shaded."""
+    """Static top-N plot with called regions shaded.
+
+    Similarity by default; ``ylabel`` / ``title`` / ``stem`` let the same plot carry
+    the informative-site track under its own name and file.
+    """
     from matplotlib import pyplot as plt
 
     df = result.to_dataframe()
@@ -82,12 +90,12 @@ def plot_top_n(
 
     ax.set_ylim(*_ylim(subset.to_numpy()))
     ax.set_xlabel("MSA position (bp)")
-    ax.set_ylabel("Similarity to query")
-    ax.set_title(f"Similarity to query {result.query}")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title or f"Similarity to query {result.query}")
     ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), title="Sequences", fontsize="small")
     fig.tight_layout()
 
-    out = output_dir / f"similarity_top{len(available)}.{plot_format}"
+    out = output_dir / f"{stem}{len(available)}.{plot_format}"
     fig.savefig(out)
     plt.close(fig)
     logger.info("Plot saved: %s", out)
@@ -137,8 +145,15 @@ def plot_pairwise(
 def build_interactive_figure(
     result: WindowSimilarity, datasets: list[str], regions: list[Region],
     coverage_gaps: list[CoverageGap] | None = None,
+    *,
+    y_title: str = "Similarity to query (1.0 = identical)",
+    value_name: str = "similarity",
 ):
-    """Plotly figure of the top-N similarities with called regions shaded."""
+    """Plotly figure of the top-N per-window values with called regions shaded.
+
+    Similarity by default; ``y_title`` / ``value_name`` label the informative-site
+    track, whose values are not similarity over all columns.
+    """
     import plotly.graph_objects as go
 
     df = result.to_dataframe()
@@ -170,7 +185,7 @@ def build_interactive_figure(
             line={"width": 2, "color": colors.get(dataset, GREY)},
             customdata=result.query_positions,
             hovertemplate="MSA %{x:,} bp<br>query %{customdata:,} bp<br>"
-            "similarity %{y:.3f}<extra>" + dataset + "</extra>",
+            + value_name + " %{y:.3f}<extra>" + dataset + "</extra>",
         ))
     fig.update_layout(
         template="plotly_white",
@@ -179,7 +194,7 @@ def build_interactive_figure(
         font={"family": "system-ui, -apple-system, sans-serif", "size": 12, "color": "#11161f"},
         xaxis={"title": "MSA position (bp)", "gridcolor": "#eef0f3", "zeroline": False,
                "tickformat": ","},
-        yaxis={"title": "Similarity to query (1.0 = identical)", "gridcolor": "#eef0f3",
+        yaxis={"title": y_title, "gridcolor": "#eef0f3",
                "zeroline": False},
         hovermode="x unified", dragmode="zoom",
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "x": 0, "title": ""},

@@ -18,6 +18,13 @@ values are *similarity* (1 = identical). Outputs:
 - ``similarity_top{N}.{fmt}``    static top-N similarity plot (regions shaded)
 - ``similarity_pair.{fmt}``      static major-vs-minor pairwise plot
 - ``report.html``                self-contained summary (tables + interactive plot)
+
+Under informative-site windowing (near-identical panels) the windows the HMM
+segmented hold identity at polymorphic columns only. Those are written separately,
+never as "similarity":
+
+- ``informative_site_windows.tsv``      per-window identity at informative sites
+- ``informative_sites_top{N}.{fmt}``    static plot of the same track
 """
 
 from __future__ import annotations
@@ -25,7 +32,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from .analyze import AnalysisResult, rank_datasets
+from .analyze import AnalysisResult, rank_datasets, winners_per_window
 from .regions import Region
 from .report_context import ReportContext
 from .report_html import write_html_report
@@ -38,6 +45,7 @@ from .report_text import (
     write_methods_tsv,
     write_profile_tsv,
     write_regions_tsv,
+    write_site_windows_tsv,
     write_stats_tsv,
     write_windows_tsv,
     write_winners_tsv,
@@ -78,11 +86,24 @@ def write_reports(
     if len(ctx.methods_run) > 1 and ctx.method_breakdown is not None:
         write_methods_tsv(ctx.method_breakdown, ctx.methods_run, output_dir, logger)
 
-    top_datasets = rank_datasets(analysis, top_n)
+    # Rank on the windows the caller segmented: on a near-identical panel base-pair
+    # windows tie almost everywhere, so they order the references poorly.
+    ranking = ctx.site_analysis or analysis
+    top_datasets = rank_datasets(ranking, top_n)
     logger.info("Top %d nearest datasets: %s", len(top_datasets), ", ".join(top_datasets))
     plot_top_n(result, top_datasets, regions, output_dir, plot_format, logger)
+    if ctx.site_result is not None:
+        write_site_windows_tsv(
+            ctx.site_result, winners_per_window(ctx.site_result), output_dir, logger
+        )
+        plot_top_n(
+            ctx.site_result, top_datasets, regions, output_dir, plot_format, logger,
+            ylabel="Identity to query at informative sites",
+            title=f"Identity at informative sites, query {result.query}",
+            stem="informative_sites_top",
+        )
 
-    pair = rank_datasets(analysis, 2)
+    pair = rank_datasets(ranking, 2)
     plot_pairwise(result, pair, regions, output_dir, plot_format, logger)
 
     write_html_report(

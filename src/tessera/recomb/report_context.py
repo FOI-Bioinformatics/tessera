@@ -12,8 +12,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .analyze import AnalysisResult
 from .coverage import CoverageGap
 from .diagnostics import RecombinationSignal
+from .similarity import WindowSimilarity
 from .typing import LineageMap
 
 
@@ -31,6 +33,12 @@ class ReportContext:
     methods_run: tuple[str, ...] = ()
     method_breakdown: list[dict] | None = None
     per_major: dict[str, str] | None = None
+    # Set only when the scan used informative-site windowing: the per-window identity
+    # at polymorphic columns that the HMM segmented, and its analysis. Reported as its
+    # own track and file, never under the name "similarity" -- it is on a different
+    # scale from identity over all columns.
+    site_result: WindowSimilarity | None = None
+    site_analysis: AnalysisResult | None = None
 
     @property
     def gaps(self) -> list[CoverageGap]:
