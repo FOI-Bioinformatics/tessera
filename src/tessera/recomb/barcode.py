@@ -87,18 +87,21 @@ def call_regions_barcode(result: WindowSimilarity, analysis, window_size: int, p
     The query's backbone clade matches the most markers genome-wide; a run of windows
     where another clade matches its local markers better (by ``_MARGIN``) is a region for
     that donor clade. Returns ``(regions, major, [])`` to match ``call_regions``.
+
+    When the caller cannot run -- the panel is untyped, or fewer than two clades carry
+    enough markers -- it returns ``([], None, [])``. ``major is None`` is the signal that
+    nothing was tested; the pipeline reports the caller as not run rather than as having
+    found nothing.
     """
     from .clusters import _window_bounds
     from .regions import Region
 
-    labels = list(result.similarities)
-    default_major = labels[0] if labels else None
     lineage_map = getattr(params, "lineage_map", None)
     if not lineage_map:
-        return [], default_major, []
+        return [], None, []
     cols, alleles, rep = clade_markers(result.rows, result.query, lineage_map)
     if not cols:
-        return [], default_major, []
+        return [], None, []
 
     query = result.rows[result.query]
     clades = list(cols)

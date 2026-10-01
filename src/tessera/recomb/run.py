@@ -18,6 +18,7 @@ from .coverage import (
     call_coverage_gaps,
     flag_undercovered_regions,
     gaps_as_regions,
+    mark_breakpoint_gaps,
     reconcile_gaps,
 )
 from .diagnostics import corroborating_intervals, recombination_signal
@@ -108,6 +109,31 @@ class RecombParams:
     # default; the backbone and detection are untouched. See recomb/reattribute.py.
     reattribute_donors: bool = False
     reattribute_margin: float = 0.03
+
+
+def caller_description(method: str, params: RecombParams) -> str:
+    """One caller's name and the settings that govern it, for the run provenance.
+
+    Every caller is described under its own name. The text is what a reader uses to
+    tell which tests produced the regions, so a caller must never be described as a
+    different one.
+    """
+    alpha = f"alpha {params.alpha:g}"
+    if method == "hmm":
+        return f"hmm (jump-rate {params.jump_rate:g}, {alpha})"
+    if method == "3seq":
+        return f"3seq (triplet max-descent test, {alpha})"
+    if method == "maxchi":
+        return f"maxchi (chi-square triplet test, scan-aware permutation, {alpha})"
+    if method == "bootscan":
+        return f"bootscan (bootstrap support, block-permutation run-length test, {alpha})"
+    if method == "geneconv":
+        return f"geneconv (longest donor-match run, permutation test, {alpha})"
+    if method == "barcode":
+        return "barcode (clade-marker attribution on a typed panel; no significance test)"
+    min_region = params.min_region if params.min_region is not None else params.window_size
+    merge_gap = params.merge_gap if params.merge_gap is not None else params.window_size
+    return f"{method} (min {min_region} / margin {params.margin} / merge {merge_gap})"
 
 
 def _select_windowing(bp_result, params: RecombParams, query_label: str, logger):
@@ -281,7 +307,14 @@ def run_recomb(
             bp_result.rows, query_label, bp_result.column_to_query,
             window=params.phi_window,
         )
-        if signal is not None:
+        if signal is not None and signal.phi_p is None:
+            logger.info(
+                "Recombination signal (parent-free): PHI not testable (every pair of the "
+                "%d informative site(s) lies within the window of %d ranks; lower "
+                "--phi-window), Rmin=%d.",
+                signal.n_informative, signal.phi_window, signal.rmin,
+            )
+        elif signal is not None:
             logger.info(
                 "Recombination signal (parent-free): PHI p=%.4g, Rmin=%d (%d informative "
                 "sites).", signal.phi_p, signal.rmin, signal.n_informative,
@@ -320,6 +353,30 @@ def run_recomb(
         if method == "hmm":
             excluded_siblings = sibs
 
+    # The barcode caller needs typed references and returns no major parent when it
+    # cannot run. That is "could not test", which must not be reported as "tested and
+    # found nothing": refuse a run that selected nothing else, and say so otherwise.
+    not_run = tuple(m for m in params.methods if m == "barcode" and majors[m] is None)
+    not_run_reason = ""
+    if not_run:
+        reason = not_run_reason = (
+            "fewer than two typed clades carry enough characteristic markers"
+            if lineage_map else
+            "it needs typed references (a lineage map: --lineage-map, or a lineages.tsv "
+            "beside the output or the MSA) and none was found"
+        )
+        if len(not_run) == len(params.methods):
+            raise UserInputError(
+                f"The barcode caller could not run: {reason}. No other caller was "
+                "selected, so this scan could not test for recombination. Supply typed "
+                "references or choose another --method."
+            )
+        logger.warning(
+            "The barcode caller could not run (%s); it is reported as 'not run', not as "
+            "a negative.", reason,
+        )
+    n_ran = len(params.methods) - len(not_run)
+
     major_parent, per_major = reconcile_major(majors, window_wins=analysis_bp.winners_with_ties)
     # Parent-free corroboration needs both halves of the diagnostic: PHI to establish
     # that the alignment carries recombination at all, the Rmin intervals to say where.
@@ -334,7 +391,17 @@ def run_recomb(
     # it (clamped, so selecting one caller is not silently self-suppressing). This runs
     # *before* re-attribution: a suppressed region should not be re-attributed, and must
     # not announce a re-attribution in the log for a region nobody will see.
-    min_agree = max(1, min(params.min_methods, len(params.methods)))
+    min_agree = max(1, min(params.min_methods, n_ran))
+    # The clamp is silent when the user simply selected fewer callers than --min-methods.
+    # It is not when a selected caller could not run: the user asked for corroboration
+    # the run cannot give, and the regions reported are then weaker than requested.
+    gate_lowered = bool(not_run) and min_agree < params.min_methods
+    if gate_lowered:
+        logger.warning(
+            "--min-methods %d cannot be met: %d caller(s) ran. The agreement gate used "
+            "is %d, so regions found by fewer callers than requested are reported.",
+            params.min_methods, n_ran, min_agree,
+        )
     regions, method_breakdown, suppressed = filter_by_agreement(
         regions, method_breakdown, min_agree
     )
@@ -347,6 +414,12 @@ def run_recomb(
             regions, result, lineage_map, lineage_of(major_parent, lineage_map),
             margin=params.reattribute_margin, logger=logger,
         )
+        # The breakdown rows were built from the regions before re-attribution and are
+        # written to recombination_methods.tsv and the report's method table. Keep the
+        # donor they name in step with the region. reattribute_donors returns one region
+        # per input region in the same order, so the two lists stay parallel.
+        for region, row in zip(regions, method_breakdown, strict=True):
+            row["minor_parent"] = region.minor_parent
     if excluded_siblings:
         logger.info(
             "Excluded %d whole-genome sibling(s) of the query (its own lineage) from the "
@@ -376,11 +449,26 @@ def run_recomb(
         bp_result, params.window_size, coverage_params
     )
     flag_undercovered_regions(regions, coverage_threshold)
-    if coverage_gaps:
+    # A window straddling a called breakpoint matches neither parent well on its own.
+    # That is not a missing reference, so such gaps are relabelled before they can
+    # caveat a region or be bridged to a donor-absent one. Recruitment
+    # (fill-references / find-references) calls call_coverage_gaps directly and is
+    # unaffected.
+    n_breakpoint = mark_breakpoint_gaps(
+        coverage_gaps, regions, bp_result, params.window_size, coverage_threshold,
+    )
+    n_poor = len(coverage_gaps) - n_breakpoint
+    if n_poor:
         logger.info(
             "Reference coverage: %d region(s) where the closest reference is below "
             "%.3f -- a better reference may be missing.",
-            len(coverage_gaps), coverage_threshold,
+            n_poor, coverage_threshold,
+        )
+    if n_breakpoint:
+        logger.info(
+            "Reference coverage: %d low-similarity stretch(es) sit on a called breakpoint "
+            "and are explained by the two parents there; not treated as missing references.",
+            n_breakpoint,
         )
 
     # Bridge: a divergent coverage gap (query far from every reference) is a
@@ -404,16 +492,7 @@ def run_recomb(
     print_regions(regions, major_parent, echo=logger.info)
     print_coverage(coverage_gaps, coverage_threshold, echo=logger.info)
 
-    def _caller_desc(method: str) -> str:
-        if method == "hmm":
-            return f"hmm (jump-rate {params.jump_rate:g}, alpha {params.alpha:g})"
-        if method == "3seq":
-            return f"3seq (triplet max-descent test, alpha {params.alpha:g})"
-        min_region = params.min_region if params.min_region is not None else params.window_size
-        merge_gap = params.merge_gap if params.merge_gap is not None else params.window_size
-        return f"heuristic (min {min_region} / margin {params.margin} / merge {merge_gap})"
-
-    caller_desc = " + ".join(_caller_desc(m) for m in params.methods)
+    caller_desc = " + ".join(caller_description(m, params) for m in params.methods)
     provenance = {
         "tessera version": __version__,
         "date (UTC)": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S"),
@@ -426,16 +505,31 @@ def run_recomb(
         "metric": params.metric,
         "caller": f"ensemble: {caller_desc}" if len(params.methods) > 1 else caller_desc,
         "windowing": windowing,
+        # Settings that change which regions are reported. Without them a run with
+        # --min-methods 2 or --no-cluster-lineages is indistinguishable from a default
+        # run in the record.
+        "min methods (agreement gate)": (
+            f"{min_agree} (requested {params.min_methods}; {n_ran} caller"
+            f"{'' if n_ran == 1 else 's'} ran)" if gate_lowered else str(min_agree)
+        ),
+        "sibling exclusion": "on" if params.exclude_siblings else "off",
+        "lineage clustering": "on" if params.cluster_lineages else "off",
+        "donor re-attribution": (
+            f"on (margin {params.reattribute_margin:g})" if params.reattribute_donors else "off"
+        ),
         "major parent": major_parent or "n/a",
         "coverage threshold / gaps": f"{coverage_threshold:.3f} / {len(coverage_gaps)}",
     }
+    if not_run:
+        provenance["callers not run"] = f"{', '.join(not_run)} ({not_run_reason})"
     if excluded_siblings:
         provenance["excluded siblings (query's own lineage)"] = ", ".join(
             ev.label for ev in excluded_siblings
         )
     if signal is not None:
+        phi_text = "not testable" if signal.phi_p is None else f"p={signal.phi_p:.4g}"
         provenance["recombination signal (PHI)"] = (
-            f"p={signal.phi_p:.4g} ({signal.n_informative} informative sites, "
+            f"{phi_text} ({signal.n_informative} informative sites, "
             f"window {signal.phi_window})"
         )
         provenance["min recombination events (Rmin)"] = str(signal.rmin)
@@ -468,6 +562,7 @@ def run_recomb(
             extra_sections=extra_sections, lineage_map=lineage_map,
             query_lineage=query_lineage, signal=signal, organism=params.organism,
             methods_run=params.methods, method_breakdown=method_breakdown, per_major=per_major,
+            methods_not_run=not_run, not_run_reason=not_run_reason, alpha=params.alpha,
         ),
     )
     logger.info("All done.")

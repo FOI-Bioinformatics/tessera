@@ -78,6 +78,23 @@ Recombination regions (major parent: cowpox_KC813504):
   variola       cowpox_KC813504  66268        147150     80882       0.999      0.977      0.97     2e-300   66768
 ```
 
+### Near-duplicate references (lineage clustering)
+
+A recruited panel often holds several near-identical genomes of one lineage. Competed
+individually they tie in every window and fragment the call, so the HMM caller first
+pools them (`--cluster-lineages`, on by default; hmm only). Two references are pooled
+when their identity stays at or above 98.5 % in every window, with no region-sized run
+below it. The pooled lineage competes as one state under the label of its best-covering
+member, and a region names that member. Clustering is skipped for panels of fewer than 4
+or more than 200 references.
+
+One limitation follows from the absolute threshold. On a panel in which *every* pair of
+references is at least 98.5 % identical in every window -- mpox, VZV and other sets below
+roughly 1.5 % divergence -- all references pool into a single lineage and the HMM has
+nothing left to compete, so it calls no region whatever the data. The site-based callers
+(3SEQ, MaxChi) are unaffected. On such a panel, run with `--no-cluster-lineages` to keep
+the HMM's vote. `run_provenance.json` records whether clustering was on.
+
 ### Low-divergence panels (intra-species sets, DNA viruses)
 
 When the references are nearly identical -- e.g. mpox clades (~0.5 %), VZV (~0.2 %),
@@ -181,8 +198,10 @@ and scans the query window by window for the clade whose local markers it carrie
 where a non-major clade dominates is a region attributed to that lineage. A marker is
 denoised across the clade's members and the comparison is multi-way, so the call is robust
 to a single near-identical adjacent-clade genome winning by chance -- the failure mode of
-the genome-level callers at low divergence. It is silent on untyped panels, and opt-in
-(needs typed references). It composes with `--pool-consensus` but needs only a typed panel.
+the genome-level callers at low divergence. It is opt-in and needs typed references. On an
+untyped panel it cannot run, which is not the same as finding nothing: in an ensemble it is
+logged and shown as `not run` in the method comparison, and a run that selected only
+`barcode` is refused. It composes with `--pool-consensus` but needs only a typed panel.
 
 ## Parent-free recombination signal (PHI + Rmin)
 
@@ -232,6 +251,17 @@ localizes the signal rather than averaging it away -- are the more informative
 parent-free outputs. The diagnostic runs for every `--method`; disable with
 `--no-phi`, or widen its window with `--phi-window`.
 
+The PHI p-value is judged at the run's `--alpha`, in the report and for the per-region
+flag alike. The test is **not testable** when the alignment has too few informative sites
+for the window (`--phi-window`, default 100 site ranks; at least window + 2 sites are
+needed): every pair of sites then falls inside one window, so reordering the sites cannot
+change the statistic and the permutation p-value would be 1 whatever the data. Tessera
+reports this as `not testable` (`NA` in the `recombination_profile.tsv` header) rather
+than as a non-significant result, and no region is flagged `parent_free_support`; lower
+`--phi-window` to test such an alignment. Just above that limit the test is defined but
+has little power: the shipped `divergent` example (159 informative sites) gives p = 1 at
+the default window and p = 0.001 at `--phi-window 20`.
+
 This all remains an **indicative screen**: the built-in HMM and 3SEQ tests are fast
 triplet/segmentation screens, not a full tree-based analysis (such as GARD). Treat
 regions as candidates to confirm.
@@ -276,16 +306,16 @@ The practical readings:
 |---|---|
 | `report.html` | Self-contained report: run provenance, the region table, the per-dataset stats, and an embedded interactive plot |
 | `recombination_regions.tsv` | Called regions: minor/major parent, start/end in **both MSA columns and query bases**, `length_bp` / `length_msa`, `support`, `pvalue` / `qvalue` with the `test` and `statistic` that produced them, mean similarities, the calling `methods`, and `parent_free_support` |
-| `recombination_methods.tsv` | Ensemble breakdown (only when several methods run): one row per region with a Y/n per method and the parent-free flag |
-| `recombination_profile.tsv` | Parent-free signal: header with the PHI p-value and Rmin, then per-informative-site local incompatibility (the PHI profile) |
+| `recombination_methods.tsv` | Ensemble breakdown (only when several methods run): one row per region with `yes` / `no` per method (`not run` for a selected caller that could not run) and the parent-free flag |
+| `recombination_profile.tsv` | Parent-free signal: header with the PHI p-value (`NA` when not testable) and Rmin, then per-informative-site local incompatibility (the PHI profile) |
 | `similarity_windows.tsv` | Full per-window matrix: `msa_position`, `query_position`, `winner`, and one similarity column per dataset. Always base-pair windows (identity over all comparable columns) |
 | `informative_site_windows.tsv` | Only under informative-site windowing: the windows the HMM segmented -- `msa_position`, `query_position`, the window's `msa_start` / `msa_end` (end-exclusive), `winner`, and per dataset the query's identity **at polymorphic columns only**. Not comparable with similarity or ANI |
 | `similarity_stats.tsv` | Per-dataset similarity statistics (median, windows above identity thresholds) |
 | `window_winners.tsv` | Per-dataset count of windows won (ties included) |
-| `coverage_gaps.tsv` | Stretches where even the closest reference is a poor match -- possible missing references |
+| `coverage_gaps.tsv` | Stretches where even the closest reference is below the best-similarity threshold, with a `kind`: `divergent` (the query is far from every reference -- a possible missing reference), `low_information` (too few comparable bases to judge), or `breakpoint` (windows straddling a called breakpoint: each under-threshold window is matched, to the threshold, by a single switch between the region's two parents; not a missing reference, and it does not caveat the region) |
 | `similarity_top{N}.{fmt}` | Static plot of the nearest `--top-n` datasets, called regions shaded |
 | `informative_sites_top{N}.{fmt}` | Only under informative-site windowing: the same plot for identity at informative sites |
-| `similarity_pair.{fmt}` | Static plot of the major vs leading minor parent, region shaded |
+| `similarity_pair.{fmt}` | Static plot of the major parent against the donor of the longest called region, regions shaded (the two leading window winners when no donor was called) |
 | `run_provenance.json` | Machine-readable record of the run: Tessera version, parameters, caller description, and -- when the alignment came from `tessera msa` -- the aligner, its version and its arguments |
 
 ### Reading `pvalue`, `support` and the lengths

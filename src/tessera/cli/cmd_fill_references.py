@@ -10,6 +10,9 @@ from .main import (
     _require_choice,
     _require_directory,
     _require_file,
+    _require_lineage_map,
+    _require_range,
+    _require_scan_windows,
     app,
     get_logger,
     stage_errors,
@@ -143,8 +146,8 @@ def fill_references(
     method: str = typer.Option(
         "hmm,3seq,maxchi,bootscan", "--method",
         help="Region caller(s) for the detection step: a comma-separated list of "
-        "hmm/3seq/maxchi/bootscan/heuristic, or 'all'. Several run as an ensemble "
-        "(default hmm,3seq,maxchi,bootscan).",
+        "hmm/3seq/maxchi/bootscan/geneconv/barcode/heuristic, or 'all'. Several run as "
+        "an ensemble (default hmm,3seq,maxchi,bootscan).",
     ),
     min_methods: int = typer.Option(
         1, "--min-methods",
@@ -203,6 +206,12 @@ def fill_references(
     logger = get_logger()
     with stage_errors(logger):
         _require_file(query, "Query file")
+        _require_lineage_map(lineage_map)
+        # Checked here, before any network or aligner work: a round count of zero
+        # builds nothing and still exits 0, and a bad window otherwise surfaces only
+        # after the panel has been recruited and aligned.
+        _require_range(max_rounds, "--max-rounds", lo=1)
+        _require_scan_windows(window_size, window_step)
         if collection is not None:
             _require_directory(collection, "Collection directory")
         _require_choice(aligner, set(aligner_registry.names()), "--aligner")

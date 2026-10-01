@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .analyze import AnalysisResult
-from .coverage import CoverageGap
+from .coverage import BREAKPOINT_KIND, CoverageGap
 from .diagnostics import RecombinationSignal
 from .similarity import WindowSimilarity
 from .typing import LineageMap
@@ -29,8 +29,16 @@ class ReportContext:
     lineage_map: LineageMap | None = None
     query_lineage: str | None = None
     signal: RecombinationSignal | None = None
+    # The run's significance level, so the report judges the PHI p-value at the same
+    # alpha the per-region corroboration used.
+    alpha: float = 0.05
     organism: str | None = None
     methods_run: tuple[str, ...] = ()
+    # Selected callers that could not run (barcode on an untyped panel). They stay in
+    # ``methods_run`` so the method table keeps a column for them, marked "not run".
+    methods_not_run: tuple[str, ...] = ()
+    # Why they could not run, in the run's own words (the same text the log gives).
+    not_run_reason: str = ""
     method_breakdown: list[dict] | None = None
     per_major: dict[str, str] | None = None
     # Set only when the scan used informative-site windowing: the per-window identity
@@ -44,3 +52,14 @@ class ReportContext:
     def gaps(self) -> list[CoverageGap]:
         """``coverage_gaps`` with ``None`` normalised to an empty list."""
         return self.coverage_gaps or []
+
+    @property
+    def caveat_gaps(self) -> list[CoverageGap]:
+        """The gaps that may mean a missing reference: every kind except ``breakpoint``.
+
+        A breakpoint gap is a window straddling a called breakpoint. It is listed in the
+        coverage table and ``coverage_gaps.tsv`` under its own kind, but it is not a
+        poorly covered stretch, so the headline caveat, the mosaic and the plots leave
+        it out.
+        """
+        return [g for g in self.gaps if g.kind != BREAKPOINT_KIND]

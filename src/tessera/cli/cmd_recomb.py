@@ -9,6 +9,8 @@ import typer
 from .main import (
     _require_choice,
     _require_file,
+    _require_lineage_map,
+    _require_output_directory,
     _require_range,
     app,
     get_logger,
@@ -33,11 +35,13 @@ def recomb(
         "hmm,3seq,maxchi,bootscan", "--method",
         help="Region caller(s), comma-separated, or 'all'. Several run as an ensemble "
         "and their regions are merged into a consensus (agreement raises confidence); "
-        "the default is hmm,3seq,maxchi,bootscan (all but the legacy heuristic). Callers: "
+        "the default is hmm,3seq,maxchi,bootscan; geneconv, barcode and heuristic are "
+        "opt-in, and 'all' runs every one. Callers: "
         "hmm (HMM segmentation + a discordant-site "
         "significance test), 3seq (scan-aware triplet max-drawdown test; strong at low "
         "divergence), maxchi (chi-square triplet test, complementary to 3seq), bootscan "
-        "(distance + bootstrap support for the closest parent), barcode (clade-marker "
+        "(distance + bootstrap support for the closest parent), geneconv (longest "
+        "uninterrupted donor-match run), barcode (clade-marker "
         "lineage attribution; needs typed references), heuristic (legacy margin/merge). "
         "Pass a single name (e.g. --method hmm) for one caller.",
     ),
@@ -148,6 +152,8 @@ def recomb(
     logger = get_logger()
     with stage_errors(logger):
         _require_file(msa, "MSA file")
+        _require_lineage_map(lineage_map)
+        _require_output_directory(output)
         _require_choice(plot_format, {"pdf", "png", "svg"}, "--plot-format")
         # Bound the numeric options here: out of range they reach the statistics and
         # surface as an internal exception under "Unexpected error".

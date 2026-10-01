@@ -18,7 +18,7 @@ from .diagnostics import RecombinationSignal
 from .regions import Region
 from .report_assets import _CSS, _GLOSSARY, _REFERENCES
 from .report_context import ReportContext
-from .report_plots import GREY, _color_map, build_interactive_figure
+from .report_plots import GREY, _color_map, build_interactive_figure, region_labels
 from .similarity import WindowSimilarity
 from .typing import LineageMap, typed
 
@@ -36,6 +36,22 @@ def _swatch(color: str) -> str:
     return f'<span class="sw" style="background:{color}"></span>'
 
 
+def _union_length(spans: list[tuple[int, int]]) -> int:
+    """Total length covered by ``spans`` (half-open intervals), overlaps counted once."""
+    total = 0
+    covered_to: int | None = None
+    for start, end in sorted(spans):
+        if end <= start:
+            continue
+        if covered_to is None or start > covered_to:
+            total += end - start
+            covered_to = end
+        elif end > covered_to:
+            total += end - covered_to
+            covered_to = end
+    return total
+
+
 def _summary(
     result: WindowSimilarity, regions: list[Region], datasets: list[str]
 ) -> dict:
@@ -50,7 +66,9 @@ def _summary(
         major = "n/a"
     present = [r for r in regions if not r.donor_absent]
     absent = [r for r in regions if r.donor_absent]
-    recomb_bp = sum(max(0, r.query_end - r.query_start) for r in present)
+    # The union, not the sum: overlapping regions that name different donors are kept
+    # as separate rows, and adding their lengths counts the shared stretch twice.
+    recomb_bp = _union_length([(r.query_start, r.query_end) for r in present])
     minors: list[str] = []
     for r in present:
         if r.minor_parent not in minors:
@@ -260,11 +278,20 @@ def _regions_html(
 
 def _method_comparison_html(
     breakdown: list[dict], methods_run: tuple[str, ...], per_major: dict[str, str],
-    lineage_map: LineageMap | None = None,
+    lineage_map: LineageMap | None = None, methods_not_run: tuple[str, ...] = (),
+    not_run_reason: str = "",
 ) -> str:
     """A compact region x method agreement matrix; omitted for a single-method run."""
     if len(methods_run) < 2:
         return ""
+    not_run_note = ""
+    if methods_not_run:
+        names = ", ".join(html.escape(m) for m in methods_not_run)
+        not_run_note = (
+            f'<p class="cap"><strong>Not run:</strong> {names}'
+            f'{" (" + html.escape(not_run_reason) + ")" if not_run_reason else ""}. '
+            f'It tested nothing; its column below is not a negative result.</p>'
+        )
     majors = ", ".join(
         f'<span class="mono">{html.escape(m)}</span> &rarr; '
         f'{html.escape(typed(per_major.get(m, "n/a"), lineage_map))}'
@@ -273,7 +300,7 @@ def _method_comparison_html(
     intro = (
         f'<p class="cap">Each caller ran independently on the same alignment; a region '
         f'found by more than one is more trustworthy (and raises the confidence above). '
-        f'Backbone per method &mdash; {majors}.</p>'
+        f'Backbone per method &mdash; {majors}.</p>{not_run_note}'
     )
     if not breakdown:
         return intro + '<p class="empty">No regions were called by any method.</p>'
@@ -285,6 +312,7 @@ def _method_comparison_html(
     rows = ""
     for b in breakdown:
         cells = "".join(
+            '<td class="num">not run</td>' if m in methods_not_run else
             f'<td class="num">{"&check;" if m in b["per_method_support"] else "&middot;"}</td>'
             for m in methods_run
         )
@@ -302,10 +330,12 @@ def _method_comparison_html(
 def _method_section(
     method_breakdown: list[dict] | None, methods_run: tuple[str, ...],
     per_major: dict[str, str] | None, lineage_map: LineageMap | None,
+    methods_not_run: tuple[str, ...] = (), not_run_reason: str = "",
 ) -> str:
     """Wrap the method-comparison table in a report section (empty for one method)."""
     body = _method_comparison_html(
-        method_breakdown or [], methods_run, per_major or {}, lineage_map
+        method_breakdown or [], methods_run, per_major or {}, lineage_map, methods_not_run,
+        not_run_reason,
     )
     if not body:
         return ""
@@ -361,34 +391,39 @@ def _methods_html(provenance: dict[str, str]) -> str:
     )
     return (
         '<details class="methods"><summary>Methods &amp; glossary</summary>'
-        '<p class="cap">Tessera segments the query against the reference panel with an HMM '
-        '(jpHMM-style) and reports a region only when its donor beats the major parent on the '
-        'sites that distinguish them (a sign test on discordant sites, immune to window '
-        'overlap; Benjamini-Hochberg FDR across segments), with a posterior breakpoint '
-        'interval. By default it runs an ensemble of callers (HMM and the 3SEQ triplet '
-        'test) and merges their regions into one consensus, so a region found by more than '
-        'one method is flagged as agreeing and treated as higher confidence (see the '
-        'caller line under Run parameters). It remains an indicative screen, not a full '
-        'phylogenetic test (e.g. GARD) -- confirm strong candidates.</p>'
+        '<p class="cap">Tessera runs one or more region callers on the same alignment and '
+        'merges their regions into one consensus; a region found by more than one caller '
+        'is flagged as agreeing and treated as higher confidence. The callers that ran '
+        'for this report are named in the caller line under Run parameters. The default '
+        'ensemble is four callers: an HMM segmentation of the query against the reference '
+        'panel (jpHMM-style), which reports a segment only when its donor beats the major '
+        'parent on the sites that distinguish them (a one-sided sign test on discordant '
+        'sites, with a posterior breakpoint interval); the 3SEQ triplet test; MaxChi; and '
+        'Bootscan. Each caller applies Benjamini-Hochberg correction within its own '
+        'candidates; nothing is corrected across callers or across the genome. This is an '
+        'indicative screen, not a full phylogenetic test (e.g. GARD) -- confirm strong '
+        'candidates.</p>'
         f'<dl class="glossary">{glossary}</dl>'
         f'<h3>References</h3><ul class="refs">{references}</ul>'
         f'<h3>Run parameters</h3><table class="kv">{params}</table></details>'
     )
 
 
-def _footer_html(provenance: dict[str, str]) -> str:
-    files = [
-        "recombination_regions.tsv", "recombination_methods.tsv", "coverage_gaps.tsv",
-        "recombination_profile.tsv", "window_winners.tsv", "similarity_stats.tsv",
-        "similarity_windows.tsv", "similarity_top*.pdf", "similarity_pair.pdf",
-    ]
-    flist = ", ".join(f"<code>{f}</code>" for f in files)
+def _footer_html(provenance: dict[str, str], companion_files: list[str] | None = None) -> str:
+    """The version line and the companion files that were written with this report.
+
+    ``companion_files`` comes from the writer that produced them. With none given the
+    sentence is left out: a list is only worth printing if it is the list of this run.
+    """
     ver = html.escape(provenance.get("tessera version", ""))
     date = html.escape(provenance.get("date (UTC)", ""))
+    companions = ""
+    if companion_files:
+        flist = ", ".join(f"<code>{html.escape(f)}</code>" for f in companion_files)
+        companions = f"<div>Companion files in this folder: {flist}.</div>"
     return (
         f'<footer><div>Generated by Tessera <span class="mono">{ver}</span> &middot; '
-        f'<span class="mono">{date}</span> UTC</div>'
-        f'<div>Companion files in this folder: {flist}.</div></footer>'
+        f'<span class="mono">{date}</span> UTC</div>{companions}</footer>'
     )
 
 
@@ -419,7 +454,9 @@ def _coverage_html(gaps: list[CoverageGap], threshold: float) -> str:
         f'<span class="mono">{threshold:.3f}</span> best-similarity threshold. '
         f'<strong>divergent</strong> = the query is genuinely far from every reference '
         f'(a likely missing reference); <strong>low information</strong> = too few comparable '
-        f'bases to judge.</p>'
+        f'bases to judge; <strong>breakpoint</strong> = windows straddling a called '
+        f'breakpoint, where the two parents together explain the query (not a missing '
+        f'reference, and not counted in the caveat above).</p>'
     )
     if not gaps:
         return (
@@ -468,11 +505,22 @@ def _signal_html(signal: RecombinationSignal | None, alpha: float = 0.05) -> str
             '<p class="cap">Too few informative sites in the alignment for a parent-free '
             'recombination test.</p>'
         )
-    significant = signal.phi_p < alpha
-    verdict = (
-        '<strong>significant recombination signal</strong>' if significant
-        else 'no significant recombination signal'
-    )
+    if signal.phi_p is None:
+        # Every pair of informative sites is inside one window, so the permutation test
+        # cannot reject whatever the data. Say so instead of printing p = 1.
+        p_cell = "not testable"
+        verdict = (
+            f'every pair of the {signal.n_informative} informative sites lies within the '
+            f'window of {signal.phi_window} ranks, so the permutation test cannot reject here; '
+            f'this is not evidence against recombination. Lower '
+            f'<span class="mono">--phi-window</span> to test'
+        )
+    else:
+        p_cell = f"p = {signal.phi_p:.4g}"
+        verdict = (
+            '<strong>significant recombination signal</strong>' if signal.phi_p < alpha
+            else 'no significant recombination signal'
+        ) + f' (alpha {alpha:g}; {signal.n_informative} informative sites)'
     intervals = ", ".join(
         f"{_fmt_int(lo)}&ndash;{_fmt_int(hi)}" for lo, hi in signal.rmin_intervals[:8]
     )
@@ -487,9 +535,8 @@ def _signal_html(signal: RecombinationSignal | None, alpha: float = 0.05) -> str
         'forces, with the intervals (query coordinates) as breakpoint candidates.</p>'
     )
     rows = (
-        f'<tr><td class="lbl">PHI test</td><td class="num strong">p = {signal.phi_p:.4g}</td>'
-        f'<td class="lbl">{verdict} (alpha {alpha:g}; {signal.n_informative} informative '
-        f'sites)</td></tr>'
+        f'<tr><td class="lbl">PHI test</td><td class="num strong">{p_cell}</td>'
+        f'<td class="lbl">{verdict}</td></tr>'
         f'<tr><td class="lbl">Min recombination events (Rmin)</td>'
         f'<td class="num strong">{signal.rmin}</td>'
         f'<td class="lbl">{"intervals " + intervals if intervals else "none"}</td></tr>'
@@ -512,7 +559,7 @@ def _site_track_html(
     if ctx.site_result is None:
         return ""
     fig = build_interactive_figure(
-        ctx.site_result, datasets, regions, ctx.gaps,
+        ctx.site_result, datasets, regions, ctx.caveat_gaps,
         y_title="Identity at informative sites",
         value_name="identity at informative sites",
     )
@@ -538,15 +585,24 @@ def write_html_report(
     output_dir: Path,
     logger: logging.Logger,
     ctx: ReportContext,
+    companion_files: list[str] | None = None,
 ) -> Path:
-    """Write a single self-contained ``report.html``."""
+    """Write a single self-contained ``report.html``.
+
+    ``companion_files`` are the names of the files written beside it, listed in the
+    footer; ``write_reports`` supplies them.
+    """
     gaps = ctx.gaps
+    # Breakpoint gaps are tabulated but are not poorly covered stretches.
+    caveat_gaps = ctx.caveat_gaps
     lineage_map = ctx.lineage_map
     threshold = ctx.coverage_threshold
-    fig = build_interactive_figure(result, datasets, regions, gaps)
+    fig = build_interactive_figure(result, datasets, regions, caveat_gaps)
     plot_div = fig.to_html(full_html=False, include_plotlyjs="inline")
 
-    colors = _color_map(datasets)
+    # Colour every label a region names, not only the top-N: with --top-n 1 the donor
+    # is outside the plotted datasets and its swatch and mosaic segment were grey.
+    colors = _color_map(region_labels(datasets, regions))
     s = _summary(result, regions, datasets)
     organism_html = (
         f'<div class="organism">{html.escape(ctx.organism)}</div>' if ctx.organism else ""
@@ -554,6 +610,11 @@ def write_html_report(
     extras = "".join(
         f'<section class="section"><div class="eyebrow">{html.escape(title)}</div>{body}</section>'
         for title, body in (ctx.extra_sections or [])
+    )
+
+    method_section = _method_section(
+        ctx.method_breakdown, ctx.methods_run, ctx.per_major, lineage_map,
+        ctx.methods_not_run, ctx.not_run_reason,
     )
 
     doc = (
@@ -566,13 +627,13 @@ def write_html_report(
         f'<h1 class="mono">{html.escape(result.query)}</h1>'
         f"{organism_html}"
         f"{_verdict_html(s, result.query, colors, lineage_map, ctx.query_lineage)}"
-        f"{_caveat_html(gaps, threshold)}</header>"
+        f"{_caveat_html(caveat_gaps, threshold)}</header>"
         f"{_cards_html(s, colors, lineage_map)}"
         '<section class="section"><div class="eyebrow">Query mosaic</div>'
-        f"{_mosaic_html(regions, colors, s, gaps, lineage_map)}</section>"
+        f"{_mosaic_html(regions, colors, s, caveat_gaps, lineage_map)}</section>"
         '<section class="section"><div class="eyebrow">Recombinant regions</div>'
         f'{_regions_html(regions, colors, s["query_len"], lineage_map)}</section>'
-        f"{_method_section(ctx.method_breakdown, ctx.methods_run, ctx.per_major, lineage_map)}"
+        f"{method_section}"
         '<section class="section"><div class="eyebrow">Reference coverage</div>'
         f"{_coverage_html(gaps, threshold)}</section>"
         f"{extras}"
@@ -583,7 +644,7 @@ def write_html_report(
         f"{plot_div}</section>"
         f'{_site_track_html(ctx, datasets, regions, provenance.get("windowing", ""))}'
         '<section class="section"><div class="eyebrow">Recombination signal (parent-free)</div>'
-        f"{_signal_html(ctx.signal)}</section>"
+        f"{_signal_html(ctx.signal, ctx.alpha)}</section>"
         '<section class="section"><div class="eyebrow">Window winners</div>'
         '<p class="cap">Windows in which each reference is the query\'s closest match '
         '(ties included).</p>'
@@ -591,7 +652,7 @@ def write_html_report(
         '<section class="section"><div class="eyebrow">Per-dataset similarity statistics</div>'
         f'{_stats_html(analysis, s["major"], lineage_map)}</section>'
         f'<section class="section">{_methods_html(provenance)}</section>'
-        f"{_footer_html(provenance)}"
+        f"{_footer_html(provenance, companion_files)}"
         "</div></body></html>"
     )
 

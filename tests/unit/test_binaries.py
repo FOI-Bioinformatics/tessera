@@ -147,3 +147,45 @@ def test_a_binary_that_cannot_execute_is_not_a_crash(on_path) -> None:
         pytest.skip("file is still executable on this platform")
     with pytest.raises(MissingBinaryError):
         check_binaries((BinarySpec("broken"),))
+
+
+# --- a failed probe is not a version --------------------------------------
+
+def failing_binary(directory: Path, name: str, output: str) -> Path:
+    """An executable that prints ``output`` to stderr and exits 1, like a tool given an
+    option it does not have."""
+    path = directory / name
+    path.write_text(f'#!/bin/sh\nprintf %s "{output}" >&2\nexit 1\n')
+    path.chmod(path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    return path
+
+
+def test_error_output_is_not_recorded_as_a_version(on_path) -> None:
+    """`sibeliaz -v` prints "illegal option -- v" and exits 1; that line went into the
+    provenance sidecar as the aligner version."""
+    failing_binary(on_path, "sibeliaz", "sibeliaz: illegal option -- v")
+    versions = check_binaries((BinarySpec("sibeliaz", version_args=("-v",)),))
+    assert versions["sibeliaz"] == "unknown"
+
+
+def test_failed_probe_that_still_prints_a_version_is_kept(on_path) -> None:
+    # Some tools print their version in a usage message and exit non-zero.
+    failing_binary(on_path, "usagey", "usagey 1.4.2 -- usage: usagey [options]")
+    assert check_binaries((BinarySpec("usagey"),))["usagey"] == "1.4.2"
+
+
+def test_tool_without_a_version_option_is_not_probed(on_path, tmp_path) -> None:
+    marker = tmp_path / "was_run"
+    path = on_path / "noversion"
+    path.write_text(f'#!/bin/sh\ntouch "{marker}"\n')
+    path.chmod(path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    versions = check_binaries((BinarySpec("noversion", version_args=None),))
+    assert versions == {"noversion": "unknown"}
+    assert not marker.exists()  # declared as having no version option: never executed
+
+
+def test_sibeliaz_declares_no_version_probe() -> None:
+    from tessera.aligners.sibeliaz import SibeliazAligner
+
+    (spec,) = SibeliazAligner.capabilities.required_binaries
+    assert spec.version_args is None
