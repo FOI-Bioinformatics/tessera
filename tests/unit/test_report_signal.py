@@ -25,6 +25,10 @@ def test_signal_section_says_not_testable() -> None:
     assert "p =" not in html
     assert "no significant recombination signal" not in html
     assert "54 informative sites" in html
+    # 54 sites and a window of 53 ranks is also untestable (every pair is inside it), so
+    # "do not exceed the window" would be false there; describe the actual condition.
+    assert "do not exceed" not in html
+    assert "every pair" in html
     assert "--phi-window" in html  # tells the reader what to change
 
 

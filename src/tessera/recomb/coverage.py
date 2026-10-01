@@ -149,29 +149,42 @@ def call_coverage_gaps(
     return gaps, threshold
 
 
-def _explained_fraction(
+def _mosaic_identity(
     rows: dict[str, np.ndarray], query: str, parents: tuple[str, str], start: int, end: int
 ) -> float:
-    """Fraction of comparable columns in ``[start, end)`` where the query matches at
-    least one of ``parents`` (``nan`` when nothing is comparable)."""
+    """Best identity of the query, over columns ``[start, end)``, to a single-switch
+    mosaic of the two ``parents`` (either order, any switch point).
+
+    This is what a window straddling one breakpoint between the two parents can reach:
+    one parent up to the switch, the other after it. Identity is counted as everywhere
+    else -- matches over the columns where the query and the parent in force both carry
+    a canonical base -- so the value is on the same scale as the per-window similarity
+    the coverage threshold is applied to. ``nan`` when nothing is comparable.
+    """
     q = rows[query][start:end]
     q_canon = _canonical_mask(q)
-    comparable = np.zeros(q.size, dtype=bool)
-    matched = np.zeros(q.size, dtype=bool)
+    comp, match = [], []
     for label in parents:
         ref = rows[label][start:end]
         canon = q_canon & _canonical_mask(ref)
-        comparable |= canon
-        matched |= canon & (q == ref)
-    n = int(np.count_nonzero(comparable))
-    return float(np.count_nonzero(matched) / n) if n else float("nan")
+        comp.append(np.concatenate(([0], np.cumsum(canon))))
+        match.append(np.concatenate(([0], np.cumsum(canon & (q == ref)))))
+    best = float("nan")
+    for first, second in ((0, 1), (1, 0)):
+        # Switch after k columns: `first` explains [0, k), `second` explains [k, n).
+        num = match[first] + (match[second][-1] - match[second])
+        den = comp[first] + (comp[second][-1] - comp[second])
+        valid = den > 0
+        if valid.any():
+            value = float(np.max(num[valid] / den[valid]))
+            best = value if isnan(best) else max(best, value)
+    return best
 
 
 def mark_breakpoint_gaps(
     gaps: list[CoverageGap],
     regions: list[Region],
-    rows: dict[str, np.ndarray],
-    query: str,
+    result: WindowSimilarity,
     window_size: int,
     threshold: float,
 ) -> int:
@@ -183,24 +196,37 @@ def mark_breakpoint_gaps(
 
     - it lies within one window width of a boundary of a called, donor-present region
       (the only place a straddling window can be), and
-    - the region's donor and major parent together explain it: the fraction of
-      comparable columns where the query matches at least one of them reaches
-      ``threshold``.
+    - every under-threshold window inside it is explained by the region's two parents:
+      the query's identity to the best single-switch mosaic of donor and major parent
+      over that window reaches ``threshold``.
 
-    The second condition keeps a genuinely divergent stretch that happens to sit next
-    to a breakpoint labelled ``divergent``. The gaps are mutated in place; call this
-    after region calling and before :func:`gaps_as_regions`, which skips every kind
-    other than ``divergent``.
+    The second condition asks, window by window, the question the coverage test asks,
+    with a mosaic of the two parents in place of a single reference. It keeps a stretch
+    from a source outside the panel labelled ``divergent`` even when it is short and
+    sits right beside a breakpoint: averaged over the whole gap such a stretch is
+    diluted by the well-matching flanks, but the windows that hold it stay below the
+    threshold whatever the switch point. ``result`` is the base-pair scan the gaps were
+    called on. The gaps are mutated in place; call this after region calling and before
+    :func:`gaps_as_regions`, which skips every kind other than ``divergent``.
     """
+    half = window_size // 2
     relabelled = 0
     for gap in gaps:
         if gap.kind != "divergent":
+            continue
+        windows = [
+            (pos - half, pos - half + window_size)
+            for pos, best in zip(result.positions, result.best_sim, strict=True)
+            if gap.msa_start <= pos - half and pos - half + window_size <= gap.msa_end
+            and not isnan(best) and best < threshold
+        ]
+        if not windows:
             continue
         for region in regions:
             if region.donor_absent:
                 continue
             parents = (region.minor_parent, region.major_parent)
-            if any(label not in rows for label in parents):
+            if any(label not in result.rows for label in parents):
                 continue
             near = any(
                 boundary - window_size <= gap.msa_start
@@ -209,8 +235,11 @@ def mark_breakpoint_gaps(
             )
             if not near:
                 continue
-            explained = _explained_fraction(rows, query, parents, gap.msa_start, gap.msa_end)
-            if not isnan(explained) and explained >= threshold:
+            explained = [
+                _mosaic_identity(result.rows, result.query, parents, start, end)
+                for start, end in windows
+            ]
+            if all(not isnan(value) and value >= threshold for value in explained):
                 gap.kind = BREAKPOINT_KIND
                 relabelled += 1
                 break

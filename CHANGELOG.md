@@ -8,10 +8,13 @@ All notable changes to Tessera are recorded here. The format follows
 
 Fixes from the post-1.2.0 audit
 (`docs/superpowers/specs/2026-10-01-post-1.2.0-audit-design.md`, items A1-A10 and B1-B11).
-No region call changes: for a given alignment, which regions are found, and their
-coordinates and p-values, are as before. What reaches the scan can differ -- an alignment
-built with the MAFFT or MAF-based backends, or a panel built with `--curate`, may now be a
-different (corrected) one.
+For a given alignment the callers find the same regions, with the same coordinates and
+p-values, as before. Three things around them do change: the `donor_undercovered` flag and
+donor-absent rows where a coverage gap is now recognised as a breakpoint artefact; runs
+that select the barcode caller on a panel where it cannot run (it no longer counts toward
+`--min-methods`, and a barcode-only run is refused); and what reaches the scan -- an
+alignment built with the MAFFT or MAF-based backends, or a panel built with `--curate`,
+may now be a different (corrected) one.
 
 ### Fixed
 
@@ -85,10 +88,16 @@ Reporting:
   its best similarity fell below the coverage threshold, the stretch was called a `divergent`
   coverage gap, and the region was marked `donor_undercovered` -- on the shipped
   `divergent` example the headline read "low confidence" for a donor identical to the query.
-  A gap within one window of a called region boundary that the region's two parents together
-  explain is now labelled `breakpoint` in `coverage_gaps.tsv` and the report; it does not
-  caveat the region, is not turned into a donor-absent region, and is left out of the
-  headline. **`donor_undercovered` and the confidence wording change for such regions.**
+  A gap within one window of a called region boundary is now labelled `breakpoint` in
+  `coverage_gaps.tsv` and the report when every under-threshold window in it is matched,
+  to the coverage threshold, by a single switch between the region's two parents. Such a
+  gap does not caveat the region, is not turned into a donor-absent region, and is left out
+  of the headline. A stretch from a source outside the panel stays `divergent` even when it
+  is short and sits beside a breakpoint. **`donor_undercovered` and the confidence wording
+  change for regions whose only gaps were breakpoint artefacts.** One consequence is not yet
+  measured on the hybrid harness: a region whose donor is a close stand-in for an absent
+  lineage (above the coverage threshold) was previously caveated only through its
+  breakpoint gaps, and is now reported without a caveat.
   Reference recruitment (`fill-references`, `find-references`) is unaffected.
 - The report's "covering N kb (P %) of the query" added the lengths of overlapping regions
   that name different donors; it now reports their union.
@@ -100,8 +109,10 @@ Reporting:
 - **The barcode caller on an untyped panel read as a negative.** It named the first record
   of the alignment as major parent and its column in the method table said `no`. It now
   reports no major parent; in an ensemble it is logged and shown as `not run`, the
-  agreement gate counts only callers that ran, and a run that selected only `barcode` is
-  refused.
+  agreement gate counts only callers that ran (a gate lowered for that reason is logged and
+  recorded as, for example, `1 (requested 2; 1 caller ran)`), and a run that selected only
+  `barcode` is refused. The report and provenance give the actual reason, which on a typed
+  panel is that fewer than two clades carry enough markers.
 - The report judged the PHI p-value at alpha 0.05 whatever `--alpha` was.
 - **A PHI test that could not reject was reported as "no signal".** With no more
   informative sites than the window can hold (`--phi-window`, default 100) the permutation
@@ -118,8 +129,9 @@ Reporting:
 - Input checks: `find-references --msa <missing>` and `recomb -o <existing file>` failed
   with "Unexpected error"; `--max-rounds 0` exited 0 having built nothing; `reassort`
   accepted `--ani-floor 500`, `--margin -3` and a `--dataset` key matching no segment;
-  `type-lineages` rejected `.fasta.gz` / `.fas` collections; a multi-line aligner error
-  broke `segment_scan.tsv`.
+  `type-lineages` rejected `.fasta.gz` / `.fas` collections (it now reads what the other
+  commands read, and like them rejects a file in the collection that is not FASTA, where it
+  used to skip it); a multi-line aligner error broke `segment_scan.tsv`.
 
 ### Changed
 

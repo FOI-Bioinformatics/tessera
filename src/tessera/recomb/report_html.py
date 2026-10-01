@@ -279,6 +279,7 @@ def _regions_html(
 def _method_comparison_html(
     breakdown: list[dict], methods_run: tuple[str, ...], per_major: dict[str, str],
     lineage_map: LineageMap | None = None, methods_not_run: tuple[str, ...] = (),
+    not_run_reason: str = "",
 ) -> str:
     """A compact region x method agreement matrix; omitted for a single-method run."""
     if len(methods_run) < 2:
@@ -287,9 +288,9 @@ def _method_comparison_html(
     if methods_not_run:
         names = ", ".join(html.escape(m) for m in methods_not_run)
         not_run_note = (
-            f'<p class="cap"><strong>Not run:</strong> {names}. The caller needs typed '
-            f'references and none were available, so it tested nothing; its column below '
-            f'is not a negative result.</p>'
+            f'<p class="cap"><strong>Not run:</strong> {names}'
+            f'{" (" + html.escape(not_run_reason) + ")" if not_run_reason else ""}. '
+            f'It tested nothing; its column below is not a negative result.</p>'
         )
     majors = ", ".join(
         f'<span class="mono">{html.escape(m)}</span> &rarr; '
@@ -329,11 +330,12 @@ def _method_comparison_html(
 def _method_section(
     method_breakdown: list[dict] | None, methods_run: tuple[str, ...],
     per_major: dict[str, str] | None, lineage_map: LineageMap | None,
-    methods_not_run: tuple[str, ...] = (),
+    methods_not_run: tuple[str, ...] = (), not_run_reason: str = "",
 ) -> str:
     """Wrap the method-comparison table in a report section (empty for one method)."""
     body = _method_comparison_html(
-        method_breakdown or [], methods_run, per_major or {}, lineage_map, methods_not_run
+        method_breakdown or [], methods_run, per_major or {}, lineage_map, methods_not_run,
+        not_run_reason,
     )
     if not body:
         return ""
@@ -508,8 +510,8 @@ def _signal_html(signal: RecombinationSignal | None, alpha: float = 0.05) -> str
         # cannot reject whatever the data. Say so instead of printing p = 1.
         p_cell = "not testable"
         verdict = (
-            f'{signal.n_informative} informative sites do not exceed the window of '
-            f'{signal.phi_window} ranks, so the permutation test cannot reject here; '
+            f'every pair of the {signal.n_informative} informative sites lies within the '
+            f'window of {signal.phi_window} ranks, so the permutation test cannot reject here; '
             f'this is not evidence against recombination. Lower '
             f'<span class="mono">--phi-window</span> to test'
         )
@@ -612,7 +614,7 @@ def write_html_report(
 
     method_section = _method_section(
         ctx.method_breakdown, ctx.methods_run, ctx.per_major, lineage_map,
-        ctx.methods_not_run,
+        ctx.methods_not_run, ctx.not_run_reason,
     )
 
     doc = (

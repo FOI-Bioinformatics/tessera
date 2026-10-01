@@ -25,23 +25,41 @@ from tessera.recomb.run import RecombParams, run_recomb
 
 WIDTH = 2000
 WINDOW = 400
+STEP = 40
 
 
 def _enc(seq: str) -> np.ndarray:
     return np.frombuffer(seq.encode("ascii"), dtype=np.uint8)
 
 
-def _rows(query: str) -> dict[str, np.ndarray]:
-    """Parents that differ at every tenth column; the query is given by the caller."""
-    major = "A" * WIDTH
-    minor = "".join("C" if i % 10 == 0 else "A" for i in range(WIDTH))
-    return {"query": _enc(query), "major": _enc(major), "minor": _enc(minor)}
+_MINOR = "".join("C" if i % 8 == 0 else "A" for i in range(WIDTH))
+
+
+class _Scan:
+    """The part of a WindowSimilarity that gap marking reads: the aligned rows and, per
+    window, its centre and the best single-reference identity."""
+
+    def __init__(self, query: str) -> None:
+        self.query = "query"
+        self.rows = {"query": _enc(query), "major": _enc("A" * WIDTH), "minor": _enc(_MINOR)}
+        self.positions = [s + WINDOW // 2 for s in range(0, WIDTH - WINDOW + 1, STEP)]
+        q = self.rows["query"]
+        self.best_sim = [
+            max(float(np.mean(q[p - WINDOW // 2:p + WINDOW // 2]
+                              == self.rows[ref][p - WINDOW // 2:p + WINDOW // 2]))
+                for ref in ("major", "minor"))
+            for p in self.positions
+        ]
+
+
+def _rows(query: str) -> _Scan:
+    """Parents that differ at every eighth column; the query is given by the caller."""
+    return _Scan(query)
 
 
 def _mosaic() -> str:
     """Major up to column 1000, minor after it: a clean breakpoint at 1000."""
-    minor = "".join("C" if i % 10 == 0 else "A" for i in range(WIDTH))
-    return "A" * 1000 + minor[1000:]
+    return "A" * 1000 + _MINOR[1000:]
 
 
 def _region() -> Region:
@@ -61,14 +79,14 @@ def _gap(start: int, end: int, kind: str = "divergent") -> CoverageGap:
 
 def test_gap_straddling_a_called_breakpoint_is_relabelled() -> None:
     gaps = [_gap(800, 1200)]
-    n = mark_breakpoint_gaps(gaps, [_region()], _rows(_mosaic()), "query", WINDOW, 0.95)
+    n = mark_breakpoint_gaps(gaps, [_region()], _rows(_mosaic()), WINDOW, 0.95)
     assert n == 1
     assert gaps[0].kind == BREAKPOINT_KIND
 
 
 def test_breakpoint_gap_is_not_bridged_to_a_donor_absent_region() -> None:
     gaps = [_gap(800, 1200)]
-    mark_breakpoint_gaps(gaps, [_region()], _rows(_mosaic()), "query", WINDOW, 0.95)
+    mark_breakpoint_gaps(gaps, [_region()], _rows(_mosaic()), WINDOW, 0.95)
 
     class _Result:
         positions: list[int] = []
@@ -84,21 +102,21 @@ def test_gap_the_two_parents_do_not_explain_stays_divergent() -> None:
     for i in range(800, 1200, 5):
         query[i] = "G"
     gaps = [_gap(800, 1200)]
-    n = mark_breakpoint_gaps(gaps, [_region()], _rows("".join(query)), "query", WINDOW, 0.95)
+    n = mark_breakpoint_gaps(gaps, [_region()], _rows("".join(query)), WINDOW, 0.95)
     assert n == 0
     assert gaps[0].kind == "divergent"
 
 
 def test_gap_far_from_every_region_boundary_stays_divergent() -> None:
     gaps = [_gap(100, 500)]  # more than one window away from 1000 and from 2000
-    n = mark_breakpoint_gaps(gaps, [_region()], _rows(_mosaic()), "query", WINDOW, 0.95)
+    n = mark_breakpoint_gaps(gaps, [_region()], _rows(_mosaic()), WINDOW, 0.95)
     assert n == 0
     assert gaps[0].kind == "divergent"
 
 
 def test_low_information_gap_is_left_alone() -> None:
     gaps = [_gap(800, 1200, kind="low_information")]
-    mark_breakpoint_gaps(gaps, [_region()], _rows(_mosaic()), "query", WINDOW, 0.95)
+    mark_breakpoint_gaps(gaps, [_region()], _rows(_mosaic()), WINDOW, 0.95)
     assert gaps[0].kind == "low_information"
 
 
@@ -106,7 +124,7 @@ def test_donor_absent_region_does_not_explain_a_gap() -> None:
     region = _region()
     region.donor_absent = True
     gaps = [_gap(800, 1200)]
-    assert mark_breakpoint_gaps(gaps, [region], _rows(_mosaic()), "query", WINDOW, 0.95) == 0
+    assert mark_breakpoint_gaps(gaps, [region], _rows(_mosaic()), WINDOW, 0.95) == 0
 
 
 def test_region_naming_a_label_outside_the_alignment_is_skipped() -> None:
@@ -114,8 +132,32 @@ def test_region_naming_a_label_outside_the_alignment_is_skipped() -> None:
     region = _region()
     region.major_parent = "n/a"
     gaps = [_gap(800, 1200)]
-    assert mark_breakpoint_gaps(gaps, [region], _rows(_mosaic()), "query", WINDOW, 0.95) == 0
+    assert mark_breakpoint_gaps(gaps, [region], _rows(_mosaic()), WINDOW, 0.95) == 0
     assert gaps[0].kind == "divergent"
+
+
+def test_short_third_source_stretch_inside_a_wider_gap_stays_divergent() -> None:
+    # 120 columns right after the breakpoint carry a base neither parent has at one
+    # column in four (30 columns). Averaged over the whole 640-column gap the two parents
+    # still explain 95.3 % of it, but a 400-column window that holds the stretch is
+    # explained to 92.5 % at best, whatever the switch point.
+    query = list(_mosaic())
+    for i in range(1000, 1120, 4):
+        query[i] = "G"
+    gaps = [_gap(680, 1320)]
+    n = mark_breakpoint_gaps(gaps, [_region()], _rows("".join(query)), WINDOW, 0.95)
+    assert n == 0
+    assert gaps[0].kind == "divergent"
+
+
+def test_gap_without_an_under_threshold_window_is_not_relabelled() -> None:
+    # Nothing in the gap is below the threshold in this scan, so there is no straddling
+    # window to explain; leave the label alone.
+    gaps = [_gap(100, 500)]
+    region = _region()
+    region.msa_start = 300
+    n = mark_breakpoint_gaps(gaps, [region], _rows("A" * WIDTH), WINDOW, 0.95)
+    assert n == 0
 
 
 # --- the shipped example, end to end --------------------------------------
@@ -145,3 +187,38 @@ def test_clean_recombinant_is_not_reported_as_a_missing_reference(
     verdict = re.sub(r"<[^>]+>", "", re.search(r'<p class="verdict">.*?</p>', report).group(0))
     assert "high confidence" in " ".join(verdict.split())
     assert "Possible missing reference" not in report
+
+
+def test_unsampled_stretch_beside_the_breakpoint_keeps_its_caveat(tmp_path, logger) -> None:
+    """A clean insert followed by 150 bp from a lineage that is not in the panel (about
+    15 % from both parents). The coverage gap there is deeper than a straddling window
+    explains, so it must stay `divergent` and keep caveating the region."""
+    import random
+
+    rng = random.Random(2)
+
+    def mutate(seq: list[str], rate: float) -> list[str]:
+        return [rng.choice([b for b in "ACGT" if b != c]) if rng.random() < rate else c
+                for c in seq]
+
+    anc = [rng.choice("ACGT") for _ in range(3000)]
+    a, b, og = mutate(anc, 0.055), mutate(anc, 0.055), mutate(anc, 0.15)
+    query = a[:1000] + b[1000:2000] + mutate(a[2000:2150], 0.15) + a[2150:]
+    msa = tmp_path / "third_source.fasta"
+    msa.write_text("".join(
+        f">{name}\n{''.join(seq)}\n"
+        for name, seq in (("query", query), ("parent_A", a), ("parent_B", b), ("outgroup", og))
+    ))
+    out = tmp_path / "out"
+    run_recomb(
+        RecombParams(msa=msa, output=out, query="query", window_size=300, window_step=30,
+                     plot_format="png"),
+        logger,
+    )
+    lines = (out / "coverage_gaps.tsv").read_text().splitlines()
+    gaps = list(csv.DictReader([ln for ln in lines if not ln.startswith("#")], delimiter="\t"))
+    over_stretch = [g for g in gaps if int(g["msa_start"]) < 2150 and int(g["msa_end"]) > 2000]
+    assert over_stretch and {g["kind"] for g in over_stretch} == {"divergent"}
+    regions = list(csv.DictReader((out / "recombination_regions.tsv").open(), delimiter="\t"))
+    donor = [r for r in regions if r["minor_parent"] == "parent_B" and r["donor_absent"] == "no"]
+    assert donor and donor[0]["donor_undercovered"] == "yes"

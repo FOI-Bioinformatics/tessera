@@ -37,6 +37,8 @@ class ReportContext:
     # Selected callers that could not run (barcode on an untyped panel). They stay in
     # ``methods_run`` so the method table keeps a column for them, marked "not run".
     methods_not_run: tuple[str, ...] = ()
+    # Why they could not run, in the run's own words (the same text the log gives).
+    not_run_reason: str = ""
     method_breakdown: list[dict] | None = None
     per_major: dict[str, str] | None = None
     # Set only when the scan used informative-site windowing: the per-window identity

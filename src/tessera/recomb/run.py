@@ -309,8 +309,9 @@ def run_recomb(
         )
         if signal is not None and signal.phi_p is None:
             logger.info(
-                "Recombination signal (parent-free): PHI not testable (%d informative "
-                "site(s) do not exceed the window of %d ranks; lower --phi-window), Rmin=%d.",
+                "Recombination signal (parent-free): PHI not testable (every pair of the "
+                "%d informative site(s) lies within the window of %d ranks; lower "
+                "--phi-window), Rmin=%d.",
                 signal.n_informative, signal.phi_window, signal.rmin,
             )
         elif signal is not None:
@@ -356,8 +357,9 @@ def run_recomb(
     # cannot run. That is "could not test", which must not be reported as "tested and
     # found nothing": refuse a run that selected nothing else, and say so otherwise.
     not_run = tuple(m for m in params.methods if m == "barcode" and majors[m] is None)
+    not_run_reason = ""
     if not_run:
-        reason = (
+        reason = not_run_reason = (
             "fewer than two typed clades carry enough characteristic markers"
             if lineage_map else
             "it needs typed references (a lineage map: --lineage-map, or a lineages.tsv "
@@ -390,6 +392,16 @@ def run_recomb(
     # *before* re-attribution: a suppressed region should not be re-attributed, and must
     # not announce a re-attribution in the log for a region nobody will see.
     min_agree = max(1, min(params.min_methods, n_ran))
+    # The clamp is silent when the user simply selected fewer callers than --min-methods.
+    # It is not when a selected caller could not run: the user asked for corroboration
+    # the run cannot give, and the regions reported are then weaker than requested.
+    gate_lowered = bool(not_run) and min_agree < params.min_methods
+    if gate_lowered:
+        logger.warning(
+            "--min-methods %d cannot be met: %d caller(s) ran. The agreement gate used "
+            "is %d, so regions found by fewer callers than requested are reported.",
+            params.min_methods, n_ran, min_agree,
+        )
     regions, method_breakdown, suppressed = filter_by_agreement(
         regions, method_breakdown, min_agree
     )
@@ -443,8 +455,7 @@ def run_recomb(
     # (fill-references / find-references) calls call_coverage_gaps directly and is
     # unaffected.
     n_breakpoint = mark_breakpoint_gaps(
-        coverage_gaps, regions, bp_result.rows, query_label,
-        params.window_size, coverage_threshold,
+        coverage_gaps, regions, bp_result, params.window_size, coverage_threshold,
     )
     n_poor = len(coverage_gaps) - n_breakpoint
     if n_poor:
@@ -497,7 +508,10 @@ def run_recomb(
         # Settings that change which regions are reported. Without them a run with
         # --min-methods 2 or --no-cluster-lineages is indistinguishable from a default
         # run in the record.
-        "min methods (agreement gate)": str(min_agree),
+        "min methods (agreement gate)": (
+            f"{min_agree} (requested {params.min_methods}; {n_ran} caller"
+            f"{'' if n_ran == 1 else 's'} ran)" if gate_lowered else str(min_agree)
+        ),
         "sibling exclusion": "on" if params.exclude_siblings else "off",
         "lineage clustering": "on" if params.cluster_lineages else "off",
         "donor re-attribution": (
@@ -507,7 +521,7 @@ def run_recomb(
         "coverage threshold / gaps": f"{coverage_threshold:.3f} / {len(coverage_gaps)}",
     }
     if not_run:
-        provenance["callers not run"] = ", ".join(not_run) + " (needs typed references)"
+        provenance["callers not run"] = f"{', '.join(not_run)} ({not_run_reason})"
     if excluded_siblings:
         provenance["excluded siblings (query's own lineage)"] = ", ".join(
             ev.label for ev in excluded_siblings
@@ -548,7 +562,7 @@ def run_recomb(
             extra_sections=extra_sections, lineage_map=lineage_map,
             query_lineage=query_lineage, signal=signal, organism=params.organism,
             methods_run=params.methods, method_breakdown=method_breakdown, per_major=per_major,
-            methods_not_run=not_run, alpha=params.alpha,
+            methods_not_run=not_run, not_run_reason=not_run_reason, alpha=params.alpha,
         ),
     )
     logger.info("All done.")

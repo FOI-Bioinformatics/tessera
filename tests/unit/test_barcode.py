@@ -162,6 +162,16 @@ def test_agreement_gate_counts_only_the_callers_that_ran(tmp_path: Path, logger)
     assert [row["methods"] for row in rows] == ["3seq"]
 
 
+def test_a_lowered_agreement_gate_is_logged_and_recorded(tmp_path: Path) -> None:
+    """The user asked for two agreeing callers and only one could run. The regions are
+    then single-caller regions; the log and the provenance must say the gate was 1."""
+    log, warnings = _collecting_logger()
+    out = _run(tmp_path, log, methods=("3seq", "barcode"), min_methods=2)
+    assert any("--min-methods 2" in m and "1 caller" in m for m in warnings)
+    run = json.loads((out / "run_provenance.json").read_text())["run"]
+    assert run["min methods (agreement gate)"] == "1 (requested 2; 1 caller ran)"
+
+
 def test_barcode_not_run_on_a_typed_panel_without_marked_clades(tmp_path: Path) -> None:
     """Typed, but every reference is in one clade: there are no clade markers to
     compete, so the caller cannot run and the warning says why."""
@@ -171,3 +181,10 @@ def test_barcode_not_run_on_a_typed_panel_without_marked_clades(tmp_path: Path) 
     assert any("fewer than two typed clades" in message for message in warnings)
     rows = list(csv.DictReader((out / "recombination_methods.tsv").open(), delimiter="\t"))
     assert {row["barcode"] for row in rows} == {"not run"}
+    # The panel is typed, so "needs typed references" would be the wrong reason.
+    run = json.loads((out / "run_provenance.json").read_text())["run"]
+    assert "fewer than two typed clades" in run["callers not run"]
+    assert "needs typed references" not in run["callers not run"]
+    report = (out / "report.html").read_text()
+    assert "fewer than two typed clades" in report
+    assert "none were available" not in report
