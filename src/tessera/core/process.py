@@ -21,7 +21,7 @@ import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
-from .errors import ToolExecutionError
+from .errors import MissingBinaryError, ToolExecutionError
 from .plugins import ToolCapabilities
 
 # How many trailing lines of captured output to attach to a failure message.
@@ -100,6 +100,9 @@ def run_tool(
         except subprocess.TimeoutExpired as exc:
             partial.unlink(missing_ok=True)
             raise _timeout_error(cmd, timeout) from exc
+        except FileNotFoundError as exc:
+            partial.unlink(missing_ok=True)
+            raise _missing_binary(cmd, exc) from exc
         except BaseException:
             partial.unlink(missing_ok=True)
             raise
@@ -115,11 +118,30 @@ def run_tool(
             )
         except subprocess.TimeoutExpired as exc:
             raise _timeout_error(cmd, timeout) from exc
+        except FileNotFoundError as exc:
+            raise _missing_binary(cmd, exc) from exc
         output = (proc.stdout or "") + (proc.stderr or "")
     if proc.returncode != 0:
         tail = "\n".join(output.strip().splitlines()[-_OUTPUT_TAIL_LINES:])
         raise ToolExecutionError(cmd, proc.returncode, tail or None)
     return output
+
+
+def _missing_binary(cmd: list[str], exc: FileNotFoundError) -> Exception:
+    """A tool that is not installed, reported as such.
+
+    Most call sites check for their binary first, but not all can (a tool reached
+    only on one branch, a wrapper that shells out to a second program), and the bare
+    ``FileNotFoundError`` surfaced as "Unexpected error: [Errno 2]" -- which reads as
+    a missing input file. Only the executable itself is treated this way; any other
+    missing path is re-raised unchanged.
+    """
+    if exc.filename is not None and str(exc.filename) != cmd[0]:
+        return exc
+    return MissingBinaryError(
+        f"'{cmd[0]}' was not found on PATH. Install it (see docs/aligners.md and "
+        "environment.yml) or activate the environment that provides it."
+    )
 
 
 def _timeout_error(cmd: list[str], timeout: float | None) -> ToolExecutionError:

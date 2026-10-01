@@ -13,6 +13,7 @@ from pathlib import Path
 
 import typer
 
+from ..core.errors import UserInputError
 from .main import _require_directory, app, get_logger, stage_errors
 
 
@@ -55,7 +56,7 @@ def type_lineages(
             if p.is_file() and p.suffix.lower() in (".fasta", ".fa", ".fna")
         )
         if not genomes:
-            raise typer.BadParameter(f"No FASTA genomes found in {collection}")
+            raise UserInputError(f"No FASTA genomes found in {collection}")
         rows = assign_lineages(
             genomes, user_lineage_map=lineage_map, taxon=taxon,
             nextclade_dataset=nextclade_dataset, ref_ani_floor=ref_ani_floor,

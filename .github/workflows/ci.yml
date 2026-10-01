@@ -50,11 +50,6 @@ jobs:
       - name: Lint
         run: ruff check src tests validation
       - name: Type check
-        # Non-blocking for now: the codebase is ~91% annotated but has never been
-        # type-checked, so there is an existing backlog. It already found one real
-        # defect (a None reaching lineage_of). Flip to blocking once the baseline is
-        # clean, and delete this comment when you do.
-        continue-on-error: true
         run: mypy
       - name: Unit and integration tests
         # The coverage floor is anchored on the pure suite (binary-gated tests run in

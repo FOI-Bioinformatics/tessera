@@ -22,14 +22,25 @@ from .errors import UserInputError
 SEQUENCE_EXTENSIONS = (".fna", ".fasta", ".fa")
 
 
+def _open_text(path: str | Path) -> TextIO:
+    """Open a plain or gzip-compressed text file for reading."""
+    if str(path).endswith(".gz"):
+        return gzip.open(path, "rt")
+    return open(path)
+
+
 def read_fasta(path: str | Path) -> list[tuple[str, str]]:
-    """Read a FASTA file into a list of ``(header-first-token, sequence)``."""
+    """Read a FASTA file into a list of ``(header-first-token, sequence)``.
+
+    A ``.gz`` input is read through :mod:`gzip`: staging already accepts compressed
+    genomes, so the readers that look inside a query must accept them too.
+    """
     records: list[tuple[str, str]] = []
     name: str | None = None
     seq: list[str] = []
-    with open(path) as fo:
+    with _open_text(path) as fo:
         for line in fo:
-            line = line.rstrip("\n")
+            line = line.rstrip("\r\n")
             if line.startswith(">"):
                 if name is not None:
                     records.append((name, "".join(seq)))
@@ -88,6 +99,60 @@ def strip_sequence_extension(name: str) -> str:
     return name
 
 
+def collection_genomes(directory: Path) -> list[Path]:
+    """The genome files of a collection directory, sorted by name.
+
+    Hidden files are skipped. A collection is "every file in this directory", and a
+    directory a person has opened in a file browser holds files they never put there
+    (``.DS_Store`` on macOS): staged as a genome, one becomes the backbone or crashes
+    the aligner. Anything else that is not FASTA is rejected by name at staging.
+    """
+    return sorted(
+        p for p in Path(directory).iterdir() if p.is_file() and not p.name.startswith(".")
+    )
+
+
+def copy_collection(source: Path, dest: Path) -> None:
+    """Replace ``dest`` with a fresh copy of the collection at ``source``.
+
+    The working copy lives at ``<output>/collection`` and is rebuilt on every run so
+    the user's input is never modified. That guarantee inverts when the input *is*
+    that directory -- the natural way to continue from a previous run's output -- as
+    clearing the destination first would delete the collection before copying it.
+    Refuse, rather than destroy the input.
+    """
+    source, dest = Path(source), Path(dest)
+    src, dst = source.resolve(), dest.resolve()
+    if src == dst or dst in src.parents or src in dst.parents:
+        raise UserInputError(
+            f"The collection {source} is, contains, or lies inside this run's working "
+            f"copy ({dest}), which is cleared at the start of every run. Choose a "
+            "different output directory, or point --collection at a copy elsewhere."
+        )
+    if dest.exists():
+        shutil.rmtree(dest)
+    shutil.copytree(source, dest)
+
+
+def _require_fasta(source: Path) -> None:
+    """Reject a staged input whose first non-blank character is not ``>``."""
+    try:
+        if source.name.endswith(".gz"):
+            with gzip.open(source, "rb") as fo:
+                head = fo.read(4096)
+        else:
+            with open(source, "rb") as fo:
+                head = fo.read(4096)
+    except (OSError, EOFError) as exc:
+        raise UserInputError(f"Cannot read {source} as a (gzip) FASTA file: {exc}") from exc
+    if not head.lstrip().startswith(b">"):
+        raise UserInputError(
+            f"{source} does not look like a FASTA file (it does not start with '>'). "
+            "Every file in the collection directory is treated as a genome; move "
+            "other files out of it."
+        )
+
+
 def _stage_one(source: Path, target_dir: Path, logger: logging.Logger) -> Path:
     """Place one genome into ``target_dir`` as ``<label>.fasta``; return the path."""
     label = strip_sequence_extension(source.name)
@@ -120,9 +185,11 @@ def stage_genomes(
     if not collection_dir.is_dir():
         raise UserInputError(f"Collection directory not found: {collection_dir}")
 
-    collection_files = sorted(p for p in collection_dir.iterdir() if p.is_file())
+    collection_files = collection_genomes(collection_dir)
     if not collection_files:
         raise UserInputError(f"Collection directory is empty: {collection_dir}")
+    for source in [*collection_files, query]:
+        _require_fasta(source)
 
     _reject_colliding_labels(collection_files, query)
 

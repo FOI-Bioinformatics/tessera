@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..core.errors import UserInputError
-from ..core.io import read_fasta, strip_sequence_extension
+from ..core.io import collection_genomes, read_fasta, strip_sequence_extension
 from ..recomb.coverage import CoverageGap, CoverageParams, call_coverage_gaps
 from ..recomb.similarity import compute_similarity
 from .blast import BlastError, Hit, blast_subsequence
@@ -190,7 +190,11 @@ def collect_candidates(
                     skipped_self.append(hit.accession)
                 elif hit.accession not in seen_here:
                     seen_here.add(hit.accession)
-                    candidates.append(Candidate(gap, hit, hit.accession in existing))
+                    in_collection = (
+                        hit.accession in existing
+                        or _base_accession(hit.accession) in existing
+                    )
+                    candidates.append(Candidate(gap, hit, in_collection))
 
     if skipped_self:
         logger.info(
@@ -221,8 +225,10 @@ def _is_self_hit(hit: Hit, keep_self_hits: bool) -> bool:
 def _existing_labels(result, collection: Path | None, query_label: str) -> set[str]:
     labels = set(result.similarities) | {query_label}
     if collection and collection.is_dir():
-        labels |= {strip_sequence_extension(p.name) for p in collection.iterdir() if p.is_file()}
-    return labels
+        labels |= {strip_sequence_extension(p.name) for p in collection_genomes(collection)}
+    # Version-insensitive: a collection file is usually named with its version
+    # (NC_045512.2) while a search hit may carry the bare accession.
+    return labels | {_base_accession(label) for label in labels}
 
 
 def _write_candidates(output: Path, candidates: list[Candidate], logger: logging.Logger) -> None:
@@ -306,7 +312,7 @@ def _curate_download(
     qfasta = params.output / "query.degapped.fasta"
     qfasta.write_text(f">{query_label}\n{query_row.replace('-', '')}\n")
     backbone = pick_backbone(
-        qfasta, [p for p in params.collection.iterdir() if p.is_file()],
+        qfasta, collection_genomes(params.collection),
         af_min=params.af_min, logger=logger,
     )
     if backbone is None:

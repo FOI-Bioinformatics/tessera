@@ -70,7 +70,7 @@ def reconcile_major(
     if "hmm" in per:
         hmm_major = per["hmm"]
         if window_wins and window_wins.get(hmm_major, 0) == 0:
-            top = max(window_wins, key=window_wins.get)
+            top = max(window_wins, key=lambda label: window_wins[label])
             if window_wins.get(top, 0) > 0 and top != hmm_major:
                 return top, per
         return hmm_major, per

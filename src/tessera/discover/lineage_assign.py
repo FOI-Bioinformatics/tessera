@@ -108,7 +108,10 @@ def _reference_tips(
     except Exception as exc:  # noqa: BLE001 - no dataset is a normal, non-fatal outcome
         logger.info("No Nextclade dataset for reference typing (%s); skipping.", exc)
         return {}
-    cache = cache_dir if cache_dir is not None else nextclade_cache(dataset.path, dataset.tag)
+    # `cache_dir` is the cache *root* override, not the pool directory: passing it
+    # straight through would build every dataset's pool into the root itself, so a
+    # second dataset would be answered with the first one's tips.
+    cache = nextclade_cache(dataset.path, dataset.tag, override=cache_dir)
     tips = build_pool(dataset, cache_dir=cache, logger=logger)
     clade_of: dict[Path, str] = {}
     for tip in tips:
