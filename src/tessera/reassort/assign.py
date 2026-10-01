@@ -25,7 +25,9 @@ from .constellation import DEFAULT_MARGIN, ParentGroup, call_constellation
 from .scan import SegmentScan, require_aligner, scan_segment
 
 DEFAULT_ANI_FLOOR = 80.0  # a segment below this ANI to every tip is left unassigned
-MIN_AF = 0.5              # a tip aligning over less than this fraction of the segment is ignored
+# A tip aligning over less than this share of the segment is ignored. In PERCENT (0-100),
+# the unit skani reports Align_fraction_query in and `skani_query_ani` returns.
+MIN_AF = 50.0
 TOP_K = 25                # internal cap on candidate strains kept per segment
 
 

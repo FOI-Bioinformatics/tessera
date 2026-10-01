@@ -51,8 +51,8 @@ def test_low_af_tip_is_dropped_from_ranking(tmp_path, monkeypatch):
     _patch(monkeypatch,
            resolve=resolve,
            tips_by_path={"HA_ds": [ha_tip], "NA_ds": [na_tip]},
-           ani_by_path={"HA_pool": {ha_tip: (99.0, 0.10)},   # AF 0.10 < MIN_AF -> dropped
-                        "NA_pool": {na_tip: (99.0, 0.99)}})
+           ani_by_path={"HA_pool": {ha_tip: (99.0, 10.0)},   # AF 10 % < MIN_AF -> dropped
+                        "NA_pool": {na_tip: (99.0, 99.0)}})
     q = _write_query(tmp_path, [("HA", "HAxx"), ("NA", "NAyy")])
     result = assign_segments(q, logger=LOG)
     status = {s.segment: s.status for s in result.segments}
@@ -116,7 +116,7 @@ def test_skani_short_segment_is_non_fatal(tmp_path, monkeypatch):
     def skani(q, refs, logger):
         if refs[0].parent.name == "HA_pool":
             raise ToolExecutionError(["skani", "dist"], 1, "sequence too short")
-        return {na_tip: (99.0, 0.99)}
+        return {na_tip: (99.0, 99.0)}
 
     def build_pool(ds, *, cache_dir, logger):
         return [ha_tip] if ds.path == "HA_ds" else [na_tip]
@@ -152,7 +152,7 @@ def test_resolve_dataset_failure_is_non_fatal(tmp_path, monkeypatch):
     monkeypatch.setattr(assign, "nextclade_cache", lambda p, t, override=None: Path("/x"))
     monkeypatch.setattr(assign, "build_pool", lambda ds, *, cache_dir, logger: [na_tip])
     monkeypatch.setattr(assign, "skani_query_ani",
-                        lambda q, refs, logger: {na_tip: (99.0, 0.99)})
+                        lambda q, refs, logger: {na_tip: (99.0, 99.0)})
     monkeypatch.setattr(assign, "_clade_of_tip", lambda tip: "cladeX")
 
     q = _write_query(tmp_path, [("HA", "HAxx"), ("NA", "NAyy")])
@@ -208,8 +208,8 @@ def test_scan_segments_scans_assigned_only(tmp_path, monkeypatch):
 
     _patch(monkeypatch, resolve=resolve,
            tips_by_path={"HA_ds": [ha_tip], "NA_ds": [na_tip]},
-           ani_by_path={"HA_pool": {ha_tip: (99.0, 0.99)},
-                        "NA_pool": {na_tip: (99.0, 0.99)}})
+           ani_by_path={"HA_pool": {ha_tip: (99.0, 99.0)},
+                        "NA_pool": {na_tip: (99.0, 99.0)}})
     monkeypatch.setattr(assign, "require_aligner", lambda aligner: None)
     seen = []
 
@@ -240,8 +240,8 @@ def test_scan_segments_marks_unassigned(tmp_path, monkeypatch):
 
     _patch(monkeypatch, resolve=resolve,
            tips_by_path={"HA_ds": [ha_tip], "NA_ds": [na_tip]},
-           ani_by_path={"HA_pool": {ha_tip: (10.0, 0.99)},   # below ani_floor -> unassigned
-                        "NA_pool": {na_tip: (99.0, 0.99)}})
+           ani_by_path={"HA_pool": {ha_tip: (10.0, 99.0)},   # below ani_floor -> unassigned
+                        "NA_pool": {na_tip: (99.0, 99.0)}})
     monkeypatch.setattr(assign, "require_aligner", lambda aligner: None)
 
     def fake_scan(segment, seq, dataset, out_dir, *, aligner, cache_dir, logger):
@@ -291,3 +291,31 @@ def test_cap_candidates_still_bounds_the_tail():
 
 def test_cap_candidates_empty():
     assert cap_candidates([], margin=0.5, top_k=25) == []
+
+
+def test_alignment_fraction_filter_uses_skani_percent_scale(tmp_path, monkeypatch):
+    # skani reports Align_fraction_query in percent (0-100). A tip that aligns over a fifth
+    # of the segment at a higher ANI must not outrank a full-length match: the values below
+    # are what skani 0.3 printed for a 30 kb query against a full-length tip and a tip
+    # covering only its first 6 kb.
+    full = tmp_path / "HA_pool" / "full.fasta"
+    partial = tmp_path / "HA_pool" / "partial.fasta"
+    na_tip = tmp_path / "NA_pool" / "strainB.fasta"
+    for t in (full, partial, na_tip):
+        t.parent.mkdir(parents=True, exist_ok=True)
+        t.write_text(">x\nACGT\n")
+
+    def resolve(fasta, override, *, email, logger):
+        return _DS("HA_ds") if "HA" in fasta.read_text() else _DS("NA_ds")
+
+    _patch(monkeypatch,
+           resolve=resolve,
+           tips_by_path={"HA_ds": [full, partial], "NA_ds": [na_tip]},
+           ani_by_path={"HA_pool": {full: (98.76, 100.0), partial: (99.29, 20.26)},
+                        "NA_pool": {na_tip: (99.0, 99.0)}})
+    q = _write_query(tmp_path, [("HA", "HAxx"), ("NA", "NAyy")])
+    result = assign_segments(q, logger=LOG)
+    ha = next(s for s in result.segments if s.segment == "HA")
+    assert ha.status == "assigned"
+    assert ha.strain == "full"
+    assert ha.ani == pytest.approx(98.76)
