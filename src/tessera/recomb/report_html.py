@@ -36,6 +36,22 @@ def _swatch(color: str) -> str:
     return f'<span class="sw" style="background:{color}"></span>'
 
 
+def _union_length(spans: list[tuple[int, int]]) -> int:
+    """Total length covered by ``spans`` (half-open intervals), overlaps counted once."""
+    total = 0
+    covered_to: int | None = None
+    for start, end in sorted(spans):
+        if end <= start:
+            continue
+        if covered_to is None or start > covered_to:
+            total += end - start
+            covered_to = end
+        elif end > covered_to:
+            total += end - covered_to
+            covered_to = end
+    return total
+
+
 def _summary(
     result: WindowSimilarity, regions: list[Region], datasets: list[str]
 ) -> dict:
@@ -50,7 +66,9 @@ def _summary(
         major = "n/a"
     present = [r for r in regions if not r.donor_absent]
     absent = [r for r in regions if r.donor_absent]
-    recomb_bp = sum(max(0, r.query_end - r.query_start) for r in present)
+    # The union, not the sum: overlapping regions that name different donors are kept
+    # as separate rows, and adding their lengths counts the shared stretch twice.
+    recomb_bp = _union_length([(r.query_start, r.query_end) for r in present])
     minors: list[str] = []
     for r in present:
         if r.minor_parent not in minors:
