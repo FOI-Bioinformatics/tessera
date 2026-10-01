@@ -15,6 +15,12 @@ everything in a genuinely divergent collection; an absolute ``floor`` overrides 
 A gap is labelled ``divergent`` (ample comparable bases, the query really is far
 from all references -- a likely missing reference) or ``low_information`` (few
 comparable bases, so the gap is uncertain rather than informative).
+
+Once regions have been called, a ``divergent`` gap that sits on a called breakpoint
+and is explained by that region's two parents together is relabelled ``breakpoint``
+(:func:`mark_breakpoint_gaps`): a window straddling a switch between divergent
+parents matches neither of them well on its own, which is a property of the window,
+not a missing reference.
 """
 
 from __future__ import annotations
@@ -27,7 +33,10 @@ from statistics import mean, median
 import numpy as np
 
 from .regions import Region
-from .similarity import WindowSimilarity
+from .similarity import WindowSimilarity, _canonical_mask
+
+# The kind given to a gap that a called breakpoint explains. See mark_breakpoint_gaps.
+BREAKPOINT_KIND = "breakpoint"
 
 
 @dataclass
@@ -68,7 +77,7 @@ class CoverageGap:
     n_windows: int
     best_label: str  # the closest reference across the gap (still a poor match)
     mean_best: float  # its mean similarity over the gap
-    kind: str  # "divergent" | "low_information"
+    kind: str  # "divergent" | "low_information" | "breakpoint"
 
 
 def coverage_threshold(result: WindowSimilarity, params: CoverageParams) -> float:
@@ -138,6 +147,74 @@ def call_coverage_gaps(
             )
         )
     return gaps, threshold
+
+
+def _explained_fraction(
+    rows: dict[str, np.ndarray], query: str, parents: tuple[str, str], start: int, end: int
+) -> float:
+    """Fraction of comparable columns in ``[start, end)`` where the query matches at
+    least one of ``parents`` (``nan`` when nothing is comparable)."""
+    q = rows[query][start:end]
+    q_canon = _canonical_mask(q)
+    comparable = np.zeros(q.size, dtype=bool)
+    matched = np.zeros(q.size, dtype=bool)
+    for label in parents:
+        ref = rows[label][start:end]
+        canon = q_canon & _canonical_mask(ref)
+        comparable |= canon
+        matched |= canon & (q == ref)
+    n = int(np.count_nonzero(comparable))
+    return float(np.count_nonzero(matched) / n) if n else float("nan")
+
+
+def mark_breakpoint_gaps(
+    gaps: list[CoverageGap],
+    regions: list[Region],
+    rows: dict[str, np.ndarray],
+    query: str,
+    window_size: int,
+    threshold: float,
+) -> int:
+    """Relabel ``divergent`` gaps that a called breakpoint explains; return how many.
+
+    A window straddling a breakpoint between two divergent parents is part one parent
+    and part the other, so its similarity to either alone falls below the coverage
+    threshold although both are in the panel. A gap is relabelled ``breakpoint`` when
+
+    - it lies within one window width of a boundary of a called, donor-present region
+      (the only place a straddling window can be), and
+    - the region's donor and major parent together explain it: the fraction of
+      comparable columns where the query matches at least one of them reaches
+      ``threshold``.
+
+    The second condition keeps a genuinely divergent stretch that happens to sit next
+    to a breakpoint labelled ``divergent``. The gaps are mutated in place; call this
+    after region calling and before :func:`gaps_as_regions`, which skips every kind
+    other than ``divergent``.
+    """
+    relabelled = 0
+    for gap in gaps:
+        if gap.kind != "divergent":
+            continue
+        for region in regions:
+            if region.donor_absent:
+                continue
+            parents = (region.minor_parent, region.major_parent)
+            if any(label not in rows for label in parents):
+                continue
+            near = any(
+                boundary - window_size <= gap.msa_start
+                and gap.msa_end <= boundary + window_size
+                for boundary in (region.msa_start, region.msa_end)
+            )
+            if not near:
+                continue
+            explained = _explained_fraction(rows, query, parents, gap.msa_start, gap.msa_end)
+            if not isnan(explained) and explained >= threshold:
+                gap.kind = BREAKPOINT_KIND
+                relabelled += 1
+                break
+    return relabelled
 
 
 def flag_undercovered_regions(regions: list[Region], threshold: float) -> None:

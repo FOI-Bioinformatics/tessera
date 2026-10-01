@@ -16,9 +16,10 @@ tessera recomb --msa divergent.msa.fasta --query query --output out_divergent \
     --window-size 300 --window-step 30
 ```
 
-Both callers call `parent_B` over the insert (q-value ~1e-29) with a sharp breakpoint,
+The four default callers all call `parent_B` over the insert with a sharp breakpoint,
 so the region is flagged as agreeing (high confidence); the similarity plot shows an
-obvious crossover.
+obvious crossover. The two short stretches listed under reference coverage are the
+windows straddling the breakpoints (kind `breakpoint`), not missing references.
 
 ## `cryptic_insert.msa.fasta` -- why the ensemble exists
 

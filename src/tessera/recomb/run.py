@@ -18,6 +18,7 @@ from .coverage import (
     call_coverage_gaps,
     flag_undercovered_regions,
     gaps_as_regions,
+    mark_breakpoint_gaps,
     reconcile_gaps,
 )
 from .diagnostics import corroborating_intervals, recombination_signal
@@ -401,11 +402,27 @@ def run_recomb(
         bp_result, params.window_size, coverage_params
     )
     flag_undercovered_regions(regions, coverage_threshold)
-    if coverage_gaps:
+    # A window straddling a called breakpoint matches neither parent well on its own.
+    # That is not a missing reference, so such gaps are relabelled before they can
+    # caveat a region or be bridged to a donor-absent one. Recruitment
+    # (fill-references / find-references) calls call_coverage_gaps directly and is
+    # unaffected.
+    n_breakpoint = mark_breakpoint_gaps(
+        coverage_gaps, regions, bp_result.rows, query_label,
+        params.window_size, coverage_threshold,
+    )
+    n_poor = len(coverage_gaps) - n_breakpoint
+    if n_poor:
         logger.info(
             "Reference coverage: %d region(s) where the closest reference is below "
             "%.3f -- a better reference may be missing.",
-            len(coverage_gaps), coverage_threshold,
+            n_poor, coverage_threshold,
+        )
+    if n_breakpoint:
+        logger.info(
+            "Reference coverage: %d low-similarity stretch(es) sit on a called breakpoint "
+            "and are explained by the two parents there; not treated as missing references.",
+            n_breakpoint,
         )
 
     # Bridge: a divergent coverage gap (query far from every reference) is a

@@ -419,7 +419,9 @@ def _coverage_html(gaps: list[CoverageGap], threshold: float) -> str:
         f'<span class="mono">{threshold:.3f}</span> best-similarity threshold. '
         f'<strong>divergent</strong> = the query is genuinely far from every reference '
         f'(a likely missing reference); <strong>low information</strong> = too few comparable '
-        f'bases to judge.</p>'
+        f'bases to judge; <strong>breakpoint</strong> = windows straddling a called '
+        f'breakpoint, where the two parents together explain the query (not a missing '
+        f'reference, and not counted in the caveat above).</p>'
     )
     if not gaps:
         return (
@@ -512,7 +514,7 @@ def _site_track_html(
     if ctx.site_result is None:
         return ""
     fig = build_interactive_figure(
-        ctx.site_result, datasets, regions, ctx.gaps,
+        ctx.site_result, datasets, regions, ctx.caveat_gaps,
         y_title="Identity at informative sites",
         value_name="identity at informative sites",
     )
@@ -541,9 +543,11 @@ def write_html_report(
 ) -> Path:
     """Write a single self-contained ``report.html``."""
     gaps = ctx.gaps
+    # Breakpoint gaps are tabulated but are not poorly covered stretches.
+    caveat_gaps = ctx.caveat_gaps
     lineage_map = ctx.lineage_map
     threshold = ctx.coverage_threshold
-    fig = build_interactive_figure(result, datasets, regions, gaps)
+    fig = build_interactive_figure(result, datasets, regions, caveat_gaps)
     plot_div = fig.to_html(full_html=False, include_plotlyjs="inline")
 
     colors = _color_map(datasets)
@@ -566,10 +570,10 @@ def write_html_report(
         f'<h1 class="mono">{html.escape(result.query)}</h1>'
         f"{organism_html}"
         f"{_verdict_html(s, result.query, colors, lineage_map, ctx.query_lineage)}"
-        f"{_caveat_html(gaps, threshold)}</header>"
+        f"{_caveat_html(caveat_gaps, threshold)}</header>"
         f"{_cards_html(s, colors, lineage_map)}"
         '<section class="section"><div class="eyebrow">Query mosaic</div>'
-        f"{_mosaic_html(regions, colors, s, gaps, lineage_map)}</section>"
+        f"{_mosaic_html(regions, colors, s, caveat_gaps, lineage_map)}</section>"
         '<section class="section"><div class="eyebrow">Recombinant regions</div>'
         f'{_regions_html(regions, colors, s["query_len"], lineage_map)}</section>'
         f"{_method_section(ctx.method_breakdown, ctx.methods_run, ctx.per_major, lineage_map)}"

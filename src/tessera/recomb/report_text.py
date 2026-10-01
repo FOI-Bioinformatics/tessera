@@ -12,7 +12,7 @@ from math import isnan
 from pathlib import Path
 
 from .analyze import AnalysisResult, stats_sort_key, winner_label
-from .coverage import CoverageGap
+from .coverage import BREAKPOINT_KIND, CoverageGap
 from .diagnostics import RecombinationSignal
 from .regions import Region
 from .similarity import WindowSimilarity
@@ -150,8 +150,12 @@ def print_coverage(gaps: list[CoverageGap], threshold: float, echo=print) -> Non
         for g in gaps
     ]
     print_formatted_table(rows, header=COVERAGE_HEADER, echo=echo)
-    echo("  ^ the closest reference here is poor; the true source may be missing. "
-         "Run 'tessera find-references' to search NCBI.")
+    if any(g.kind != BREAKPOINT_KIND for g in gaps):
+        echo("  ^ the closest reference here is poor; the true source may be missing. "
+             "Run 'tessera find-references' to search NCBI.")
+    if any(g.kind == BREAKPOINT_KIND for g in gaps):
+        echo("  breakpoint = windows straddling a called breakpoint; the two parents "
+             "together explain the query there (not a missing reference).")
     echo("")
 
 

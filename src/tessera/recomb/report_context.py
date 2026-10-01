@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .analyze import AnalysisResult
-from .coverage import CoverageGap
+from .coverage import BREAKPOINT_KIND, CoverageGap
 from .diagnostics import RecombinationSignal
 from .similarity import WindowSimilarity
 from .typing import LineageMap
@@ -44,3 +44,14 @@ class ReportContext:
     def gaps(self) -> list[CoverageGap]:
         """``coverage_gaps`` with ``None`` normalised to an empty list."""
         return self.coverage_gaps or []
+
+    @property
+    def caveat_gaps(self) -> list[CoverageGap]:
+        """The gaps that may mean a missing reference: every kind except ``breakpoint``.
+
+        A breakpoint gap is a window straddling a called breakpoint. It is listed in the
+        coverage table and ``coverage_gaps.tsv`` under its own kind, but it is not a
+        poorly covered stretch, so the headline caveat, the mosaic and the plots leave
+        it out.
+        """
+        return [g for g in self.gaps if g.kind != BREAKPOINT_KIND]
