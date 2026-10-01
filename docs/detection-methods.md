@@ -78,6 +78,23 @@ Recombination regions (major parent: cowpox_KC813504):
   variola       cowpox_KC813504  66268        147150     80882       0.999      0.977      0.97     2e-300   66768
 ```
 
+### Near-duplicate references (lineage clustering)
+
+A recruited panel often holds several near-identical genomes of one lineage. Competed
+individually they tie in every window and fragment the call, so the HMM caller first
+pools them (`--cluster-lineages`, on by default; hmm only). Two references are pooled
+when their identity stays at or above 98.5 % in every window, with no region-sized run
+below it. The pooled lineage competes as one state under the label of its best-covering
+member, and a region names that member. Clustering is skipped for panels of fewer than 4
+or more than 200 references.
+
+One limitation follows from the absolute threshold. On a panel in which *every* pair of
+references is at least 98.5 % identical in every window -- mpox, VZV and other sets below
+roughly 1.5 % divergence -- all references pool into a single lineage and the HMM has
+nothing left to compete, so it calls no region whatever the data. The site-based callers
+(3SEQ, MaxChi) are unaffected. On such a panel, run with `--no-cluster-lineages` to keep
+the HMM's vote. `run_provenance.json` records whether clustering was on.
+
 ### Low-divergence panels (intra-species sets, DNA viruses)
 
 When the references are nearly identical -- e.g. mpox clades (~0.5 %), VZV (~0.2 %),

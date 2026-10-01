@@ -144,8 +144,8 @@ def fill_references(
     method: str = typer.Option(
         "hmm,3seq,maxchi,bootscan", "--method",
         help="Region caller(s) for the detection step: a comma-separated list of "
-        "hmm/3seq/maxchi/bootscan/heuristic, or 'all'. Several run as an ensemble "
-        "(default hmm,3seq,maxchi,bootscan).",
+        "hmm/3seq/maxchi/bootscan/geneconv/barcode/heuristic, or 'all'. Several run as "
+        "an ensemble (default hmm,3seq,maxchi,bootscan).",
     ),
     min_methods: int = typer.Option(
         1, "--min-methods",

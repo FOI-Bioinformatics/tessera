@@ -244,9 +244,10 @@ masking sibling (e.g. SARS-CoV-2 sublineages), add `--seed-keep-siblings`. NCBI 
 By default (`--auto-diversify`), BLAST seeding will **switch to the `ncbi-virus`
 diversity path automatically** when it finds only siblings -- i.e. when the query's
 lineage saturates `nt` and no parental lineage can be recruited by similarity. A broad
-fetch is capped (`--fetch-limit`, default 2000) and dereplicated; for a heavily
-sequenced taxon the capped sample may miss lineages, so a curated `--candidate-pool`
-is recommended (and the run says so). Whether the diversity panel actually contains the
+fetch is not truncated: the whole set is downloaded and dereplicated locally, and the run
+logs a notice when it exceeds `--fetch-limit` (default 2000) because that step can take
+a few minutes. For a heavily sequenced taxon a curated `--candidate-pool` is the faster
+route. Whether the diversity panel actually contains the
 parents depends on the taxon: it works when they are genotype/lineage representatives,
 less so for fine genotype-specific recombinants. Disable with `--no-auto-diversify`.
 This complements the caller-side defence: `tessera recomb` excludes whole-genome

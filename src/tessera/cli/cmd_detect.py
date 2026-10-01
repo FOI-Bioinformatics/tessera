@@ -62,8 +62,8 @@ def detect(
     method: str = typer.Option(
         "hmm,3seq,maxchi,bootscan", "--method",
         help="Region caller(s): a comma-separated list of hmm/3seq/maxchi/bootscan/"
-        "heuristic, or 'all'. Several run as an ensemble and their regions are merged "
-        "(default hmm,3seq,maxchi,bootscan).",
+        "geneconv/barcode/heuristic, or 'all'. Several run as an ensemble and their "
+        "regions are merged (default hmm,3seq,maxchi,bootscan).",
     ),
     min_methods: int = typer.Option(
         1, "--min-methods",

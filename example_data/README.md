@@ -32,8 +32,8 @@ tessera recomb --msa cryptic_insert.msa.fasta --query query --output out_hmm \
     --window-size 1000 --window-step 100 --method hmm     # 0 regions
 ```
 
-The default ensemble also runs 3SEQ, which pools the discriminating sites into an exact
-triplet test and recovers the event (q-value ~1e-12, `methods` = 3seq):
+The default ensemble also runs the site-based callers, which pool the discriminating
+sites into triplet tests and recover the event (q-value ~1e-12, `methods` = 3seq,maxchi):
 
 ```
 tessera recomb --msa cryptic_insert.msa.fasta --query query --output out_cryptic \
