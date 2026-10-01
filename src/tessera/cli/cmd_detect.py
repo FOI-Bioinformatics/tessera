@@ -11,7 +11,14 @@ from pathlib import Path
 
 import typer
 
-from .main import _require_choice, _require_file, app, get_logger, stage_errors
+from .main import (
+    _require_choice,
+    _require_file,
+    _require_lineage_map,
+    app,
+    get_logger,
+    stage_errors,
+)
 
 
 @app.command(name="detect")
@@ -113,6 +120,7 @@ def detect(
     logger = get_logger(output)
     with stage_errors(logger):
         _require_file(query, "Query file")
+        _require_lineage_map(lineage_map)
         _require_choice(aligner, set(aligner_registry.names()), "--aligner")
         params = FillParams.for_detection(
             query=query, output=output,

@@ -78,6 +78,18 @@ def _require_file(path: Path, label: str) -> None:
         raise UserInputError(f"{label} is a directory, not a file: {path}")
 
 
+def _require_lineage_map(path: Path | None) -> None:
+    """Reject a ``--lineage-map`` that does not exist.
+
+    The readers treat a missing lineage file as "no typed names", which is right for
+    the automatically discovered ``lineages.tsv`` and wrong for a path the user typed:
+    the run would finish with an untyped report, and the barcode caller and donor
+    re-attribution would do nothing, without a word.
+    """
+    if path is not None:
+        _require_file(path, "--lineage-map file")
+
+
 def _require_directory(path: Path, label: str) -> None:
     """Reject a missing or non-directory input directory. See :func:`_require_file`."""
     if not Path(path).exists():

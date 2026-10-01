@@ -10,6 +10,7 @@ from .main import (
     _require_choice,
     _require_directory,
     _require_file,
+    _require_lineage_map,
     app,
     get_logger,
     stage_errors,
@@ -203,6 +204,7 @@ def fill_references(
     logger = get_logger()
     with stage_errors(logger):
         _require_file(query, "Query file")
+        _require_lineage_map(lineage_map)
         if collection is not None:
             _require_directory(collection, "Collection directory")
         _require_choice(aligner, set(aligner_registry.names()), "--aligner")

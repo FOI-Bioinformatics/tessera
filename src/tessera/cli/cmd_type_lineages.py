@@ -14,7 +14,7 @@ from pathlib import Path
 import typer
 
 from ..core.errors import UserInputError
-from .main import _require_directory, app, get_logger, stage_errors
+from .main import _require_directory, _require_lineage_map, app, get_logger, stage_errors
 
 
 @app.command(name="type-lineages")
@@ -51,6 +51,7 @@ def type_lineages(
     logger = get_logger(output)
     with stage_errors(logger):
         _require_directory(collection, "Collection directory")
+        _require_lineage_map(lineage_map)
         genomes = sorted(
             p for p in collection.iterdir()
             if p.is_file() and p.suffix.lower() in (".fasta", ".fa", ".fna")
