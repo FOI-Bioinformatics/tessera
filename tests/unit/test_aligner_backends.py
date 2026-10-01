@@ -236,3 +236,100 @@ def test_merge_added_fragments_ignores_reversed_name_prefix(tmp_path: Path) -> N
     )
     _, merged = merge_added_fragments(aligned)
     assert merged == "AC--ACGT"
+
+
+# --- progressiveMauve row names come from the staged labels ----------------------
+def _fake_mauve(caps, cmd, **kw):
+    """Write the XMFA the way progressiveMauve does: sequence names are the paths it
+    was given on the command line (which the adapter passes resolved)."""
+    cmd = [str(c) for c in cmd]
+    xmfa = Path(cmd[cmd.index("--output") + 1])
+    ref_path, query_path = cmd[-2], cmd[-1]
+    ref_seq = "".join(
+        line for line in Path(ref_path).read_text().splitlines() if not line.startswith(">")
+    )
+    qry_seq = "".join(
+        line for line in Path(query_path).read_text().splitlines() if not line.startswith(">")
+    )
+    xmfa.write_text(
+        f"#Sequence1File\t{ref_path}\n#Sequence2File\t{query_path}\n"
+        f"> 1:1-8 + {ref_path}\n{ref_seq}\n> 2:1-8 + {query_path}\n{qry_seq}\n=\n"
+    )
+    return ""
+
+
+def _mauve_rows(monkeypatch, staged: list[Path], out_dir: Path) -> list[tuple[str, str]]:
+    monkeypatch.setattr(pm_mod, "run_tool", _fake_mauve)
+    result = pm_mod.ProgressiveMauveAligner().align(
+        staged, staged[0], out_dir, AlignParams(threads=1), _LOG
+    )
+    rows: list[tuple[str, str]] = []
+    for line in result.msa_fasta.read_text().splitlines():
+        if line.startswith(">"):
+            rows.append((line[1:], ""))
+        else:
+            rows[-1] = (rows[-1][0], rows[-1][1] + line)
+    return rows
+
+
+def test_progressivemauve_names_rows_by_staged_label_not_symlink_target(
+    monkeypatch, tmp_path: Path
+) -> None:
+    # Staged genomes are symlinks named <label>.fasta. Two of them point at files that
+    # are both called genome.fna, and one target is named like the backbone's label.
+    store = tmp_path / "store"
+    for sub in ("x", "y", "z"):
+        (store / sub).mkdir(parents=True)
+    (store / "x" / "genome.fna").write_text(">r\nACGTACGT\n")
+    (store / "y" / "genome.fna").write_text(">b\nACGTACGA\n")
+    (store / "z" / "aRef.fna").write_text(">c\nTTTTTTTT\n")
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    staged = []
+    for label, target in (("aRef", "x/genome.fna"), ("panelB", "y/genome.fna"),
+                          ("panelC", "z/aRef.fna")):
+        link = stage / f"{label}.fasta"
+        link.symlink_to((store / target).resolve())
+        staged.append(link)
+
+    rows = _mauve_rows(monkeypatch, staged, tmp_path / "out")
+
+    assert rows == [("aRef", "ACGTACGT"), ("panelB", "ACGTACGA"), ("panelC", "TTTTTTTT")]
+
+
+def test_progressivemauve_tolerates_whitespace_in_the_path(monkeypatch, tmp_path: Path) -> None:
+    stage = tmp_path / "dir with space"
+    stage.mkdir()
+    staged = []
+    for label, seq in (("ref", "ACGTACGT"), ("qryA", "ACGTACGA"), ("qryB", "ACGTACGC")):
+        path = stage / f"{label}.fasta"
+        path.write_text(f">{label}\n{seq}\n")
+        staged.append(path)
+
+    rows = _mauve_rows(monkeypatch, staged, tmp_path / "out")
+
+    assert [name for name, _ in rows] == ["ref", "qryA", "qryB"]
+
+
+def test_progressivemauve_rejects_a_projection_that_is_not_pairwise(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from tessera.core.errors import OutputError
+
+    def one_sequence_xmfa(caps, cmd, **kw):
+        cmd = [str(c) for c in cmd]
+        xmfa = Path(cmd[cmd.index("--output") + 1])
+        ref_path = cmd[-2]
+        xmfa.write_text(f"#Sequence1File\t{ref_path}\n> 1:1-8 + {ref_path}\nACGTACGT\n=\n")
+        return ""
+
+    monkeypatch.setattr(pm_mod, "run_tool", one_sequence_xmfa)
+    genomes = []
+    for label in ("ref", "qryA", "qryB"):
+        path = tmp_path / f"{label}.fasta"
+        path.write_text(f">{label}\nACGTACGT\n")
+        genomes.append(path)
+    with pytest.raises(OutputError, match=r"qryA\.fa.*found 1 record"):
+        pm_mod.ProgressiveMauveAligner().align(
+            genomes, genomes[0], tmp_path / "out", AlignParams(threads=1), _LOG
+        )
