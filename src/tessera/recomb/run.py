@@ -110,6 +110,31 @@ class RecombParams:
     reattribute_margin: float = 0.03
 
 
+def caller_description(method: str, params: RecombParams) -> str:
+    """One caller's name and the settings that govern it, for the run provenance.
+
+    Every caller is described under its own name. The text is what a reader uses to
+    tell which tests produced the regions, so a caller must never be described as a
+    different one.
+    """
+    alpha = f"alpha {params.alpha:g}"
+    if method == "hmm":
+        return f"hmm (jump-rate {params.jump_rate:g}, {alpha})"
+    if method == "3seq":
+        return f"3seq (triplet max-descent test, {alpha})"
+    if method == "maxchi":
+        return f"maxchi (chi-square triplet test, scan-aware permutation, {alpha})"
+    if method == "bootscan":
+        return f"bootscan (bootstrap support, block-permutation run-length test, {alpha})"
+    if method == "geneconv":
+        return f"geneconv (longest donor-match run, permutation test, {alpha})"
+    if method == "barcode":
+        return "barcode (clade-marker attribution on a typed panel; no significance test)"
+    min_region = params.min_region if params.min_region is not None else params.window_size
+    merge_gap = params.merge_gap if params.merge_gap is not None else params.window_size
+    return f"{method} (min {min_region} / margin {params.margin} / merge {merge_gap})"
+
+
 def _select_windowing(bp_result, params: RecombParams, query_label: str, logger):
     """Choose base-pair or informative-site windowing; return ``(result, label)``.
 
@@ -404,16 +429,7 @@ def run_recomb(
     print_regions(regions, major_parent, echo=logger.info)
     print_coverage(coverage_gaps, coverage_threshold, echo=logger.info)
 
-    def _caller_desc(method: str) -> str:
-        if method == "hmm":
-            return f"hmm (jump-rate {params.jump_rate:g}, alpha {params.alpha:g})"
-        if method == "3seq":
-            return f"3seq (triplet max-descent test, alpha {params.alpha:g})"
-        min_region = params.min_region if params.min_region is not None else params.window_size
-        merge_gap = params.merge_gap if params.merge_gap is not None else params.window_size
-        return f"heuristic (min {min_region} / margin {params.margin} / merge {merge_gap})"
-
-    caller_desc = " + ".join(_caller_desc(m) for m in params.methods)
+    caller_desc = " + ".join(caller_description(m, params) for m in params.methods)
     provenance = {
         "tessera version": __version__,
         "date (UTC)": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S"),
@@ -426,6 +442,15 @@ def run_recomb(
         "metric": params.metric,
         "caller": f"ensemble: {caller_desc}" if len(params.methods) > 1 else caller_desc,
         "windowing": windowing,
+        # Settings that change which regions are reported. Without them a run with
+        # --min-methods 2 or --no-cluster-lineages is indistinguishable from a default
+        # run in the record.
+        "min methods (agreement gate)": str(min_agree),
+        "sibling exclusion": "on" if params.exclude_siblings else "off",
+        "lineage clustering": "on" if params.cluster_lineages else "off",
+        "donor re-attribution": (
+            f"on (margin {params.reattribute_margin:g})" if params.reattribute_donors else "off"
+        ),
         "major parent": major_parent or "n/a",
         "coverage threshold / gaps": f"{coverage_threshold:.3f} / {len(coverage_gaps)}",
     }
