@@ -331,8 +331,12 @@ def write_profile_tsv(
     path = output_dir / "recombination_profile.tsv"
     logger.info("Writing recombination signal profile: %s", path)
     with open(path, "w") as fo:
+        # "NA" when the PHI test could not have rejected (too few informative sites
+        # for the window). The Rmin stays last in the note: the harness reads it there.
+        phi_p = "NA" if signal.phi_p is None else f"{signal.phi_p:.4g}"
+        note = "" if signal.phi_p is not None else "not testable at this window; "
         fo.write(
-            f"# PHI p-value\t{signal.phi_p:.4g}\t(window {signal.phi_window} "
+            f"# PHI p-value\t{phi_p}\t({note}window {signal.phi_window} "
             f"informative sites, {signal.n_informative} sites, Rmin {signal.rmin})\n"
         )
         fo.write("msa_pos\tquery_pos\tphi\n")

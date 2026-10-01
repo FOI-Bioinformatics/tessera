@@ -29,6 +29,9 @@ class ReportContext:
     lineage_map: LineageMap | None = None
     query_lineage: str | None = None
     signal: RecombinationSignal | None = None
+    # The run's significance level, so the report judges the PHI p-value at the same
+    # alpha the per-region corroboration used.
+    alpha: float = 0.05
     organism: str | None = None
     methods_run: tuple[str, ...] = ()
     # Selected callers that could not run (barcode on an untyped panel). They stay in

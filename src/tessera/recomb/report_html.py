@@ -498,11 +498,22 @@ def _signal_html(signal: RecombinationSignal | None, alpha: float = 0.05) -> str
             '<p class="cap">Too few informative sites in the alignment for a parent-free '
             'recombination test.</p>'
         )
-    significant = signal.phi_p < alpha
-    verdict = (
-        '<strong>significant recombination signal</strong>' if significant
-        else 'no significant recombination signal'
-    )
+    if signal.phi_p is None:
+        # Every pair of informative sites is inside one window, so the permutation test
+        # cannot reject whatever the data. Say so instead of printing p = 1.
+        p_cell = "not testable"
+        verdict = (
+            f'{signal.n_informative} informative sites do not exceed the window of '
+            f'{signal.phi_window} ranks, so the permutation test cannot reject here; '
+            f'this is not evidence against recombination. Lower '
+            f'<span class="mono">--phi-window</span> to test'
+        )
+    else:
+        p_cell = f"p = {signal.phi_p:.4g}"
+        verdict = (
+            '<strong>significant recombination signal</strong>' if signal.phi_p < alpha
+            else 'no significant recombination signal'
+        ) + f' (alpha {alpha:g}; {signal.n_informative} informative sites)'
     intervals = ", ".join(
         f"{_fmt_int(lo)}&ndash;{_fmt_int(hi)}" for lo, hi in signal.rmin_intervals[:8]
     )
@@ -517,9 +528,8 @@ def _signal_html(signal: RecombinationSignal | None, alpha: float = 0.05) -> str
         'forces, with the intervals (query coordinates) as breakpoint candidates.</p>'
     )
     rows = (
-        f'<tr><td class="lbl">PHI test</td><td class="num strong">p = {signal.phi_p:.4g}</td>'
-        f'<td class="lbl">{verdict} (alpha {alpha:g}; {signal.n_informative} informative '
-        f'sites)</td></tr>'
+        f'<tr><td class="lbl">PHI test</td><td class="num strong">{p_cell}</td>'
+        f'<td class="lbl">{verdict}</td></tr>'
         f'<tr><td class="lbl">Min recombination events (Rmin)</td>'
         f'<td class="num strong">{signal.rmin}</td>'
         f'<td class="lbl">{"intervals " + intervals if intervals else "none"}</td></tr>'
@@ -620,7 +630,7 @@ def write_html_report(
         f"{plot_div}</section>"
         f'{_site_track_html(ctx, datasets, regions, provenance.get("windowing", ""))}'
         '<section class="section"><div class="eyebrow">Recombination signal (parent-free)</div>'
-        f"{_signal_html(ctx.signal)}</section>"
+        f"{_signal_html(ctx.signal, ctx.alpha)}</section>"
         '<section class="section"><div class="eyebrow">Window winners</div>'
         '<p class="cap">Windows in which each reference is the query\'s closest match '
         '(ties included).</p>'

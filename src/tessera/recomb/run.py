@@ -307,7 +307,13 @@ def run_recomb(
             bp_result.rows, query_label, bp_result.column_to_query,
             window=params.phi_window,
         )
-        if signal is not None:
+        if signal is not None and signal.phi_p is None:
+            logger.info(
+                "Recombination signal (parent-free): PHI not testable (%d informative "
+                "site(s) do not exceed the window of %d ranks; lower --phi-window), Rmin=%d.",
+                signal.n_informative, signal.phi_window, signal.rmin,
+            )
+        elif signal is not None:
             logger.info(
                 "Recombination signal (parent-free): PHI p=%.4g, Rmin=%d (%d informative "
                 "sites).", signal.phi_p, signal.rmin, signal.n_informative,
@@ -507,8 +513,9 @@ def run_recomb(
             ev.label for ev in excluded_siblings
         )
     if signal is not None:
+        phi_text = "not testable" if signal.phi_p is None else f"p={signal.phi_p:.4g}"
         provenance["recombination signal (PHI)"] = (
-            f"p={signal.phi_p:.4g} ({signal.n_informative} informative sites, "
+            f"{phi_text} ({signal.n_informative} informative sites, "
             f"window {signal.phi_window})"
         )
         provenance["min recombination events (Rmin)"] = str(signal.rmin)
@@ -541,7 +548,7 @@ def run_recomb(
             extra_sections=extra_sections, lineage_map=lineage_map,
             query_lineage=query_lineage, signal=signal, organism=params.organism,
             methods_run=params.methods, method_breakdown=method_breakdown, per_major=per_major,
-            methods_not_run=not_run,
+            methods_not_run=not_run, alpha=params.alpha,
         ),
     )
     logger.info("All done.")

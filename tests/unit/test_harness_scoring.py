@@ -210,3 +210,18 @@ def test_mask_sibling_fail_on_sibling_donor(tmp_path):
     si = _setup(out=tmp_path, case_type="single_insert", clade_a="A", clade_b="B.1",
                 q_start=100, q_end=200)
     assert rh._score_single_insert(tmp_path, clade_of, si, 5, "tip", 1.0)["pass"] is True
+
+
+def test_parse_signal_reads_an_untestable_phi_header(tmp_path):
+    """The profile header carries NA when the PHI test could not have rejected; the
+    harness must still find the Rmin that follows it."""
+    import logging
+
+    from tessera.recomb.diagnostics import RecombinationSignal
+    from tessera.recomb.report_text import write_profile_tsv
+
+    signal = RecombinationSignal(
+        n_informative=54, phi_p=None, phi_observed=0.1, phi_window=100, rmin=2,
+    )
+    write_profile_tsv(signal, tmp_path, logging.getLogger("tessera"))
+    assert rh.parse_signal(tmp_path / "recombination_profile.tsv") == ("NA", "2")
