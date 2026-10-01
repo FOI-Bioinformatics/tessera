@@ -201,3 +201,38 @@ def test_minimap2_assembles_reference_anchored_msa(monkeypatch, tmp_path: Path) 
     assert set(msa) == {"ref", "qry"}
     assert msa["ref"] == "ACGTACGTACGT"
     assert msa["qry"] == "ACGTACGTACGT"
+
+
+def test_mafft_adjusts_direction_of_added_sequences(monkeypatch, tmp_path: Path) -> None:
+    """A draft contig or a whole genome may be on the opposite strand to the backbone.
+    Without --adjustdirection MAFFT aligns it as given and the row is noise."""
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(caps, cmd, **kw):
+        captured["cmd"] = [str(c) for c in cmd]
+        raise RuntimeError("stop after capture")
+
+    monkeypatch.setattr(mafft_mod, "run_tool", fake_run)
+    ref, qry = _two_genomes(tmp_path)
+    with pytest.raises(RuntimeError):
+        mafft_mod.MafftAligner().align([ref, qry], ref, tmp_path / "out",
+                                       AlignParams(threads=1), _LOG)
+
+    cmd = captured["cmd"]
+    assert "--adjustdirection" in cmd
+    # The option must precede --addfragments, whose two arguments are positional.
+    assert cmd.index("--adjustdirection") < cmd.index("--addfragments")
+
+
+def test_merge_added_fragments_ignores_reversed_name_prefix(tmp_path: Path) -> None:
+    # `mafft --adjustdirection` renames a record it reverse-complemented to `_R_<name>`.
+    # The merge is positional (first record = reference, the rest = contigs), so the
+    # renamed contig must still be merged.
+    aligned = tmp_path / "a.fasta"
+    aligned.write_text(
+        ">ref\nACGTACGT\n"
+        ">contig1\nAC------\n"
+        ">_R_contig2\n----ACGT\n"
+    )
+    _, merged = merge_added_fragments(aligned)
+    assert merged == "AC--ACGT"
