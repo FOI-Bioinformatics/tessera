@@ -6,6 +6,8 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-01
+
 ### Fixed
 
 - **On near-identical panels, values reported as "similarity" were not similarity** (#67).
@@ -493,6 +495,7 @@ simulated recombination against a documented expectation, recording measured res
   the q-value; detection sensitivity is unchanged (30/30 on the hybrid suite, including the
   low-divergence case) with fewer false positives.
 
-[Unreleased]: https://github.com/FOI-Bioinformatics/tessera/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/FOI-Bioinformatics/tessera/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/FOI-Bioinformatics/tessera/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/FOI-Bioinformatics/tessera/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/FOI-Bioinformatics/tessera/releases/tag/v1.0.0

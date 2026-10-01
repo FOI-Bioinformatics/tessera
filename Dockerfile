@@ -7,9 +7,9 @@
 # actionable for a reader who was not there.
 #
 # Build:
-#   docker build -t tessera:1.1.0 .
+#   docker build -t tessera:1.2.0 .
 # Run (mount your data, write results back out):
-#   docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" tessera:1.1.0 \
+#   docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" tessera:1.2.0 \
 #     recomb --msa /data/panel.msa.fasta --query query --output /data/out
 #
 # `--user` is not optional on Linux. The image runs as a non-root user, and a bind
