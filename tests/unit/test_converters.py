@@ -174,3 +174,26 @@ def test_maf_genome_without_any_block_gets_an_all_gap_row(tmp_path: Path, caplog
         ))
     assert seqs == {"ref": "AAAA", "divergent_panel": "----", "qry": "AAAT"}
     assert "divergent_panel" in caplog.text
+
+
+def test_maf_genome_aligned_only_away_from_the_backbone_is_named(tmp_path: Path, caplog) -> None:
+    # SibeliaZ also emits blocks between non-backbone genomes. A genome seen only in such
+    # blocks projects to an all-gap row just like one seen in no block, and must be named
+    # in the same warning.
+    import logging
+
+    maf = tmp_path / "offref.maf"
+    maf.write_text(
+        "a\ns r1 0 4 + 4 AAAA\ns a1 0 4 + 4 AAAT\n\n"
+        "a\ns a1 0 4 + 4 AAAT\ns b1 0 4 + 4 AAAT\n"
+    )
+    name_map = {"r1": "ref", "a1": "A", "b1": "B"}
+    log = logging.getLogger("maf_converter_test")
+    with caplog.at_level(logging.WARNING, logger="maf_converter_test"):
+        seqs = _read_fasta(maf_to_fasta(
+            maf, "ref", tmp_path / "msa.fasta", name_map=name_map,
+            expected=["ref", "A", "B", "C"], logger=log,
+        ))
+    assert seqs == {"ref": "AAAA", "A": "AAAT", "B": "----", "C": "----"}
+    assert "2 genome(s)" in caplog.text
+    assert "B, C" in caplog.text

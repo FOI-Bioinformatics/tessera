@@ -25,6 +25,7 @@ from ..core.errors import UserInputError
 from ..core.io import (
     collection_genomes,
     copy_collection,
+    new_working_collection,
     read_fasta,
     strip_sequence_extension,
 )
@@ -211,9 +212,7 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
     if params.collection is not None:
         copy_collection(params.collection, collection)
     else:
-        if collection.exists():
-            shutil.rmtree(collection)
-        collection.mkdir(parents=True)
+        new_working_collection(collection)
 
     exclude = {_base_accession(e) for e in params.exclude}
     # The query's own GenBank record matches itself almost perfectly and would be
@@ -284,20 +283,36 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
 def _curation_backbone(
     params: FillParams, collection: Path, logger: logging.Logger
 ) -> Path | None:
-    """The genome curation is anchored on: the user's ``--reference`` when given,
-    otherwise the query's closest whole-genome relative.
+    """The genome curation is anchored on: the query's closest whole-genome relative.
 
-    The backbone is never removed by curation, so honouring ``--reference`` here is what
-    keeps it in the collection for the next MSA build (which resolves the same name).
+    ``--reference`` is deliberately not the anchor. It is the alignment's coordinate
+    reference and may be far from the query; the sibling test is relative to its anchor,
+    so anchored there every genome closer to the query than the reference would be
+    dropped as a sibling. The reference is protected from removal instead
+    (:func:`_user_reference`).
     """
-    genomes = collection_genomes(collection)
-    if params.reference:
-        wanted = strip_sequence_extension(Path(params.reference).name)
-        for genome in genomes:
-            if strip_sequence_extension(genome.name) == wanted:
-                return genome
-        # Not in the collection: let build_msa report it with its own message.
-    return pick_backbone(params.query, genomes, af_min=params.af_min, logger=logger)
+    backbone = pick_backbone(
+        params.query, collection_genomes(collection), af_min=params.af_min, logger=logger
+    )
+    if backbone is not None:
+        logger.info("Curation backbone (the query's closest whole-genome relative): %s",
+                    strip_sequence_extension(backbone.name))
+    return backbone
+
+
+def _user_reference(params: FillParams, collection: Path) -> list[Path]:
+    """The genome named by ``--reference`` in ``collection`` (``[]`` if none or absent).
+
+    The next MSA build resolves the same name, so curation must never remove it. An
+    absent reference is left for ``build_msa`` to report with its own message.
+    """
+    if not params.reference:
+        return []
+    wanted = strip_sequence_extension(Path(params.reference).name)
+    return [
+        genome for genome in collection_genomes(collection)
+        if strip_sequence_extension(genome.name) == wanted
+    ]
 
 
 def _curate_round(
@@ -315,7 +330,8 @@ def _curate_round(
     curation = curate_collection_dir(
         params.query, collection, backbone,
         ani_margin=params.sibling_margin, af_min=params.af_min,
-        derep_ani=params.derep_ani, logger=logger,
+        derep_ani=params.derep_ani, protect=_user_reference(params, collection),
+        logger=logger,
     )
     for row in curation.table:
         panel_rows[row["genome"]] = row
@@ -324,7 +340,8 @@ def _curate_round(
         logger.warning(
             "Curation left %d reference(s) in the panel; detection needs at least 2. "
             "Every other genome was classed as a sibling of the query or a near-duplicate "
-            "of the backbone. On a panel this close to the query, run without --curate.",
+            "of the backbone (see panel_lineages.tsv). If the panel is meant to be this "
+            "close to the query, run without --curate.",
             remaining,
         )
 

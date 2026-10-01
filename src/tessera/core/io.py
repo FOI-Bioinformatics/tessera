@@ -128,6 +128,53 @@ def collection_genomes(directory: Path) -> list[Path]:
     )
 
 
+# Written beside a working collection when Tessera creates it, so a later run can tell
+# its own scratch directory from one the user happened to name the same.
+_WORKING_COPY_MARKER = ".tessera-working-collection"
+# Files a run leaves beside its working copy. Output directories written before the
+# marker existed are recognised by these, so re-running into one still works.
+_RUN_ARTEFACTS = ("round1.msa.fasta", "panel.msa.fasta", "fill_summary.tsv", "panel_lineages.tsv")
+
+
+def _clear_working_copy(dest: Path) -> None:
+    """Remove a previous run's working collection at ``dest``.
+
+    The working copy is cleared at the start of every run. That is only safe for a
+    directory Tessera made: ``<output>/collection`` is also a natural place for a person
+    to keep their own genomes, and clearing that would destroy them. An existing,
+    non-empty directory is removed only when a previous run left its marker (or, for
+    output written by an older release, its other files) beside it; otherwise refuse.
+    """
+    if not dest.exists():
+        return
+    parent = dest.parent
+    ours = (parent / _WORKING_COPY_MARKER).exists() or any(
+        (parent / name).exists() for name in _RUN_ARTEFACTS
+    )
+    if not ours and (not dest.is_dir() or any(dest.iterdir())):
+        raise UserInputError(
+            f"{dest} already exists and was not created by Tessera. A run clears that "
+            "directory to hold its working copy of the references, which would delete "
+            "what is in it. Move it elsewhere or choose a different output directory."
+        )
+    shutil.rmtree(dest)
+
+
+def _mark_working_copy(dest: Path) -> None:
+    (dest.parent / _WORKING_COPY_MARKER).write_text(
+        "The collection/ directory here is Tessera's working copy; it is cleared and "
+        "rebuilt at the start of every run.\n"
+    )
+
+
+def new_working_collection(dest: Path) -> None:
+    """Start an empty working collection at ``dest``, clearing a previous run's."""
+    dest = Path(dest)
+    _clear_working_copy(dest)
+    dest.mkdir(parents=True)
+    _mark_working_copy(dest)
+
+
 def copy_collection(source: Path, dest: Path) -> None:
     """Replace ``dest`` with a fresh copy of the collection at ``source``.
 
@@ -145,9 +192,9 @@ def copy_collection(source: Path, dest: Path) -> None:
             f"copy ({dest}), which is cleared at the start of every run. Choose a "
             "different output directory, or point --collection at a copy elsewhere."
         )
-    if dest.exists():
-        shutil.rmtree(dest)
+    _clear_working_copy(dest)
     shutil.copytree(source, dest)
+    _mark_working_copy(dest)
 
 
 def _require_fasta(source: Path) -> None:

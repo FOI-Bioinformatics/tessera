@@ -51,8 +51,10 @@ def test_copy_collection_refuses_an_overlapping_source(tmp_path: Path, relative:
 
 
 def test_copy_collection_replaces_a_previous_working_copy(tmp_path: Path) -> None:
+    stale = _collection(tmp_path / "earlier", names=("stale",))
     source = _collection(tmp_path / "coll")
-    dest = _collection(tmp_path / "out" / "collection", names=("stale",))
+    dest = tmp_path / "out" / "collection"
+    copy_collection(stale, dest)  # an earlier run's working copy
     copy_collection(source, dest)
     assert sorted(p.name for p in dest.iterdir()) == ["refA.fasta", "refB.fasta"]
 
@@ -373,3 +375,47 @@ def test_empty_mafft_output_is_a_tessera_error(tmp_path: Path) -> None:
     empty.write_text("")
     with pytest.raises(OutputError, match=r"empty\.aln\.fasta"):
         merge_added_fragments(empty)
+
+
+# --- the working copy is only cleared when Tessera made it ---------------------------
+
+def test_copy_collection_refuses_to_replace_a_directory_it_did_not_create(tmp_path: Path) -> None:
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "a.fasta").write_text(">a\nACGT\n")
+    dest = tmp_path / "project" / "collection"
+    dest.mkdir(parents=True)
+    (dest / "mine.fasta").write_text(">mine\nACGT\n")
+
+    with pytest.raises(UserInputError, match="was not created by Tessera"):
+        copy_collection(source, dest)
+
+    assert (dest / "mine.fasta").exists()
+
+
+def test_copy_collection_replaces_the_working_copy_of_an_older_release(tmp_path: Path) -> None:
+    # Output directories written before the marker existed are recognised by the files a
+    # run leaves beside the working copy, so re-running into one still works.
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "a.fasta").write_text(">a\nACGT\n")
+    out = tmp_path / "out"
+    (out / "collection").mkdir(parents=True)
+    (out / "collection" / "old.fasta").write_text(">old\nACGT\n")
+    (out / "round1.msa.fasta").write_text(">q\nACGT\n")
+
+    copy_collection(source, out / "collection")
+
+    assert [p.name for p in collection_genomes(out / "collection")] == ["a.fasta"]
+
+
+def test_copy_collection_accepts_an_empty_existing_directory(tmp_path: Path) -> None:
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "a.fasta").write_text(">a\nACGT\n")
+    dest = tmp_path / "out" / "collection"
+    dest.mkdir(parents=True)
+
+    copy_collection(source, dest)
+
+    assert [p.name for p in collection_genomes(dest)] == ["a.fasta"]

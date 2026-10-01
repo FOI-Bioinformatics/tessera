@@ -78,9 +78,9 @@ def maf_to_fasta(
     in the MAF are laid out in sorted-name order.
 
     ``expected`` lists every genome label that should have a row. A genome the aligner
-    placed in no block is absent from the MAF; it is written as an all-gap row and
-    named in a warning on ``logger``, so the panel is never silently smaller than the
-    collection.
+    placed in no block is absent from the MAF; it is written as an all-gap row. Such a
+    genome, and one aligned only in blocks that do not include the backbone, is named in
+    a warning on ``logger``, so the panel is never silently smaller than the collection.
     """
     maf_path = Path(maf_path)
     out_path = Path(out_path)
@@ -101,10 +101,13 @@ def maf_to_fasta(
     # coordinate space would make later contigs overwrite earlier ones.
     seen_contigs: dict[str, int] = {}  # source name -> contig length
     species: set[str] = set()
+    placed: set[str] = set()  # genomes sharing at least one block with the backbone
     for block in blocks:
-        for row in block:
-            label = genome_of(row.name)
-            species.add(label)
+        labels = [genome_of(row.name) for row in block]
+        species.update(labels)
+        if ref_key in labels:
+            placed.update(labels)
+        for row, label in zip(block, labels, strict=True):
             if label == ref_key:
                 seen_contigs.setdefault(row.name, row.src_size)
     species -= exclude
@@ -132,7 +135,9 @@ def maf_to_fasta(
         ref_offsets[name] = ref_length
         ref_length += length
 
-    unplaced = sorted(set(expected or ()) - species - exclude - {ref_key})
+    # A genome in no block at all, and one aligned only in blocks that lack the backbone,
+    # both project to an all-gap row; name both.
+    unplaced = sorted((set(expected or ()) | species) - placed - exclude - {ref_key})
     if unplaced and logger is not None:
         logger.warning(
             "%d genome(s) share no alignment block with the backbone '%s' and are "

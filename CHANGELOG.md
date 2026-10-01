@@ -25,8 +25,17 @@ All notable changes to Tessera are recorded here. The format follows
   no coverage gap, so the loop converged before curation ran. Curation now runs before the
   first alignment for a supplied collection and before each later build for that round's
   downloads. A panel seeded from scratch is unchanged: seeding has its own sibling filter.
+  One limit remains: the sibling test is anchored on the query's closest whole-genome
+  relative, so when a sibling is itself the closest genome in the collection it becomes
+  that anchor and is kept (further siblings are removed). The log names the anchor chosen.
 - **`fill-references --curate --reference X` could delete X** and fail the next round with
-  "Reference 'X' not found". The given reference is now the curation backbone.
+  "Reference 'X' not found". The given reference is now never removed by curation (it is
+  listed as `sibling-kept` / `redundant-kept` where it would have been). The sibling test
+  stays anchored on the query's closest relative, not on the reference.
+- **A run could delete an existing `<output>/collection` directory that was not its own.**
+  `detect`, `fill-references`, `build-panel` and `curate-panel` clear that directory to hold
+  their working copy of the references. If it already exists, is not empty, and no earlier
+  run left its files beside it, the run now stops with an error and nothing is deleted.
 - **`find-references --download <collection> --curate` deleted genomes that were already in
   the collection.** Curation now removes only what the run downloaded; genomes already
   present are reported as `sibling-kept` / `redundant-kept` in `panel_lineages.tsv`. A
@@ -36,7 +45,8 @@ All notable changes to Tessera are recorded here. The format follows
   `collection/`. Segment names are sanitised by one shared helper, and two names that
   sanitise alike no longer share a scan directory.
 - **MAF-based backends (`sibeliaz`, `cactus`) could drop rows and columns.** A genome placed in
-  no alignment block had no row at all; it is now an all-gap row, named in a warning. With
+  no alignment block had no row at all; it is now an all-gap row. It is named in a warning,
+  as is a genome aligned only in blocks that do not include the backbone. With
   `sibeliaz`, a multi-contig backbone was laid out in sorted-name order and lost any contig
   that no block covered, shifting later coordinates; it is now laid out as its FASTA file is,
   with uncovered contigs kept as gap columns.

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from tessera.core.errors import UserInputError
 from tessera.discover import iterate
 from tessera.discover.blast import Hit
 from tessera.discover.iterate import FillParams, fill_references
@@ -639,9 +640,11 @@ def test_curate_does_not_run_on_a_freshly_seeded_collection(monkeypatch, tmp_pat
     assert calls == []
 
 
-def test_curate_keeps_the_user_reference_as_backbone(monkeypatch, tmp_path, logger):
+def test_curate_never_removes_the_user_reference(monkeypatch, tmp_path, logger):
     """`--curate --reference X` used to auto-pick another backbone, drop X as its twin,
-    and fail the next round with "Reference 'X' not found among the staged genomes"."""
+    and fail the next round with "Reference 'X' not found among the staged genomes".
+    X is the alignment's coordinate reference, not the sibling test's anchor: the anchor
+    stays the query's closest relative and X is kept whatever the comparison says."""
     from tessera.core.io import select_reference
 
     query, coll, out = _setup(tmp_path)
@@ -674,7 +677,8 @@ def test_curate_keeps_the_user_reference_as_backbone(monkeypatch, tmp_path, logg
         line.split("\t")[:2]
         for line in (out / "panel_lineages.tsv").read_text().splitlines()[1:]
     )
-    assert rows["MYREF"] == "backbone"
+    assert rows["refA"] == "backbone"
+    assert rows["MYREF"] == "sibling-kept"
 
 
 def test_last_round_downloads_are_curated_before_the_final_build(monkeypatch, tmp_path, logger):
@@ -715,7 +719,7 @@ def test_curate_accepts_a_reference_given_with_its_extension(monkeypatch, tmp_pa
         line.split("\t")[:2]
         for line in (out / "panel_lineages.tsv").read_text().splitlines()[1:]
     )
-    assert rows == {"MYREF": "backbone", "refA": "sibling-dropped"}
+    assert rows == {"MYREF": "sibling-kept", "refA": "backbone"}
 
 
 def test_curate_warns_when_it_leaves_too_few_references(monkeypatch, tmp_path, caplog):
@@ -739,3 +743,68 @@ def test_curate_warns_when_it_leaves_too_few_references(monkeypatch, tmp_path, c
     assert sorted(p.name for p in (out / "collection").iterdir()) == ["refA.fasta"]
     assert "Curation left 1 reference" in caplog.text
     assert "without --curate" in caplog.text
+
+
+def test_curate_with_a_distant_reference_keeps_the_closer_genomes(monkeypatch, tmp_path, logger):
+    """The sibling test is relative to its anchor. Anchored on a distant coordinate
+    reference, every genome closer to the query than that reference looks like a sibling
+    and the panel loses its parental lineages. The anchor is the closest relative."""
+    query, coll, out = _setup(tmp_path)
+    for name in ("MYREF", "P1", "P2", "P3"):
+        (coll / f"{name}.fasta").write_text(f">{name}\nACGT\n")
+    _common_mocks(monkeypatch, [([], 0.95)])
+    builds: list[tuple[str, list[str]]] = []
+    _recording_build(monkeypatch, builds)
+    _fake_skani(monkeypatch, {
+        "MYREF": (85.0, 95.0), "refA": (95.0, 95.0),
+        "P1": (91.0, 95.0), "P2": (89.0, 95.0), "P3": (84.0, 95.0),
+    })
+
+    fill_references(
+        FillParams(query=query, collection=coll, output=out, curate=True, reference="MYREF"),
+        logger,
+    )
+
+    assert builds == [(
+        "round1.msa.fasta",
+        ["MYREF.fasta", "P1.fasta", "P2.fasta", "P3.fasta", "refA.fasta"],
+    )]
+
+
+def test_fresh_seed_refuses_to_clear_a_collection_directory_it_did_not_create(
+    monkeypatch, tmp_path, logger
+):
+    """`detect -o project/` clears `project/collection/` to seed it. If that directory
+    holds the user's own genomes and no earlier run made it, refuse, do not delete."""
+    query = tmp_path / "q.fasta"
+    query.write_text(">q\n" + "ACGT" * 100 + "\n")
+    out = tmp_path / "project"
+    (out / "collection").mkdir(parents=True)
+    precious = out / "collection" / "my_genome.fasta"
+    precious.write_text(">mine\nACGT\n")
+    _common_mocks(monkeypatch, [([], 0.95)])
+    monkeypatch.setattr(iterate, "_seed_collection", lambda *a, **k: None)
+
+    with pytest.raises(UserInputError, match="was not created by Tessera"):
+        fill_references(FillParams(query=query, collection=None, output=out), logger)
+
+    assert precious.exists()
+
+
+def test_fresh_seed_clears_its_own_working_copy_on_a_rerun(monkeypatch, tmp_path, logger):
+    query = tmp_path / "q.fasta"
+    query.write_text(">q\n" + "ACGT" * 100 + "\n")
+    out = tmp_path / "out"
+    _common_mocks(monkeypatch, [([], 0.95), ([], 0.95)])
+    names = iter(["S1", "S2"])
+
+    def seed(params, collection, query_records, exclude, logger):
+        name = next(names)
+        (collection / f"{name}.fasta").write_text(f">{name}\nACGT\n")
+        (collection / "other.fasta").write_text(">other\nACGT\n")
+
+    monkeypatch.setattr(iterate, "_seed_collection", seed)
+    for _ in range(2):
+        fill_references(FillParams(query=query, collection=None, output=out), logger)
+
+    assert sorted(p.name for p in (out / "collection").iterdir()) == ["S2.fasta", "other.fasta"]
