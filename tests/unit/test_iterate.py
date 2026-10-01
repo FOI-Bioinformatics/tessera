@@ -504,3 +504,238 @@ def test_seed_source_nextclade_routes_through_pool_selection(monkeypatch, tmp_pa
     )
     assert captured["dataset"] == "nextstrain/sars-cov-2/XBB"
     assert (out / "collection" / "REF1.fasta").exists()
+
+
+# --- the round structure: what is aligned, and when the panel is curated ----------
+
+def _recording_build(monkeypatch, builds):
+    """Replace build_msa with a stub that records which genomes each MSA was built from
+    and writes them into the file, so the published panel can be inspected."""
+    def fake_build(p, logger):
+        members = sorted(f.name for f in p.collection.iterdir())
+        builds.append((p.output.name, members))
+        p.output.write_text("".join(f">{m}\nACGT\n" for m in ["q", *members]))
+    monkeypatch.setattr(iterate, "build_msa", fake_build)
+
+
+def _one_new_hit_per_round(monkeypatch):
+    counter = iter(range(1, 50))
+
+    def collect(*a, **k):
+        return [Candidate(_gap(0.8), Hit(f"NEW{next(counter)}", "t", 90.0, 95.0, 1e-9), False)]
+
+    def download(cands, dest, logger):
+        for c in cands:
+            (dest / f"{c.hit.accession}.fasta").write_text(f">{c.hit.accession}\nACGT\n")
+        return cands
+
+    monkeypatch.setattr(iterate, "collect_candidates", collect)
+    monkeypatch.setattr(iterate, "_download", download)
+
+
+def _fake_skani(monkeypatch, table):
+    """Stub skani at the panel layer: ``table`` maps a genome label to (ANI %, AF %)."""
+    from tessera.discover import panel
+
+    def fake_ani(query, refs, logger):
+        return {r: table[r.name.split(".")[0]] for r in refs}
+
+    monkeypatch.setattr(panel, "skani_query_ani", fake_ani)
+    monkeypatch.setattr(panel, "skani_available", lambda: True)
+    monkeypatch.setattr(panel, "skder_available", lambda: False)
+    monkeypatch.setattr(iterate, "skani_available", lambda: True)
+
+
+def test_last_round_downloads_are_aligned(monkeypatch, tmp_path, logger):
+    """On a max_rounds exit the final round's downloads used to sit in collection/ and be
+    counted in the summary without ever reaching the published alignment."""
+    query, coll, out = _setup(tmp_path)
+    _common_mocks(monkeypatch, [([_gap(0.80)], 0.94), ([_gap(0.90)], 0.94)])
+    builds: list[tuple[str, list[str]]] = []
+    _recording_build(monkeypatch, builds)
+    _one_new_hit_per_round(monkeypatch)
+
+    trace = fill_references(
+        FillParams(query=query, collection=coll, output=out, max_rounds=2), logger
+    )
+
+    assert [(r.round, r.added) for r in trace] == [(1, ["NEW1"]), (2, ["NEW2"])]
+    final_members = ["NEW1.fasta", "NEW2.fasta", "refA.fasta"]
+    assert sorted(p.name for p in (out / "collection").iterdir()) == final_members
+    assert builds == [
+        ("round1.msa.fasta", ["refA.fasta"]),
+        ("round2.msa.fasta", ["NEW1.fasta", "refA.fasta"]),
+        ("final.msa.fasta", final_members),
+    ]
+    published = (out / "panel.msa.fasta").read_text()
+    assert ">NEW2.fasta" in published
+
+
+def test_no_extra_build_when_the_last_round_adds_nothing(monkeypatch, tmp_path, logger):
+    query, coll, out = _setup(tmp_path)
+    _common_mocks(monkeypatch, [([_gap(0.84)], 0.94), ([], 0.95)])
+    builds: list[tuple[str, list[str]]] = []
+    _recording_build(monkeypatch, builds)
+    _one_new_hit_per_round(monkeypatch)
+
+    fill_references(FillParams(query=query, collection=coll, output=out, max_rounds=2), logger)
+
+    assert [name for name, _ in builds] == ["round1.msa.fasta", "round2.msa.fasta"]
+    assert not (out / "final.msa.fasta").exists()
+
+
+def test_curate_runs_on_a_supplied_collection_before_the_first_build(
+    monkeypatch, tmp_path, logger
+):
+    """A whole-genome sibling in the starting collection leaves no coverage gap, so the
+    loop converges in round 1. Curation used to sit after the download step and never ran
+    -- in exactly the case it exists for."""
+    query, coll, out = _setup(tmp_path)
+    (coll / "SIBLING.fasta").write_text(">SIBLING\nACGT\n")
+    (coll / "PARENT.fasta").write_text(">PARENT\nACGT\n")
+    _common_mocks(monkeypatch, [([], 0.95)])
+    builds: list[tuple[str, list[str]]] = []
+    _recording_build(monkeypatch, builds)
+    # refA is picked as backbone only if SIBLING does not outrank it; make the sibling a
+    # whole-genome twin of refA (comparable ANI, full coverage) and PARENT a regional donor.
+    _fake_skani(monkeypatch, {
+        "refA": (97.0, 95.0), "SIBLING": (96.5, 95.0), "PARENT": (88.0, 30.0),
+    })
+    sections = {}
+    monkeypatch.setattr(
+        iterate, "run_recomb", lambda p, logger, **kw: sections.update(kw),
+    )
+
+    fill_references(FillParams(query=query, collection=coll, output=out, curate=True), logger)
+
+    assert builds == [("round1.msa.fasta", ["PARENT.fasta", "refA.fasta"])]
+    assert (coll / "SIBLING.fasta").exists()  # the user's own collection is untouched
+    panel_tsv = (out / "panel_lineages.tsv").read_text()
+    assert "SIBLING\tsibling-dropped" in panel_tsv
+    assert "Reference panel" in [title for title, _ in sections["extra_sections"]]
+
+
+def test_curate_does_not_run_on_a_freshly_seeded_collection(monkeypatch, tmp_path, logger):
+    """Seeding already filters siblings (parents mode, pool selection). Curating the seed
+    again before round 1 would change what `detect` recruits, so it is not done."""
+    query = tmp_path / "q.fasta"
+    query.write_text(">q\n" + "ACGT" * 100 + "\n")
+    out = tmp_path / "out"
+    _common_mocks(monkeypatch, [([], 0.95)])
+    monkeypatch.setattr(iterate, "skani_available", lambda: True)
+
+    def seed(params, collection, query_records, exclude, logger):
+        for name in ("S1", "S2"):
+            (collection / f"{name}.fasta").write_text(f">{name}\nACGT\n")
+
+    monkeypatch.setattr(iterate, "_seed_collection", seed)
+    calls = []
+    monkeypatch.setattr(iterate, "curate_collection_dir",
+                        lambda *a, **k: calls.append("curate"))
+    monkeypatch.setattr(iterate, "pick_backbone", lambda *a, **k: calls.append("backbone"))
+
+    fill_references(FillParams(query=query, collection=None, output=out, curate=True), logger)
+
+    assert calls == []
+
+
+def test_curate_keeps_the_user_reference_as_backbone(monkeypatch, tmp_path, logger):
+    """`--curate --reference X` used to auto-pick another backbone, drop X as its twin,
+    and fail the next round with "Reference 'X' not found among the staged genomes"."""
+    from tessera.core.io import select_reference
+
+    query, coll, out = _setup(tmp_path)
+    (coll / "MYREF.fasta").write_text(">MYREF\nACGT\n")
+    _common_mocks(monkeypatch, [([_gap(0.80)], 0.94), ([_gap(0.90)], 0.94)])
+    _one_new_hit_per_round(monkeypatch)
+    # Auto-picking would choose refA (highest ANI); MYREF is then its whole-genome twin.
+    _fake_skani(monkeypatch, {
+        "refA": (97.0, 95.0), "MYREF": (96.5, 95.0),
+        "NEW1": (88.0, 30.0), "NEW2": (87.0, 30.0),
+    })
+    builds: list[str] = []
+
+    def fake_build(p, logger):  # resolve the reference the way the real build_msa does
+        select_reference(sorted(p.collection.iterdir()), p.query, False, p.reference)
+        builds.append(p.output.name)
+        p.output.write_text(">q\nACGT\n")
+
+    monkeypatch.setattr(iterate, "build_msa", fake_build)
+
+    fill_references(
+        FillParams(query=query, collection=coll, output=out, curate=True,
+                   reference="MYREF", max_rounds=2),
+        logger,
+    )
+
+    assert builds == ["round1.msa.fasta", "round2.msa.fasta", "final.msa.fasta"]
+    assert (out / "collection" / "MYREF.fasta").exists()
+    rows = dict(
+        line.split("\t")[:2]
+        for line in (out / "panel_lineages.tsv").read_text().splitlines()[1:]
+    )
+    assert rows["MYREF"] == "backbone"
+
+
+def test_last_round_downloads_are_curated_before_the_final_build(monkeypatch, tmp_path, logger):
+    """The final build sees a curated collection. Here the only download is a sibling, so
+    after curation the collection is what round 1 was built from and no rebuild is needed."""
+    query, coll, out = _setup(tmp_path)
+    _common_mocks(monkeypatch, [([_gap(0.80)], 0.94)])
+    builds: list[tuple[str, list[str]]] = []
+    _recording_build(monkeypatch, builds)
+    _one_new_hit_per_round(monkeypatch)
+    # The one download (NEW1) is a sibling: closer than the backbone, whole-genome.
+    _fake_skani(monkeypatch, {"refA": (92.0, 95.0), "NEW1": (99.0, 98.0)})
+
+    trace = fill_references(
+        FillParams(query=query, collection=coll, output=out, curate=True, max_rounds=1),
+        logger,
+    )
+
+    assert builds == [("round1.msa.fasta", ["refA.fasta"])]
+    assert not (out / "final.msa.fasta").exists()
+    assert sorted(p.name for p in (out / "collection").iterdir()) == ["refA.fasta"]
+    assert trace[0].added == []  # the sibling was downloaded, then curated away
+
+
+def test_curate_accepts_a_reference_given_with_its_extension(monkeypatch, tmp_path, logger):
+    query, coll, out = _setup(tmp_path)
+    (coll / "MYREF.fasta").write_text(">MYREF\nACGT\n")
+    _common_mocks(monkeypatch, [([], 0.95)])
+    _fake_skani(monkeypatch, {"refA": (97.0, 95.0), "MYREF": (96.5, 95.0)})
+
+    fill_references(
+        FillParams(query=query, collection=coll, output=out, curate=True,
+                   reference="MYREF.fasta"),
+        logger,
+    )
+
+    rows = dict(
+        line.split("\t")[:2]
+        for line in (out / "panel_lineages.tsv").read_text().splitlines()[1:]
+    )
+    assert rows == {"MYREF": "backbone", "refA": "sibling-dropped"}
+
+
+def test_curate_warns_when_it_leaves_too_few_references(monkeypatch, tmp_path, caplog):
+    """On a panel as close to the query as its own lineage, every genome but the backbone
+    is classed as a sibling. Detection cannot run on one reference; say why."""
+    import logging
+
+    query, coll, out = _setup(tmp_path)
+    for name in ("refB", "refC"):
+        (coll / f"{name}.fasta").write_text(f">{name}\nACGT\n")
+    _common_mocks(monkeypatch, [([], 0.95)])
+    _fake_skani(monkeypatch, {
+        "refA": (99.6, 99.0), "refB": (99.5, 99.0), "refC": (99.4, 99.0),
+    })
+    # Not under the "tessera" logger: the CLI tests switch its propagation off, and
+    # caplog only sees records that reach the root logger.
+    log = logging.getLogger("fill_loop_test")
+    with caplog.at_level(logging.WARNING, logger="fill_loop_test"):
+        fill_references(FillParams(query=query, collection=coll, output=out, curate=True), log)
+
+    assert sorted(p.name for p in (out / "collection").iterdir()) == ["refA.fasta"]
+    assert "Curation left 1 reference" in caplog.text
+    assert "without --curate" in caplog.text
