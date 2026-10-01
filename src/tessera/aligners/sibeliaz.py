@@ -16,7 +16,7 @@ from pathlib import Path
 from ..converters.maf_to_fasta import maf_to_fasta
 from ..core.binaries import BinarySpec
 from ..core.errors import OutputError, UserInputError
-from ..core.io import normalize_reference
+from ..core.io import normalize_reference, read_fasta
 from ..core.plugins import ToolCapabilities
 from ..core.process import run_tool
 from .base import Aligner, AlignParams, AlignResult
@@ -112,7 +112,15 @@ class SibeliazAligner(Aligner):
         # genome filenames; build the seqid -> genome-stem map for the converter.
         name_map = _build_seqid_map(genomes)
         msa = out_dir / "msa.fasta"
-        maf_to_fasta(maf, reference.stem, msa, name_map=name_map)
+        # The MAF names only the backbone contigs that fall in a block, in no particular
+        # order, and only the genomes it placed. Hand the converter the backbone's own
+        # contig order and the full genome list so neither is inferred from the MAF.
+        maf_to_fasta(
+            maf, reference.stem, msa, name_map=name_map,
+            ref_contigs=[(seqid, len(seq)) for seqid, seq in read_fasta(reference)],
+            expected=[g.stem for g in genomes],
+            logger=logger,
+        )
         return AlignResult(msa_fasta=msa, native_format=maf)
 
 

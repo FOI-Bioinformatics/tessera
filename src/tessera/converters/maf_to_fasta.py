@@ -17,9 +17,12 @@ reports positions that line up with the reference genome.
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..core.errors import OutputError
 from ..core.io import write_fasta_record
 
 _COMPLEMENTS = bytes.maketrans(
@@ -53,6 +56,9 @@ def maf_to_fasta(
     out_path: str | Path,
     name_map: dict[str, str] | None = None,
     exclude: set[str] | None = None,
+    ref_contigs: Sequence[tuple[str, int]] | None = None,
+    expected: Sequence[str] | None = None,
+    logger: logging.Logger | None = None,
 ) -> Path:
     """Project a MAF onto ``reference`` coordinates as an MSA-FASTA.
 
@@ -63,6 +69,18 @@ def maf_to_fasta(
 
     ``exclude`` drops genomes by label, e.g. ``{"_MINIGRAPH_"}`` to remove the
     Minigraph-Cactus backbone pseudo-genome so it is not emitted as a taxon.
+
+    ``ref_contigs`` gives the backbone's contigs as ``(MAF source name, length)`` in
+    the order of its FASTA file. The MAF alone cannot supply this: it lists only
+    contigs that fall in some block, in no particular order. With it, the backbone is
+    laid out as its file is, and a contig no block covers keeps its (all-gap) columns
+    instead of vanishing and shifting everything after it. Without it the contigs seen
+    in the MAF are laid out in sorted-name order.
+
+    ``expected`` lists every genome label that should have a row. A genome the aligner
+    placed in no block is absent from the MAF; it is written as an all-gap row and
+    named in a warning on ``logger``, so the panel is never silently smaller than the
+    collection.
     """
     maf_path = Path(maf_path)
     out_path = Path(out_path)
@@ -81,30 +99,49 @@ def maf_to_fasta(
     # each distinct reference source name is one contig (length = its src_size),
     # placed at a cumulative offset. Collapsing them into a single contig's
     # coordinate space would make later contigs overwrite earlier ones.
-    ref_contigs: dict[str, int] = {}  # source name -> contig length
+    seen_contigs: dict[str, int] = {}  # source name -> contig length
     species: set[str] = set()
     for block in blocks:
         for row in block:
             label = genome_of(row.name)
             species.add(label)
             if label == ref_key:
-                ref_contigs.setdefault(row.name, row.src_size)
+                seen_contigs.setdefault(row.name, row.src_size)
     species -= exclude
 
-    if not ref_contigs:
+    if not seen_contigs:
         raise ValueError(
             f"MAF projection onto reference '{ref_key}' found no reference rows. "
             f"Check that the reference label matches the MAF/name_map sequence names."
         )
 
+    if ref_contigs is not None:
+        unknown = sorted(set(seen_contigs) - {name for name, _ in ref_contigs})
+        if unknown:
+            raise OutputError(
+                f"{maf_path} aligns backbone sequence(s) {', '.join(unknown)} that are "
+                f"not in the backbone '{ref_key}' as staged. The aligner's sequence "
+                "names do not match the input FASTA."
+            )
+        layout = list(ref_contigs)
+    else:
+        layout = sorted(seen_contigs.items())
     ref_offsets: dict[str, int] = {}
     ref_length = 0
-    for name in sorted(ref_contigs):
+    for name, length in layout:
         ref_offsets[name] = ref_length
-        ref_length += ref_contigs[name]
+        ref_length += length
 
+    unplaced = sorted(set(expected or ()) - species - exclude - {ref_key})
+    if unplaced and logger is not None:
+        logger.warning(
+            "%d genome(s) share no alignment block with the backbone '%s' and are "
+            "written as all-gap rows: %s. They contribute nothing to the scan; they "
+            "may be too divergent for this aligner.",
+            len(unplaced), ref_key, ", ".join(unplaced),
+        )
     species.discard(ref_key)
-    ordered_species = [ref_key, *sorted(species)]
+    ordered_species = [ref_key, *sorted(species | set(unplaced))]
     out: dict[str, bytearray] = {s: bytearray(b"-" * ref_length) for s in ordered_species}
 
     for block in blocks:

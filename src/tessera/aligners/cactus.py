@@ -81,7 +81,14 @@ class CactusAligner(Aligner):
         # dotted query filename would otherwise be unfindable downstream).
         name_map = {_sample_name(g): g.stem for g in genomes}
         # Drop the Minigraph-Cactus backbone pseudo-genome so it is not a taxon.
-        maf_to_fasta(maf, ref_name, msa, name_map=name_map, exclude={"_MINIGRAPH_"})
+        # `expected` gives a genome that hal2maf placed in no block an all-gap row
+        # instead of leaving it out. The backbone contig order is not passed: the
+        # sequence names hal2maf emits for a pangenome HAL have not been verified
+        # against the input FASTA, so the layout stays as the MAF implies.
+        maf_to_fasta(
+            maf, ref_name, msa, name_map=name_map, exclude={"_MINIGRAPH_"},
+            expected=[g.stem for g in genomes], logger=logger,
+        )
         return AlignResult(msa_fasta=msa, native_format=hal)
 
 
