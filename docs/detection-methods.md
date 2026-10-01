@@ -298,7 +298,7 @@ The practical readings:
 | `coverage_gaps.tsv` | Stretches where even the closest reference is below the best-similarity threshold, with a `kind`: `divergent` (the query is far from every reference -- a possible missing reference), `low_information` (too few comparable bases to judge), or `breakpoint` (windows straddling a called breakpoint, where the region's two parents together explain the query; not a missing reference, and it does not caveat the region) |
 | `similarity_top{N}.{fmt}` | Static plot of the nearest `--top-n` datasets, called regions shaded |
 | `informative_sites_top{N}.{fmt}` | Only under informative-site windowing: the same plot for identity at informative sites |
-| `similarity_pair.{fmt}` | Static plot of the major vs leading minor parent, region shaded |
+| `similarity_pair.{fmt}` | Static plot of the major parent against the donor of the longest called region, regions shaded (the two leading window winners when no donor was called) |
 | `run_provenance.json` | Machine-readable record of the run: Tessera version, parameters, caller description, and -- when the alignment came from `tessera msa` -- the aligner, its version and its arguments |
 
 ### Reading `pvalue`, `support` and the lengths

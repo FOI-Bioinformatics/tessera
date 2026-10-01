@@ -16,7 +16,9 @@ values are *similarity* (1 = identical). Outputs:
 - ``window_winners.tsv``         per-dataset window-win counts (ties included)
 - ``recombination_regions.tsv``  called recombinant regions
 - ``similarity_top{N}.{fmt}``    static top-N similarity plot (regions shaded)
-- ``similarity_pair.{fmt}``      static major-vs-minor pairwise plot
+- ``similarity_pair.{fmt}``      static pairwise plot: the major parent against the
+                                 donor of the longest called region (the two leading
+                                 window winners when no donor was called)
 - ``report.html``                self-contained summary (tables + interactive plot)
 
 Under informative-site windowing (near-identical panels) the windows the HMM
@@ -56,8 +58,23 @@ __all__ = [
     "ReportContext",
     "print_summary", "print_regions", "print_coverage",
     "build_interactive_figure", "plot_top_n", "plot_pairwise",
-    "write_html_report", "write_reports",
+    "write_html_report", "write_reports", "pair_datasets",
 ]
+
+
+def pair_datasets(regions: list[Region], ranked: list[str]) -> list[str]:
+    """The two datasets of the pairwise plot: major parent, then the leading donor.
+
+    The leading donor is the donor of the longest called, donor-present region. Without
+    one there is no minor parent to show and the plot falls back to ``ranked`` (the two
+    leading window winners) -- which is not "major versus minor" when the panel holds a
+    near-duplicate of the backbone, hence the region-based choice whenever possible.
+    """
+    present = [r for r in regions if not r.donor_absent]
+    if not present:
+        return ranked
+    longest = max(present, key=lambda r: r.length_bp)
+    return [longest.major_parent, longest.minor_parent]
 
 
 def write_reports(
@@ -105,7 +122,7 @@ def write_reports(
             stem="informative_sites_top",
         )
 
-    pair = rank_datasets(ranking, 2)
+    pair = pair_datasets(regions, rank_datasets(ranking, 2))
     plot_pairwise(result, pair, regions, output_dir, plot_format, logger)
 
     write_html_report(

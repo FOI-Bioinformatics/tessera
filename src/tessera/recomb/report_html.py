@@ -18,7 +18,7 @@ from .diagnostics import RecombinationSignal
 from .regions import Region
 from .report_assets import _CSS, _GLOSSARY, _REFERENCES
 from .report_context import ReportContext
-from .report_plots import GREY, _color_map, build_interactive_figure
+from .report_plots import GREY, _color_map, build_interactive_figure, region_labels
 from .similarity import WindowSimilarity
 from .typing import LineageMap, typed
 
@@ -588,7 +588,9 @@ def write_html_report(
     fig = build_interactive_figure(result, datasets, regions, caveat_gaps)
     plot_div = fig.to_html(full_html=False, include_plotlyjs="inline")
 
-    colors = _color_map(datasets)
+    # Colour every label a region names, not only the top-N: with --top-n 1 the donor
+    # is outside the plotted datasets and its swatch and mosaic segment were grey.
+    colors = _color_map(region_labels(datasets, regions))
     s = _summary(result, regions, datasets)
     organism_html = (
         f'<div class="organism">{html.escape(ctx.organism)}</div>' if ctx.organism else ""
