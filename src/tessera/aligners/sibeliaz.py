@@ -156,9 +156,16 @@ def _build_seqid_map(genomes) -> dict[str, str]:
     for genome in genomes:
         stem = genome.stem
         with open(genome) as fo:
-            for line in fo:
+            for lineno, line in enumerate(fo, start=1):
                 if line.startswith(">"):
-                    seqid = line[1:].split()[0]
+                    tokens = line[1:].split()
+                    if not tokens:
+                        raise UserInputError(
+                            f"{genome} has a record with no sequence ID (line {lineno}). "
+                            "The sibeliaz backend identifies genomes by sequence ID, so "
+                            "every record needs a name after '>'."
+                        )
+                    seqid = tokens[0]
                     owner = name_map.setdefault(seqid, stem)
                     if owner != stem:
                         # SibeliaZ names alignment rows by sequence ID alone, so two

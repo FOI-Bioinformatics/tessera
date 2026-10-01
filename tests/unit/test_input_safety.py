@@ -319,3 +319,57 @@ def test_the_published_panel_alignment_keeps_its_provenance(monkeypatch, tmp_pat
 
     assert (out / "panel.msa.fasta").exists()
     assert provenance_path(out / "panel.msa.fasta").read_text() == '{"aligner": "mafft"}\n'
+
+
+# --- malformed records and tool output ---------------------------------------
+
+def test_read_fasta_drops_whitespace_inside_sequence_lines(tmp_path: Path) -> None:
+    """A trailing space or tab is not a base. Kept, it widened the backbone row and made
+    the mafft MSA ragged (reference 6100 columns, query 6000)."""
+    path = tmp_path / "ws.fasta"
+    path.write_text(">ref desc\nACGT \nAC GT\t\n\nTTAA\n")
+    assert read_fasta(path) == [("ref", "ACGTACGTTTAA")]
+
+
+def test_read_fasta_accepts_a_header_with_no_name(tmp_path: Path) -> None:
+    # ">" alone already read as an unnamed record; "> " raised IndexError instead.
+    path = tmp_path / "blank.fasta"
+    path.write_text("> \nACGT\n>\nTTAA\n")
+    assert read_fasta(path) == [("", "ACGT"), ("", "TTAA")]
+
+
+def test_sibeliaz_rejects_a_record_with_no_sequence_id(tmp_path: Path) -> None:
+    path = tmp_path / "g1.fasta"
+    path.write_text(">ok\nACGT\n> \nACGT\n")
+    with pytest.raises(UserInputError, match=r"g1\.fasta.*line 3"):
+        sibeliaz._build_seqid_map([path])
+
+
+def test_truncated_maf_row_is_reported_against_the_file(tmp_path: Path) -> None:
+    from tessera.converters.maf_to_fasta import maf_to_fasta
+
+    maf = tmp_path / "cut.maf"
+    maf.write_text("a\ns ref.c 0 8 + 8 ACGTACGT\ns qry.x 0 8 + 8 ACGT")
+    with pytest.raises(OutputError, match=r"cut\.maf.*qry\.x"):
+        maf_to_fasta(maf, "ref", tmp_path / "msa.fasta")
+
+
+def test_xmfa_without_the_reference_is_reported_against_the_file(tmp_path: Path) -> None:
+    from tessera.converters.xmfa_to_fasta import xmfa_to_fasta
+
+    xmfa = tmp_path / "other.xmfa"
+    xmfa.write_text(
+        "#Sequence1File\t/data/a.fasta\n#Sequence2File\t/data/b.fasta\n"
+        "> 1:1-4 + /data/a.fasta\nACGT\n> 2:1-4 + /data/b.fasta\nACGT\n=\n"
+    )
+    with pytest.raises(UserInputError, match=r"other\.xmfa.*/data/ref\.fasta"):
+        xmfa_to_fasta(xmfa, "/data/ref.fasta", 0, tmp_path / "out.fasta")
+
+
+def test_empty_mafft_output_is_a_tessera_error(tmp_path: Path) -> None:
+    from tessera.converters.mafft_merge import merge_added_fragments
+
+    empty = tmp_path / "empty.aln.fasta"
+    empty.write_text("")
+    with pytest.raises(OutputError, match=r"empty\.aln\.fasta"):
+        merge_added_fragments(empty)

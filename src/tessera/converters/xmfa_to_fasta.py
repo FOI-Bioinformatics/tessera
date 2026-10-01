@@ -112,6 +112,13 @@ def xmfa_to_fasta(
                 seq[curr_pos : curr_pos + length_of_line] = stripped
                 curr_pos += length_of_line
 
+    if reference_name not in name2num:
+        listed = ", ".join(sorted(name2num)) or "none"
+        raise UserInputError(
+            f"{xmfa_path} does not list the reference {reference_name} among its "
+            f"sequence files (found: {listed}). The aligner's output does not belong "
+            "to this reference, or its header is incomplete."
+        )
     reference_num = name2num[reference_name]
 
     # Output width: the full reference length when known, otherwise the furthest

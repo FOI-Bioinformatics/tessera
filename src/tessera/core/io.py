@@ -13,9 +13,9 @@ import gzip
 import logging
 import re
 import shutil
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import TextIO
+from typing import BinaryIO, TextIO
 
 from .errors import UserInputError
 
@@ -35,20 +35,25 @@ def read_fasta(path: str | Path) -> list[tuple[str, str]]:
 
     A ``.gz`` input is read through :mod:`gzip`: staging already accepts compressed
     genomes, so the readers that look inside a query must accept them too.
+
+    Whitespace inside a sequence line is dropped: a trailing space or tab is not a
+    base, and kept it lengthens the sequence (the backbone row then no longer matches
+    the rows aligned to it). A header with no name -- ``>`` or ``> `` -- reads as an
+    unnamed record (``""``).
     """
     records: list[tuple[str, str]] = []
     name: str | None = None
     seq: list[str] = []
     with _open_text(path) as fo:
         for line in fo:
-            line = line.rstrip("\r\n")
             if line.startswith(">"):
                 if name is not None:
                     records.append((name, "".join(seq)))
-                name = line[1:].split()[0] if len(line) > 1 else ""
+                tokens = line[1:].split()
+                name = tokens[0] if tokens else ""
                 seq = []
             else:
-                seq.append(line)
+                seq.append("".join(line.split()))
     if name is not None:
         records.append((name, "".join(seq)))
     return records
@@ -164,14 +169,58 @@ def _require_fasta(source: Path) -> None:
         )
 
 
+_WHITESPACE = re.compile(rb"\s")
+
+
+def _has_sequence_whitespace(source: Path) -> bool:
+    """True when a plain FASTA carries whitespace inside a sequence line.
+
+    A trailing space or tab, a space within the line, or a carriage return (CRLF line
+    endings). Blank lines and the header's own spaces do not count.
+    """
+    with open(source, "rb") as fo:
+        for line in fo:
+            if line.startswith(b">"):
+                continue
+            body = line[:-1] if line.endswith(b"\n") else line
+            if body and _WHITESPACE.search(body):
+                return True
+    return False
+
+
+def _write_clean(src: Iterable[bytes], dst: BinaryIO) -> None:
+    """Copy a FASTA, dropping whitespace from sequence lines (and blank lines)."""
+    for line in src:
+        if line.startswith(b">"):
+            dst.write(line.rstrip(b"\r\n") + b"\n")
+        else:
+            body = b"".join(line.split())
+            if body:
+                dst.write(body + b"\n")
+
+
 def _stage_one(source: Path, target_dir: Path, logger: logging.Logger) -> Path:
-    """Place one genome into ``target_dir`` as ``<label>.fasta``; return the path."""
+    """Place one genome into ``target_dir`` as ``<label>.fasta``; return the path.
+
+    The staged file is what the aligner reads, while Tessera reads the same genome
+    through :func:`read_fasta`, which ignores whitespace in sequence lines. The two
+    must agree on the genome's length, and not every aligner ignores a trailing space
+    (minimap2 counts it as a base), so a genome that carries such whitespace is staged
+    as a cleaned copy rather than a link to the original.
+    """
     label = strip_sequence_extension(source.name)
     target = target_dir / f"{label}.fasta"
     if source.name.endswith(".gz"):
         logger.debug("Decompressing %s -> %s", source, target)
         with gzip.open(source, "rb") as src, open(target, "wb") as dst:
-            shutil.copyfileobj(src, dst)
+            _write_clean(src, dst)
+    elif _has_sequence_whitespace(source):
+        logger.warning(
+            "%s has whitespace inside its sequence lines (trailing spaces, tabs or "
+            "Windows line endings); aligning a cleaned copy.", source,
+        )
+        with open(source, "rb") as src, open(target, "wb") as dst:
+            _write_clean(src, dst)
     else:
         logger.debug("Linking %s -> %s", source, target)
         target.symlink_to(source.resolve())

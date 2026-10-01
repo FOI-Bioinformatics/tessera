@@ -148,6 +148,17 @@ def maf_to_fasta(
         ref_row = next((r for r in block if genome_of(r.name) == ref_key), None)
         if ref_row is None:
             continue
+        # Every row of a block has the same aligned width. A shorter one means the file
+        # was cut off mid-write (a full disk, a killed aligner); indexing into it below
+        # would fail with a bare IndexError several frames from the file's name.
+        for row in block:
+            if len(row.text) != len(ref_row.text):
+                raise OutputError(
+                    f"Truncated alignment block in {maf_path}: row '{row.name}' has "
+                    f"{len(row.text)} column(s), the backbone row '{ref_row.name}' has "
+                    f"{len(ref_row.text)}. The aligner's output looks incomplete; check "
+                    "that it finished."
+                )
         contig_offset = ref_offsets[ref_row.name]
         if ref_row.strand == "-":
             # Reverse-complement the whole block into forward-reference orientation.
