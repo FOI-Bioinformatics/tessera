@@ -91,39 +91,42 @@ def descent_pvalue_exact(m: int, n: int, depth: int) -> float:
     ``n`` -1 steps.
 
     Dynamic program over the walk's current drawdown ``delta`` in ``[0, depth)``: an
-    up-step moves ``delta -> max(0, delta - 1)``, a down-step ``delta -> delta + 1``
-    (forbidden once it would reach ``depth``). ``f[delta]`` is the probability the
-    drawdown never reaches ``depth``; the answer is ``1 - f`` at the start state.
-    Probabilities (not path counts) are propagated, so there is no big-integer overflow.
+    up-step moves ``delta -> max(0, delta - 1)``, a down-step ``delta -> delta + 1``.
+    ``g[delta]`` is the probability that the drawdown *reaches* ``depth`` from that
+    state; a down-step from ``delta == depth - 1`` reaches it with probability 1.
+
+    The reaching probability is propagated directly rather than as one minus the
+    probability of never reaching it: every term is a sum of non-negative products, so
+    a very small p-value keeps its magnitude instead of cancelling to exactly ``0.0``
+    below about 1e-16. Probabilities (not path counts) are propagated, so there is no
+    big-integer overflow.
     """
     if depth <= 0:
         return 1.0
     if n < depth:  # need at least ``depth`` consecutive down-steps to reach it
         return 0.0
 
-    # prev[j] is the length-``depth`` vector f(i-1, j, .). Build row i from row i-1.
-    prev = [np.ones(depth) for _ in range(n + 1)]
-    # i == 0 row: only down-steps remain, a single forced order.
+    def after_down(row_below: np.ndarray) -> np.ndarray:
+        down = np.empty(depth)
+        down[: depth - 1] = row_below[1:depth]  # delta -> delta + 1
+        down[depth - 1] = 1.0  # ... and from depth-1 the walk reaches ``depth``
+        return down
+
+    # prev[j] is the length-``depth`` vector g(i-1, j, .). Build row i from row i-1.
+    # i == 0 row: only down-steps remain, a single forced order; nothing left -> 0.
+    prev = [np.zeros(depth)]
     for j in range(1, n + 1):
-        down = np.zeros(depth)
-        down[: depth - 1] = prev[j - 1][1:depth]  # delta -> delta+1, (depth-1) forbidden
-        prev[j] = down
+        prev.append(after_down(prev[j - 1]))
     for i in range(1, m + 1):
-        # j == 0: only up-steps remain.
-        up0 = np.empty(depth)
-        up0[0] = prev[0][0]
-        up0[1:] = prev[0][: depth - 1]  # delta -> max(0, delta-1)
-        cur: list[np.ndarray] = [up0]
+        cur: list[np.ndarray] = [np.zeros(depth)]  # j == 0: only up-steps remain
         for j in range(1, n + 1):
             total = i + j
             up = np.empty(depth)
             up[0] = prev[j][0]
-            up[1:] = prev[j][: depth - 1]
-            down = np.zeros(depth)
-            down[: depth - 1] = cur[j - 1][1:depth]
-            cur.append((i / total) * up + (j / total) * down)
+            up[1:] = prev[j][: depth - 1]  # delta -> max(0, delta - 1)
+            cur.append((i / total) * up + (j / total) * after_down(cur[j - 1]))
         prev = cur
-    return float(1.0 - prev[n][0])
+    return float(prev[n][0])
 
 
 def _descent_pvalue_perm(steps: np.ndarray, depth: int, *, seed: int = 0) -> float:

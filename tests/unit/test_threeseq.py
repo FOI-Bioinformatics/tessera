@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import itertools
+import math
 from pathlib import Path
 
 import numpy as np
@@ -104,3 +105,13 @@ def test_max_descent_starts_at_the_last_maximum_before_the_trough() -> None:
     assert d.depth == 4
     assert (d.start_site, d.end_site) == (4, 8)
     assert set(steps[d.start_site:d.end_site]) == {-1}
+
+
+def test_descent_pvalue_exact_keeps_small_values() -> None:
+    # depth == n: every down-step must be consecutive, so the count of favourable
+    # arrangements is the m + 1 positions of that block among the up-steps.
+    for m, n in ((200, 100), (50, 30), (12, 9)):
+        expected = (m + 1) / math.comb(m + n, n)
+        got = descent_pvalue_exact(m, n, n)
+        assert got > 0.0
+        assert math.isclose(got, expected, rel_tol=1e-9)
