@@ -30,7 +30,12 @@ from dataclasses import replace
 
 import numpy as np
 
-from .similarity import WindowSimilarity, _best_per_window, _canonical_mask
+from .similarity import (
+    WindowSimilarity,
+    _best_per_window,
+    _canonical_mask,
+    _informative_column_mask,
+)
 
 
 def _window_bounds(result: WindowSimilarity, window_size: int) -> list[tuple[int, int]]:
@@ -118,11 +123,22 @@ def cluster_references(
     t_floor = params.cluster_merge_identity
 
     canon = {label: _canonical_mask(result.rows[label]) for label in labels}
+    # Informative-site windowing is what a near-identical panel is scanned under, and
+    # on such a panel identity over all columns is above the floor for every pair: the
+    # whole panel would pool into one lineage and leave the HMM a single state. Compare
+    # the pair where the panel varies instead. There the floor again separates true
+    # duplicates, which agree, from distinct lineages, which differ at a large share of
+    # the informative columns.
+    informative = (
+        _informative_column_mask(result.rows, labels) if result.window_spans else None
+    )
     uf = _UnionFind(labels)
     for i, a in enumerate(labels):
         a_row, a_canon = result.rows[a], canon[a]
         for b in labels[i + 1:]:
             comp = a_canon & canon[b]
+            if informative is not None:
+                comp = comp & informative
             match = comp & (a_row == result.rows[b])
             comp_cs = np.concatenate(([0], np.cumsum(comp)))
             match_cs = np.concatenate(([0], np.cumsum(match)))

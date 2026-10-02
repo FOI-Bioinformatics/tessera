@@ -99,12 +99,15 @@ below it. The pooled lineage competes as one state under the label of its best-c
 member, and a region names that member. Clustering is skipped for panels of fewer than 4
 or more than 200 references.
 
-One limitation follows from the absolute threshold. On a panel in which *every* pair of
-references is at least 98.5 % identical in every window -- mpox, VZV and other sets below
-roughly 1.5 % divergence -- all references pool into a single lineage and the HMM has
-nothing left to compete, so it calls no region whatever the data. The site-based callers
-(3SEQ, MaxChi) are unaffected. On such a panel, run with `--no-cluster-lineages` to keep
-the HMM's vote. `run_provenance.json` records whether clustering was on.
+One limitation follows from the absolute threshold when identity is taken over all
+columns. On a panel in which *every* pair of references is at least 98.5 % identical in
+every window -- mpox, VZV and other sets below roughly 1.5 % divergence -- all references
+would pool into a single lineage and leave the HMM nothing to compete. Such panels are
+scanned under informative-site windowing (next section), and there the references are
+compared on the informative columns only, so distinct lineages stay apart. The limitation
+remains when base-pair windowing is forced on such a panel (`--no-informative-sites`):
+run with `--no-cluster-lineages` to keep the HMM's vote. The site-based callers (3SEQ,
+MaxChi) are unaffected either way. `run_provenance.json` records whether clustering was on.
 
 ### Low-divergence panels (intra-species sets, DNA viruses)
 
@@ -121,6 +124,14 @@ the references differ at less than ~8 % of columns, and controllable with
 `--informative-step`). Breakpoint intervals are necessarily coarser at low divergence
 -- you cannot localise a switch more finely than the spacing of the discriminating
 sites.
+
+Before the HMM runs, near-duplicate references are pooled into lineages so that
+duplicates do not tie every window (`--cluster-lineages`, on by default for panels of 4
+to 200 references). Two references pool when their agreement stays at or above 98.5 % in
+every window. Under informative-site windowing that agreement is measured **on the
+informative columns**: on a near-identical panel every pair is above 98.5 % over all
+columns, and measuring it there would pool the whole panel and leave the HMM nothing to
+choose between. On the informative columns only true duplicates agree.
 
 **Informative-site identity is not similarity.** A window of polymorphic columns leaves
 out every column where the references agree, so a reference that is 98-99 % identical to
