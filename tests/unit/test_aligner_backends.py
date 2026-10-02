@@ -224,6 +224,93 @@ def test_mafft_adjusts_direction_of_added_sequences(monkeypatch, tmp_path: Path)
     assert cmd.index("--adjustdirection") < cmd.index("--addfragments")
 
 
+def _mafft_commands(monkeypatch, tmp_path: Path, *, ref_len: int, n_queries: int,
+                    params: AlignParams, memory: int | None = None) -> list[list[str]]:
+    """Run the MAFFT adapter against a fake `mafft` and return the commands it issued."""
+    commands: list[list[str]] = []
+    seq = "ACGT" * (ref_len // 4)
+
+    def fake_run(caps, cmd, **kw):
+        commands.append([str(c) for c in cmd])
+        kw["stdout_path"].write_text(f">ref\n{seq}\n>added\n{seq}\n")
+        return ""
+
+    monkeypatch.setattr(mafft_mod, "run_tool", fake_run)
+    if memory is not None:
+        monkeypatch.setattr(mafft_mod, "_physical_memory", lambda: memory)
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    ref = tmp_path / "ref.fasta"
+    ref.write_text(f">ref\n{seq}\n")
+    genomes = [ref]
+    for i in range(n_queries):
+        qry = tmp_path / f"qry{i}.fasta"
+        qry.write_text(f">qry{i}\n{seq}\n")
+        genomes.append(qry)
+    mafft_mod.MafftAligner().align(genomes, ref, tmp_path / "out", params, _LOG)
+    return commands
+
+
+def test_mafft_uses_kmer_distances_on_a_long_backbone(monkeypatch, tmp_path: Path) -> None:
+    """`--addfragments` otherwise runs a pairwise local alignment whose memory grows with
+    the product of the two lengths (over 100 GB for a 200 kb genome pair)."""
+    (cmd,) = _mafft_commands(monkeypatch, tmp_path, ref_len=20_004, n_queries=1,
+                             params=AlignParams(threads=1))
+    assert "--6merpair" in cmd
+    assert cmd.index("--6merpair") < cmd.index("--addfragments")
+
+
+def test_mafft_keeps_pairwise_distances_on_a_short_backbone(monkeypatch, tmp_path: Path) -> None:
+    (cmd,) = _mafft_commands(monkeypatch, tmp_path, ref_len=20_000, n_queries=1,
+                             params=AlignParams(threads=1))
+    assert "--6merpair" not in cmd
+
+
+def test_mafft_explicit_sixmerpair_overrides_the_length_rule(monkeypatch, tmp_path: Path) -> None:
+    (long_cmd,) = _mafft_commands(monkeypatch, tmp_path / "long", ref_len=20_004, n_queries=1,
+                                  params=AlignParams(threads=1, extra={"sixmerpair": "false"}))
+    assert "--6merpair" not in long_cmd
+    (short_cmd,) = _mafft_commands(monkeypatch, tmp_path / "short", ref_len=400, n_queries=1,
+                                   params=AlignParams(threads=1, extra={"sixmerpair": "true"}))
+    assert "--6merpair" in short_cmd
+
+
+def test_mafft_splits_threads_across_concurrent_jobs(monkeypatch, tmp_path: Path) -> None:
+    """Four jobs at once, each with `--thread 4`, would use sixteen threads."""
+    commands = _mafft_commands(monkeypatch, tmp_path, ref_len=400, n_queries=5,
+                               params=AlignParams(threads=4), memory=64 * 2**30)
+    assert len(commands) == 5
+    assert {cmd[cmd.index("--thread") + 1] for cmd in commands} == {"1"}
+
+
+def test_mafft_gives_a_single_job_all_threads(monkeypatch, tmp_path: Path) -> None:
+    (cmd,) = _mafft_commands(monkeypatch, tmp_path, ref_len=400, n_queries=1,
+                             params=AlignParams(threads=4), memory=64 * 2**30)
+    assert cmd[cmd.index("--thread") + 1] == "4"
+
+
+def test_mafft_limits_concurrent_pairwise_jobs_by_memory(monkeypatch, tmp_path: Path) -> None:
+    """Below the length threshold each pairwise job still needs several GB; with little
+    memory the jobs run one at a time (seen as one job holding every thread)."""
+    workers: list[int] = []
+    real_map = mafft_mod.parallel_map
+
+    def spy_map(fn, items, n, **kw):
+        workers.append(n)
+        return real_map(fn, items, n, **kw)
+
+    monkeypatch.setattr(mafft_mod, "parallel_map", spy_map)
+    commands = _mafft_commands(monkeypatch, tmp_path, ref_len=16_000, n_queries=5,
+                               params=AlignParams(threads=4), memory=8 * 2**30)
+    assert workers == [1]
+    assert {cmd[cmd.index("--thread") + 1] for cmd in commands} == {"4"}
+
+
+def test_mafft_kmer_jobs_are_not_limited_by_memory(monkeypatch, tmp_path: Path) -> None:
+    commands = _mafft_commands(monkeypatch, tmp_path, ref_len=40_000, n_queries=5,
+                               params=AlignParams(threads=4), memory=8 * 2**30)
+    assert {cmd[cmd.index("--thread") + 1] for cmd in commands} == {"1"}
+
+
 def test_merge_added_fragments_ignores_reversed_name_prefix(tmp_path: Path) -> None:
     # `mafft --adjustdirection` renames a record it reverse-complemented to `_R_<name>`.
     # The merge is positional (first record = reference, the rest = contigs), so the

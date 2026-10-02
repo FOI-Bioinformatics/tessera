@@ -21,6 +21,16 @@ an option for genomes with large rearrangements. Every backend reports the align
 backbone coordinates, so material inserted relative to the backbone is dropped -- `mafft`
 included, which runs with `--keeplength`.
 
+Memory with `mafft`: by default each genome is added with a pairwise local alignment
+against the backbone, whose memory grows with the product of the two lengths (a few GB
+per genome at 10-30 kb). For a backbone longer than 20 kb Tessera therefore passes
+`--6merpair` (k-mer distances), which keeps memory small; on the closely related genome
+pairs checked (measles, Ebola virus, SARS-CoV-2) the two modes gave the same alignment,
+while a divergent HIV-1 pair differed in 0.3% of columns. `--aligner-arg sixmerpair=true`
+or `sixmerpair=false` overrides the length rule. Below 20 kb, genomes are added
+concurrently only as far as an estimate of the memory needed fits half of the physical
+memory, and `--threads` is shared between the concurrent jobs rather than given to each.
+
 A multi-contig backbone is laid out as the concatenation of its contigs in the order of
 its FASTA file (`sibeliaz`, `mafft`, `minimap2`, `progressivemauve`); a contig that nothing
 aligns to keeps its columns, as gaps. The `cactus` backend lays contigs out in sorted-name

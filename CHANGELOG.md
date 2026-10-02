@@ -24,6 +24,14 @@ Data safety and alignment:
   opposite strand to the backbone was aligned as given and came out at chance-level identity
   (about 0.40 against 0.97 for the same genome in forward orientation), which the scan then
   read as a divergent region. MAFFT now runs with `--adjustdirection`.
+- **The MAFFT backend could exhaust memory on long genomes.** `--addfragments` ran a
+  pairwise local alignment whose memory grows with the product of the two lengths, and
+  `--threads N` started N such jobs with N threads each: a 200 kb mpox pair passed 100 GB.
+  A backbone longer than 20 kb is now aligned with `--6merpair` (0.09 GB for the same
+  pair), `--threads` is shared between concurrent jobs, and below 20 kb the number of
+  concurrent jobs is limited by physical memory. Alignments of backbones over 20 kb may
+  differ; on the measles, Ebola virus and SARS-CoV-2 pairs checked they were identical.
+  `--aligner-arg sixmerpair=false` restores the earlier mode.
 - **`reassort` never applied its alignment-fraction filter.** The threshold was written as a
   fraction (0.5) and compared with skani's percentage, so a tip aligning over a fifth of a
   segment could outrank a full-length match and become the segment's nearest strain. The
