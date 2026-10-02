@@ -39,8 +39,11 @@ def test_profile_tsv_header_marks_an_untestable_phi(tmp_path) -> None:
     assert "not testable" in header
 
 
-def test_run_reports_an_untestable_phi(example_data, tmp_path, logger) -> None:
-    # cryptic_insert has 54 informative sites: fewer than the default window of 100.
+def test_run_tests_phi_on_an_alignment_smaller_than_the_default_window(
+    example_data, tmp_path, logger
+) -> None:
+    # cryptic_insert has 54 informative sites, fewer than the default window of 100. The
+    # window is capped at a tenth of the sites, so the test runs (it was "not testable").
     out = tmp_path / "cryptic"
     run_recomb(
         RecombParams(msa=example_data / "cryptic_insert.msa.fasta", output=out,
@@ -48,8 +51,9 @@ def test_run_reports_an_untestable_phi(example_data, tmp_path, logger) -> None:
         logger,
     )
     run = json.loads((out / "run_provenance.json").read_text())["run"]
-    assert run["recombination signal (PHI)"].startswith("not testable")
-    assert "not testable" in (out / "report.html").read_text()
+    assert run["recombination signal (PHI)"].startswith("p=")
+    assert "54 informative sites, window 5" in run["recombination signal (PHI)"]
+    assert "not testable" not in (out / "report.html").read_text()
 
 
 def test_report_states_the_alpha_the_run_used(example_data, tmp_path, logger) -> None:

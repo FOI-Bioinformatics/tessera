@@ -249,18 +249,25 @@ one query introduces, so PHI can stay non-significant even where detection succe
 (e.g. yellow fever). In that regime Rmin and the per-site PHI **profile** -- which
 localizes the signal rather than averaging it away -- are the more informative
 parent-free outputs. The diagnostic runs for every `--method`; disable with
-`--no-phi`, or widen its window with `--phi-window`.
+`--no-phi`.
+
+The PHI window (`--phi-window`, default 100) is counted in informative-site ranks and
+is an **upper bound**: the window used is capped at a tenth of the informative sites.
+PHI asks whether *nearby* sites are more compatible than a random reordering, and
+"nearby" stops meaning anything once the window spans most of the sites -- at 159
+informative sites a 100-rank window gave p = 1 on an alignment whose tract every caller
+found, where a 15-rank window gives p = 0.001. Alignments with a thousand informative
+sites or more are unaffected. The report and `recombination_profile.tsv` state the
+window that was used.
 
 The PHI p-value is judged at the run's `--alpha`, in the report and for the per-region
-flag alike. The test is **not testable** when the alignment has too few informative sites
-for the window (`--phi-window`, default 100 site ranks; at least window + 2 sites are
-needed): every pair of sites then falls inside one window, so reordering the sites cannot
-change the statistic and the permutation p-value would be 1 whatever the data. Tessera
-reports this as `not testable` (`NA` in the `recombination_profile.tsv` header) rather
-than as a non-significant result, and no region is flagged `parent_free_support`; lower
-`--phi-window` to test such an alignment. Just above that limit the test is defined but
-has little power: the shipped `divergent` example (159 informative sites) gives p = 1 at
-the default window and p = 0.001 at `--phi-window 20`.
+flag alike. If every pair of sites fell inside one window, reordering the sites could not
+change the statistic and the permutation p-value would be 1 whatever the data; the cap on
+the window described above keeps the test clear of that case for any alignment that
+reaches the minimum of ten informative sites. Should the test still be undefined, Tessera
+reports `not testable` (`NA` in the `recombination_profile.tsv` header) rather than a
+non-significant result, and no region is flagged `parent_free_support`. With few
+informative sites the window is only a few ranks wide and the test has limited power.
 
 This all remains an **indicative screen**: the built-in HMM and 3SEQ tests are fast
 triplet/segmentation screens, not a full tree-based analysis (such as GARD). Treat
