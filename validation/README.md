@@ -16,6 +16,8 @@ validation/
   run_benchmark.py     PHI/Rmin power+specificity on a published simulated set
   run_specificity.py   false-positive RATE on simulated clonal data (no aligner needed)
   run_regimes.py       near-identical panels and sibling tracts, simulated (no aligner needed)
+  characterise_false_regions.py
+                       one row per false region on the clonal simulations (no aligner needed)
   run_caller_benchmark.py  region callers on the Jaya 2023 grid (per-query power/FP)
   run_coalescent_benchmark.py   Posada & Crandall coalescent design (msprime)
   run_recombinhunt_benchmark.py RecombinHunt noise-robustness of breakpoint detection
