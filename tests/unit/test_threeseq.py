@@ -94,3 +94,13 @@ def test_call_regions_3seq_no_false_positive_on_pure_query(tmp_path: Path) -> No
     )
     assert major == "A"
     assert regions == []
+
+
+def test_max_descent_starts_at_the_last_maximum_before_the_trough() -> None:
+    # The walk reaches its maximum (2) at site 2, dips, returns to 2 at site 4 and only
+    # then descends. The donor run is sites [4, 8); sites 2-3 are a balanced excursion.
+    steps = np.array([1, 1, -1, 1, -1, -1, -1, -1])
+    d = max_descent(steps)
+    assert d.depth == 4
+    assert (d.start_site, d.end_site) == (4, 8)
+    assert set(steps[d.start_site:d.end_site]) == {-1}

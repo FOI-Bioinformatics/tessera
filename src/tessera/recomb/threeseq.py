@@ -77,7 +77,10 @@ def max_descent(steps: np.ndarray) -> Descent:
     drawdown = running_max - cumulative
     trough = int(np.argmax(drawdown))
     depth = int(drawdown[trough])
-    peak = int(np.argmax(cumulative[: trough + 1])) if trough > 0 else 0
+    # The tract starts at the LAST maximum before the trough. The first one (plain
+    # argmax) would pull in any balanced excursion that returns to the same height,
+    # reporting the tract as starting earlier than the donor run does.
+    peak = trough - int(np.argmax(cumulative[trough::-1])) if trough > 0 else 0
     m = int(np.count_nonzero(steps == 1))
     n = int(steps.size - m)
     return Descent(depth=depth, start_site=peak, end_site=trough, m=m, n=n)

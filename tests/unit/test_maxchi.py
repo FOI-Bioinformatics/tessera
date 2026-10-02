@@ -9,6 +9,7 @@ import numpy as np
 from tessera.recomb.analyze import analyze
 from tessera.recomb.maxchi import (
     _chi2_2x2,
+    _exceedances,
     maxchi_pvalue,
     maxchi_statistic,
 )
@@ -76,3 +77,24 @@ def test_call_regions_maxchi_no_false_positive(tmp_path: Path) -> None:
     )
     assert major == "A"
     assert regions == []
+
+
+def test_permutation_null_uses_the_same_tract_rule_as_the_observed_walk() -> None:
+    """The vectorised null must score each permuted walk on the tract ``max_descent``
+    would report for it; otherwise observed and null statistics are not comparable.
+
+    A consistency guard: it holds before and after the tie rule changes, and fails if
+    only one of ``threeseq.max_descent`` / ``maxchi._exceedances`` is changed.
+    """
+    steps = np.array([1] * 30 + [-1] * 14)
+    np.random.default_rng(5).shuffle(steps)
+    k, seed = 400, 11
+    order = np.argsort(np.random.default_rng(seed).random((k, steps.size)), axis=1)
+    stats = []
+    for perm in steps[order]:
+        d = max_descent(perm)
+        stats.append(maxchi_statistic(perm, d.start_site, d.end_site))
+    observed = float(np.median(stats))
+    expected = sum(s >= observed for s in stats)
+    assert 0 < expected < k  # the threshold splits the permutations
+    assert _exceedances(steps, observed, k, np.random.default_rng(seed)) == expected
