@@ -95,9 +95,15 @@ def _merge_group(group: list[Region], major: str | None) -> Region:
     hmm_member = next((r for r in group if "hmm" in r.methods), None)
     bp_lo = (hmm_member or best).breakpoint_lo
     bp_hi = (hmm_member or best).breakpoint_hi
+    # The canonical backbone replaces each caller's own, so the table reads against one
+    # backbone -- except when it IS this region's donor. That happens when the callers
+    # disagree on the backbone (the HMM set a sibling aside, a site caller did not): the
+    # region was called against the other backbone, and relabelling it would report a
+    # genome as a donor into itself. Keep the pair the caller actually tested.
+    relabel = bool(major) and major != best.minor_parent
     return Region(
         minor_parent=best.minor_parent,
-        major_parent=major or best.major_parent,
+        major_parent=major if relabel and major else best.major_parent,
         msa_start=min(r.msa_start for r in group),
         msa_end=max(r.msa_end for r in group),
         query_start=q_start,
@@ -130,16 +136,23 @@ def _group(regions: list[Region], lineage_map: LineageMap | None) -> list[list[R
     when typed, lineage)."""
     groups: list[list[Region]] = []
     for region in sorted(regions, key=lambda r: (r.minor_parent, r.query_start)):
-        placed = False
-        for group in groups:
-            if _same_donor(group[0], region, lineage_map) and any(
-                _overlap(region, member) for member in group
-            ):
-                group.append(region)
-                placed = True
-                break
-        if not placed:
+        hits = [
+            group for group in groups
+            if _same_donor(group[0], region, lineage_map)
+            and any(_overlap(region, member) for member in group)
+        ]
+        if not hits:
             groups.append([region])
+            continue
+        # A region can bridge groups that did not overlap each other -- on a typed panel
+        # the sort is by genome label, so two labels of one lineage arrive out of
+        # coordinate order. Fold every group it touches into the first, or the same
+        # donor would be reported as two overlapping regions.
+        target = hits[0]
+        target.append(region)
+        for other in hits[1:]:
+            target.extend(other)
+        groups = [g for g in groups if all(g is not other for other in hits[1:])]
     return groups
 
 

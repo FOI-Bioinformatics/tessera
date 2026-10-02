@@ -181,3 +181,31 @@ def test_agreement_gate_of_one_keeps_every_region() -> None:
     assert sorted(r.minor_parent for r in kept) == ["B", "C"]
     assert len(kept_breakdown) == 2
     assert suppressed == 0
+
+
+def test_region_is_not_relabelled_as_a_donor_into_itself() -> None:
+    # The callers disagree on the backbone: the HMM reports H (it set the sibling S
+    # aside), 3SEQ kept S and found an H tract in it. H is the canonical backbone, so
+    # relabelling the 3SEQ region's major to H would read "H donated into H".
+    hmm = mk("X", 100, 200, "hmm", major="H", qvalue=1e-6)
+    seq = mk("H", 500, 600, "3seq", major="S", qvalue=1e-9)
+    merged, _ = consensus_regions({"hmm": [hmm], "3seq": [seq]}, major="H")
+    assert all(r.minor_parent != r.major_parent for r in merged)
+    by_minor = {r.minor_parent: r.major_parent for r in merged}
+    assert by_minor == {"X": "H", "H": "S"}  # the tested pair is kept for the odd one out
+
+
+def test_same_lineage_regions_merge_transitively_across_labels() -> None:
+    # A1 and A2 are one lineage. A1 has two separate regions; the A2 region overlaps
+    # both. All three are one event; sorting by label must not leave two groups.
+    lmap = {"A1": "L", "A2": "L"}
+    first = mk("A1", 0, 10, "hmm", qvalue=1e-6)
+    second = mk("A1", 20, 30, "hmm", qvalue=1e-6)
+    bridge = mk("A2", 5, 25, "3seq", qvalue=1e-9)
+    merged, breakdown = consensus_regions(
+        {"hmm": [first, second], "3seq": [bridge]}, major="M", lineage_map=lmap
+    )
+    assert len(merged) == 1
+    assert (merged[0].query_start, merged[0].query_end) == (0, 30)
+    assert merged[0].methods == ("hmm", "3seq")
+    assert len(breakdown) == 1
