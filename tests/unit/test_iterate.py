@@ -180,7 +180,7 @@ def test_saturation_auto_switches_to_ncbi_virus_diversity(monkeypatch, tmp_path,
 
     called = {}
 
-    def fake_from_pool(params, collection, logger, *, force_ncbi=False):
+    def fake_from_pool(params, collection, logger, *, force_ncbi=False, exclude=()):
         called["force_ncbi"] = force_ncbi
         (collection / "DIVERSE.fasta").write_text(">DIVERSE\nA\n")
 
@@ -505,6 +505,35 @@ def test_seed_source_nextclade_routes_through_pool_selection(monkeypatch, tmp_pa
     )
     assert captured["dataset"] == "nextstrain/sars-cov-2/XBB"
     assert (out / "collection" / "REF1.fasta").exists()
+
+
+def test_pool_seeding_skips_the_query_own_record_and_excluded_accessions(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A query that is itself in the pool (a published genome typed against its own
+    Nextclade tree) must not be seeded as a reference: it would match itself everywhere."""
+    import logging
+
+    pool_dir = tmp_path / "pool"
+    pool_dir.mkdir()
+    for name in ("QRY1", "REF1", "REF2", "BAD1"):
+        (pool_dir / f"{name}.fasta").write_text(f">{name} A1\nACGT\n")
+    offered: list[str] = []
+
+    def fake_select(params, genomes, logger, **kwargs):
+        from tessera.discover.pool import PoolSelection
+        offered.extend(sorted(g.stem for g in genomes))
+        return PoolSelection(selected=list(genomes))
+
+    monkeypatch.setattr(iterate, "_select_from", fake_select)
+    collection = tmp_path / "collection"
+    collection.mkdir()
+    params = FillParams(query=pool_dir / "QRY1.fasta", collection=None, output=tmp_path / "out",
+                        seed_source="local", candidate_pool=pool_dir)
+    iterate._seed_from_pool(params, collection, logging.getLogger("tessera.test"),
+                            exclude={"QRY1", "BAD1"})
+    assert offered == ["REF1", "REF2"]
+    assert sorted(p.stem for p in collection.iterdir()) == ["REF1", "REF2"]
 
 
 # --- the round structure: what is aligned, and when the panel is curated ----------

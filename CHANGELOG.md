@@ -32,6 +32,12 @@ Data safety and alignment:
   concurrent jobs is limited by physical memory. Alignments of backbones over 20 kb may
   differ; on the measles, Ebola virus and SARS-CoV-2 pairs checked they were identical.
   `--aligner-arg sixmerpair=false` restores the earlier mode.
+- **Pool seeding ignored the exclusion list.** With `--seed-source nextclade`, `ncbi-virus`
+  or `local`, the query's own record and any `--exclude` accession were still offered to
+  panel selection. A query that is itself in the pool could be seeded as its own
+  reference, which either stopped the run ("Two inputs share the label") or, under a
+  different file name, gave the scan a reference identical to the query. Excluded
+  accessions are now removed from the pool before selection.
 - **`reassort` never applied its alignment-fraction filter.** The threshold was written as a
   fraction (0.5) and compared with skani's percentage, so a tip aligning over a fifth of a
   segment could outrank a full-length match and become the segment's nearest strain. The
