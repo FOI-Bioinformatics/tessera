@@ -182,6 +182,14 @@ def test_corroborating_intervals_require_a_significant_phi() -> None:
     assert corroborating_intervals(_signal(0.40, intervals), alpha=0.05) == []
 
 
+def test_corroborating_intervals_of_an_untestable_signal() -> None:
+    # "Not testable" is not "significant": no interval is corroborated. The window cap
+    # keeps recombination_signal clear of this state, so it is built by hand.
+    untestable = RecombinationSignal(n_informative=24, phi_p=None, phi_observed=0.5,
+                                     phi_window=100, rmin=2, rmin_intervals=[(10, 20)])
+    assert corroborating_intervals(untestable, alpha=0.05) == []
+
+
 def test_corroborating_intervals_without_a_signal() -> None:
     assert corroborating_intervals(None, alpha=0.05) == []
 

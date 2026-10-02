@@ -269,7 +269,8 @@ PHI asks whether *nearby* sites are more compatible than a random reordering, an
 informative sites a 100-rank window gave p = 1 on an alignment whose tract every caller
 found, where a 15-rank window gives p = 0.001. Alignments with a thousand informative
 sites or more are unaffected. The report and `recombination_profile.tsv` state the
-window that was used.
+window that was used. The per-site profile is smoothed over the same window, so on an alignment
+with few informative sites it is close to the raw per-site values.
 
 The PHI p-value is judged at the run's `--alpha`, in the report and for the per-region
 flag alike. If every pair of sites fell inside one window, reordering the sites could not

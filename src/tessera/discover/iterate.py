@@ -17,7 +17,6 @@ from __future__ import annotations
 import html
 import logging
 import shutil
-from collections.abc import Collection
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -627,7 +626,7 @@ def _seed_collection(
     if not query_records:
         raise UserInputError(f"Query FASTA {params.query} has no sequence to search with.")
     if params.seed_source in ("local", "ncbi-virus", "nextclade"):
-        _seed_from_pool(params, collection, logger, exclude=exclude)
+        _seed_from_pool(params, collection, logger)
         return
     query_seq = query_records[0][1].replace("-", "")
     if params.seed_mode == "whole":
@@ -652,7 +651,7 @@ def _seed_collection(
             "BLAST seeding recruited only siblings of the query (its lineage saturates "
             "NCBI); switching to NCBI Virus taxonomy diversity to recruit the parents..."
         )
-        _seed_from_pool(params, collection, logger, force_ncbi=True, exclude=exclude)
+        _seed_from_pool(params, collection, logger, force_ncbi=True)
         return
     if not accessions:
         return  # caller reports that nothing could be seeded
@@ -668,15 +667,39 @@ def _seed_collection(
     logger.info("Seeded %d reference(s) to start from.", seeded)
 
 
+def _record_key(name: str) -> str:
+    """``name`` without an accession version suffix (``MG572182.1`` -> ``MG572182``).
+
+    Only a trailing ``.<digits>`` on an otherwise dot-free name that holds a digit is
+    taken for a version, so lineage names (``BA.2.86``, ``B.1``, ``XBB.1.5``) keep theirs:
+    stripping them would make one lineage's name match every other in its family.
+    """
+    stem, dot, version = name.rpartition(".")
+    if dot and version.isdigit() and "." not in stem and any(c.isdigit() for c in stem):
+        return stem
+    return name
+
+
+def _pool_exclusions(params: FillParams) -> set[str]:
+    """Names a pool genome must not carry: the query's file label, the record named in
+    its FASTA header, and any ``--exclude``."""
+    names = {strip_sequence_extension(params.query.name), *params.exclude}
+    records = read_fasta(str(params.query))
+    if records and records[0][0]:
+        names.add(records[0][0])
+    return {_record_key(n) for n in names if n}
+
+
 def _seed_from_pool(
-    params: FillParams, collection: Path, logger: logging.Logger, *, force_ncbi: bool = False,
-    exclude: Collection[str] = (),
+    params: FillParams, collection: Path, logger: logging.Logger, *, force_ncbi: bool = False
 ) -> None:
     """Seed by regional selection from a genome pool (local directory or NCBI Virus).
 
-    Pool genomes named by an accession in ``exclude`` (the query's own record and any
-    ``--exclude``) are left out before selection: a query that is itself in the pool
-    would otherwise be offered as its own reference.
+    A pool genome whose file name is the query's own label or record, or an ``--exclude``
+    accession, is left out before selection: a query that is itself in the pool would
+    otherwise be offered as its own reference. Matching is by file name (pool files are
+    named by accession or tip name); a copy of the query stored under an unrelated name
+    is not recognised here.
     """
     from .pool import iter_pool_genomes
 
@@ -688,14 +711,12 @@ def _seed_from_pool(
         genomes = iter_pool_genomes(params.candidate_pool)
     else:  # ncbi-virus (or auto-switched into it)
         genomes = _fetch_diverse(params, logger)
-    if exclude:
-        kept = [g for g in genomes
-                if _base_accession(strip_sequence_extension(g.name)) not in exclude]
-        if len(kept) < len(genomes):
-            logger.info("Leaving %d excluded genome(s) out of the pool.",
-                        len(genomes) - len(kept))
-        genomes = kept
-    _copy_into(_select_from(params, genomes, logger).selected, collection, logger)
+    excluded = _pool_exclusions(params)
+    kept = [g for g in genomes
+            if _record_key(strip_sequence_extension(g.name)) not in excluded]
+    if len(kept) < len(genomes):
+        logger.info("Leaving %d excluded genome(s) out of the pool.", len(genomes) - len(kept))
+    _copy_into(_select_from(params, kept, logger).selected, collection, logger)
 
 
 def _fetch_nextclade(params: FillParams, logger: logging.Logger) -> list[Path]:

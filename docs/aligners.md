@@ -22,14 +22,18 @@ backbone coordinates, so material inserted relative to the backbone is dropped -
 included, which runs with `--keeplength`.
 
 Memory with `mafft`: by default each genome is added with a pairwise local alignment
-against the backbone, whose memory grows with the product of the two lengths (a few GB
-per genome at 10-30 kb). For a backbone longer than 20 kb Tessera therefore passes
-`--6merpair` (k-mer distances), which keeps memory small; on the closely related genome
-pairs checked (measles, Ebola virus, SARS-CoV-2) the two modes gave the same alignment,
-while a divergent HIV-1 pair differed in 0.3% of columns. `--aligner-arg sixmerpair=true`
-or `sixmerpair=false` overrides the length rule. Below 20 kb, genomes are added
-concurrently only as far as an estimate of the memory needed fits half of the physical
-memory, and `--threads` is shared between the concurrent jobs rather than given to each.
+against the backbone, whose memory grows with the product of the two lengths (1.6-6 GB per
+genome was measured on 8.5-30 kb pairs). When the backbone or any genome to add is longer
+than 20 kb Tessera therefore passes `--6merpair` (k-mer distances), which keeps memory
+small. The two modes were compared on one genome pair each: SARS-CoV-2 (30 kb, the only
+one above the threshold), measles and Ebola virus gave the same alignment, and a divergent
+HIV-1 pair differed in 0.3% of columns; no comparison exists at mpox size, where the
+pairwise mode did not complete. `--aligner-arg sixmerpair=true` or `sixmerpair=false`
+overrides the length rule. Below 20 kb, genomes are added concurrently only as far as an
+estimate of the memory needed fits half of the physical memory, and `--threads` is shared
+between the concurrent jobs rather than given to each. The estimate uses the host's
+physical memory; under a container or scheduler memory limit lower `--threads` or pass
+`sixmerpair=true`.
 
 A multi-contig backbone is laid out as the concatenation of its contigs in the order of
 its FASTA file (`sibeliaz`, `mafft`, `minimap2`, `progressivemauve`); a contig that nothing

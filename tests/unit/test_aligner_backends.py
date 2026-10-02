@@ -311,6 +311,63 @@ def test_mafft_kmer_jobs_are_not_limited_by_memory(monkeypatch, tmp_path: Path) 
     assert {cmd[cmd.index("--thread") + 1] for cmd in commands} == {"1"}
 
 
+def _mafft_long_query_commands(monkeypatch, tmp_path: Path, *, memory: int) -> list[list[str]]:
+    """A short backbone with two genomes to add, one of them 40 kb."""
+    commands: list[list[str]] = []
+
+    def fake_run(caps, cmd, **kw):
+        commands.append([str(c) for c in cmd])
+        kw["stdout_path"].write_text(">ref\n" + "ACGT" * 2000 + "\n>added\n" + "ACGT" * 2000 + "\n")
+        return ""
+
+    monkeypatch.setattr(mafft_mod, "run_tool", fake_run)
+    monkeypatch.setattr(mafft_mod, "_physical_memory", lambda: memory)
+    ref = tmp_path / "ref.fasta"
+    ref.write_text(">ref\n" + "ACGT" * 2000 + "\n")          # 8 kb
+    long_qry = tmp_path / "long.fasta"
+    long_qry.write_text(">long\n" + "ACGT" * 10_000 + "\n")  # 40 kb
+    short_qry = tmp_path / "short.fasta"
+    short_qry.write_text(">short\n" + "ACGT" * 2000 + "\n")
+    mafft_mod.MafftAligner().align([ref, long_qry, short_qry], ref, tmp_path / "out",
+                                   AlignParams(threads=2), _LOG)
+    return commands
+
+
+def test_mafft_length_rule_counts_the_genomes_being_added(monkeypatch, tmp_path: Path) -> None:
+    """Pairwise memory grows with backbone length times added-sequence length, so a long
+    genome added to a short backbone needs k-mer distances as well."""
+    commands = _mafft_long_query_commands(monkeypatch, tmp_path, memory=64 * 2**30)
+    assert len(commands) == 2
+    assert all("--6merpair" in cmd for cmd in commands)
+
+
+def test_mafft_memory_estimate_uses_the_longest_added_sequence(
+    monkeypatch, tmp_path: Path
+) -> None:
+    # 8 kb backbone, 18 kb added genome: pairwise mode, estimated at 24 * 8e3 * 18e3
+    # = 3.5 GB per job. Half of 6 GB holds one such job; an 8 kb x 8 kb estimate
+    # (1.5 GB) would have allowed two.
+    commands: list[list[str]] = []
+
+    def fake_run(caps, cmd, **kw):
+        commands.append([str(c) for c in cmd])
+        kw["stdout_path"].write_text(">ref\n" + "ACGT" * 2000 + "\n>added\n" + "ACGT" * 2000 + "\n")
+        return ""
+
+    monkeypatch.setattr(mafft_mod, "run_tool", fake_run)
+    monkeypatch.setattr(mafft_mod, "_physical_memory", lambda: 6 * 2**30)
+    ref = tmp_path / "ref.fasta"
+    ref.write_text(">ref\n" + "ACGT" * 2000 + "\n")
+    genomes = [ref]
+    for name, n in (("a", 4500), ("b", 2000)):
+        qry = tmp_path / f"{name}.fasta"
+        qry.write_text(f">{name}\n" + "ACGT" * n + "\n")
+        genomes.append(qry)
+    mafft_mod.MafftAligner().align(genomes, ref, tmp_path / "out", AlignParams(threads=2), _LOG)
+    assert all("--6merpair" not in cmd for cmd in commands)
+    assert {cmd[cmd.index("--thread") + 1] for cmd in commands} == {"2"}  # one job at a time
+
+
 def test_merge_added_fragments_ignores_reversed_name_prefix(tmp_path: Path) -> None:
     # `mafft --adjustdirection` renames a record it reverse-complemented to `_R_<name>`.
     # The merge is positional (first record = reference, the rest = contigs), so the

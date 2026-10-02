@@ -27,17 +27,20 @@ Data safety and alignment:
 - **The MAFFT backend could exhaust memory on long genomes.** `--addfragments` ran a
   pairwise local alignment whose memory grows with the product of the two lengths, and
   `--threads N` started N such jobs with N threads each: a 200 kb mpox pair passed 100 GB.
-  A backbone longer than 20 kb is now aligned with `--6merpair` (0.09 GB for the same
-  pair), `--threads` is shared between concurrent jobs, and below 20 kb the number of
-  concurrent jobs is limited by physical memory. Alignments of backbones over 20 kb may
-  differ; on the measles, Ebola virus and SARS-CoV-2 pairs checked they were identical.
-  `--aligner-arg sixmerpair=false` restores the earlier mode.
+  When the backbone or a genome to add is longer than 20 kb the alignment now uses
+  `--6merpair` (0.09 GB for the same pair), `--threads` is shared between concurrent jobs,
+  and below 20 kb the number of concurrent jobs is limited by physical memory. Alignments
+  above 20 kb may differ from before: the one pair compared in that range (SARS-CoV-2)
+  was identical, and nothing could be compared at mpox size. Below the threshold the mode
+  is unchanged. `--aligner-arg sixmerpair=false` restores the earlier mode.
 - **Pool seeding ignored the exclusion list.** With `--seed-source nextclade`, `ncbi-virus`
   or `local`, the query's own record and any `--exclude` accession were still offered to
   panel selection. A query that is itself in the pool could be seeded as its own
-  reference, which either stopped the run ("Two inputs share the label") or, under a
-  different file name, gave the scan a reference identical to the query. Excluded
-  accessions are now removed from the pool before selection.
+  reference, which stopped the run ("Two inputs share the label") or gave the scan a
+  reference identical to the query. Pool genomes whose file name is the query's label,
+  the record in its header, or an `--exclude` accession are now left out before
+  selection. Matching is by file name, so a copy of the query stored under an unrelated
+  name is still not recognised.
 - **`reassort` never applied its alignment-fraction filter.** The threshold was written as a
   fraction (0.5) and compared with skani's percentage, so a tip aligning over a fifth of a
   segment could outrank a full-length match and become the segment's nearest strain. The
