@@ -7,9 +7,13 @@ All notable changes to Tessera are recorded here. The format follows
 ## [Unreleased]
 
 Fixes from the post-1.2.0 audit
-(`docs/superpowers/specs/2026-10-01-post-1.2.0-audit-design.md`, items A1-A10 and B1-B11).
-For a given alignment the callers find the same regions, with the same coordinates and
-p-values, as before. Three things around them do change: the `donor_undercovered` flag and
+(`docs/superpowers/specs/2026-10-01-post-1.2.0-audit-design.md`, items A1-A10, B1-B11 and
+C1-C5, C7, C8). The data-safety and reporting fixes (A, B) leave the callers alone: for a
+given alignment they find the same regions, with the same coordinates and p-values, as
+before. The caller-behaviour changes (C) do not: HMM region coordinates, the HMM's part on
+near-identical panels, 3SEQ/MaxChi tract starts, very small 3SEQ p-values and the PHI
+p-value can differ, as listed under "Callers" and "Changed" below. Three further things
+around the callers change: the `donor_undercovered` flag and
 donor-absent rows where a coverage gap is now recognised as a breakpoint artefact; runs
 that select the barcode caller on a panel where it cannot run (it no longer counts toward
 `--min-methods`, and a barcode-only run is refused); and what reaches the scan -- an
@@ -134,7 +138,9 @@ Reporting:
 - **A PHI test that could not reject was reported as "no signal".** With no more
   informative sites than the window can hold (`--phi-window`, default 100) the permutation
   p-value is 1 for any data. This is now reported as `not testable` (`NA` in the
-  `recombination_profile.tsv` header, `phi_p = None` in the API).
+  `recombination_profile.tsv` header, `phi_p = None` in the API). With the cap on the
+  PHI window (see "Changed") a scan no longer reaches this state; the report wording and
+  the `None` value remain for it.
 - Plots labelled a donor-absent region "recombinant: <backbone>"; `similarity_pair` showed
   the two leading window winners rather than the major parent and the leading donor; with
   `--top-n 1` the donor was drawn grey.
@@ -150,15 +156,63 @@ Reporting:
   commands read, and like them rejects a file in the collection that is not FASTA, where it
   used to skip it); a multi-line aligner error broke `segment_scan.tsv`.
 
+Callers:
+
+- A 3SEQ or MaxChi tract started at the first maximum of the discriminating-site walk
+  before its trough, not the last, so it could begin a few sites early and include a
+  stretch that is not donor tract. MaxChi's permutation null follows the same rule.
+- Exact 3SEQ p-values below about 1e-16 were written as `0.0`. They now keep their
+  magnitude, and the donor choice among such p-values no longer falls to a tie.
+- The ensemble merge could label a region with the same genome as donor and major when
+  the callers disagreed on the backbone, and could report one donor lineage as two
+  overlapping regions on a typed panel.
+
 ### Changed
 
+- **HMM region coordinates are the span the donor explains, not the HMM segment.** A
+  segment ran on through columns where donor and major are identical (a 600 bp difference
+  was reported as 11.7 kb when a sibling recombinant was in the panel; now 1.0 kb) and its
+  ends sat on the window grid. The reported span now runs from the first to the last site
+  in the segment where the query matches the donor and not the major, and reaches the
+  alignment end for a terminal tract. **`msa_start`, `msa_end`, `query_start`,
+  `query_end`, `length_bp`, `mean_sim_minor` and `mean_sim_major` change for regions the
+  HMM called**; which regions are called, and their p-values, do not. On the curated
+  validation set six HMM rows moved by 10-776 bp; one end (`hcv_2k1b`, 3127 to 3113) moved
+  14 bp further from the published breakpoint.
+- **On near-identical panels the HMM can contribute again.** Lineage clustering pooled an
+  entire panel less than about 1.5 % divergent into one lineage, leaving the HMM a single
+  state. Under informative-site windowing the pairwise agreement is now measured on the
+  informative columns. On simulated panels of this kind the HMM joined the call of the
+  tract in 10 of 10 runs (0 of 10 before), and on clonal ones the HMM alone reported a
+  false region in 1 of 20 runs at `--min-methods 1` (0 of 20 before, and 0 of 20 at
+  `--min-methods 2`). On one hybrid-harness case (SARS-CoV-2, 0.4 % divergent) the HMM no
+  longer joins the 3SEQ call, which is still reported.
+- **The PHI window is capped at a tenth of the informative sites.** `--phi-window` is an
+  upper bound; the report states the window used. With the fixed 100-rank window the test
+  could not reject on alignments with few informative sites (p = 1 on the shipped
+  `divergent` example, now 0.001). **The PHI p-value, and with it the
+  `parent_free_support` flag, can change on any alignment with fewer than 1000 informative
+  sites**; the per-site PHI profile is smoothed over the same, narrower, window.
+  Alignments with 1000 or more informative sites are unaffected. On the Jaya 2023
+  benchmark 13 of 185 testable recombining alignments are significant (8 of 73 before:
+  more alignments are testable, and the share significant is 7 % against 11 %), with
+  specificity 36/36 (16/16 before); 2 of 40 clonal simulations have p < 0.05.
 - `RecombinationSignal.phi_p` is `float | None`.
 - `seaborn` is no longer a dependency; nothing imported it.
+
+### Added
+
+- `validation/run_regimes.py`: a self-contained harness for near-identical panels and
+  sibling tracts, the two regimes the specificity harness does not sample.
+- `validation/characterise_false_regions.py`, and a decision record on the false-positive
+  rate at the default agreement gate
+  (`docs/superpowers/specs/2026-10-01-min-methods-default-decision.md`).
 
 ### Documentation
 
 - `docs/detection-methods.md` describes lineage clustering (including its limit on panels
-  below about 1.5 % divergence), the `breakpoint` coverage kind and the untestable-PHI case.
+  below about 1.5 % divergence under base-pair windowing), the `breakpoint` coverage kind,
+  the reported span of an HMM region and the PHI window cap.
 - `validation/README.md` states that the specificity harness defaults to `--min-methods 2`
   while the CLI defaults to 1, gives the measured rate at each, and records that
   `hcv_clonal_1b` currently fails.
