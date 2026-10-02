@@ -15,6 +15,7 @@ validation/
   run_validation.py    build MSA + run recomb per dataset, check, print a table
   run_benchmark.py     PHI/Rmin power+specificity on a published simulated set
   run_specificity.py   false-positive RATE on simulated clonal data (no aligner needed)
+  run_regimes.py       near-identical panels and sibling tracts, simulated (no aligner needed)
   run_caller_benchmark.py  region callers on the Jaya 2023 grid (per-query power/FP)
   run_coalescent_benchmark.py   Posada & Crandall coalescent design (msprime)
   run_recombinhunt_benchmark.py RecombinHunt noise-robustness of breakpoint detection
@@ -79,6 +80,28 @@ explain, and quote the `--min-methods 1` row when describing what a default run 
 replicate counts carry real sampling error -- hence the intervals. These numbers
 establish whether a failure mode exists and roughly how large it is, not its exact
 magnitude on real panels.
+
+## Regimes the other harnesses do not sample
+
+`run_regimes.py` simulates two situations that fall outside `run_specificity.py`, whose
+clades are about 16 % apart and so always run under base-pair windowing:
+
+| regime | what it asks |
+|---|---|
+| `near_identical` with a tract | references about 0.2 % apart (the mpox / VZV regime, analysed under informative-site windowing): is the tract found, and is the HMM among the callers? |
+| `near_identical` clonal | the same panel with nothing recombined: every region is a false positive |
+| `sibling_tract` | the panel holds a sibling recombinant whose tract runs 600 bp past the query's; downstream of those 600 bp the donor and the backbone are identical, so nothing marks where the region ends |
+
+It defaults to `--min-methods 1`, the CLI default, so it reports what a user gets; pass
+`--min-methods 2` for the agreement gate and `--no-cluster-lineages` to switch lineage
+clustering off. Like the specificity harness it needs no aligner, network or data.
+
+```
+python validation/run_regimes.py --reps 3      # quick look
+```
+
+The same caveat applies: a star tree under JC69 and a handful of replicates show whether a
+failure mode exists, not how large it is on real panels.
 
 ## Prerequisites
 
