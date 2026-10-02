@@ -28,10 +28,11 @@ from statistics import mean
 from ..core.errors import UserInputError
 from .analyze import AnalysisResult, rank_datasets
 from .clusters import all_singletons, cluster_references, clustered_view
-from .hmm import DEFAULT_JUMP_RATE, segment_query
+from .hmm import DEFAULT_JUMP_RATE, Segment, segment_query
 from .siblings import SiblingEvidence, sibling_aware_states
 from .similarity import WindowSimilarity, discordant_counts, region_identity
 from .stats import benjamini_hochberg, sign_test_pvalue
+from .threeseq import triplet_steps
 
 # The region callers, in canonical (display) order; the single source of truth for the
 # valid ``--method`` set. The default ensemble runs the four statistical callers and
@@ -316,32 +317,24 @@ def _call_regions_hmm(
         if q > params.alpha:
             continue
         support = favor_minor / (favor_minor + favor_major)
-        if work.window_spans:
-            # Informative-site windowing: the per-window values are identity at
-            # polymorphic columns only, far below the identity over all columns (a
-            # 99 %-identical donor can sit near 0.8). Reporting their mean as the
-            # region's similarity would misstate it, and the coverage check compares
-            # this value against a base-pair threshold. Use identity over the region's
-            # columns, the same quantity the site-based callers report.
-            mean_minor = region_identity(
-                work.rows, work.query, seg.state, seg.msa_start, seg.msa_end
-            )
-            mean_major = region_identity(
-                work.rows, work.query, major, seg.msa_start, seg.msa_end
-            )
-        else:
-            idx = range(seg.start_window, seg.end_window + 1)
-            minor_sims = [work.similarities[seg.state][i] for i in idx
-                          if not isnan(work.similarities[seg.state][i])]
-            major_sims = [work.similarities[major][i] for i in idx
-                          if not isnan(work.similarities[major][i])]
-            mean_minor = mean(minor_sims) if minor_sims else float("nan")
-            mean_major = mean(major_sims) if major_sims else float("nan")
+        # The segment is where the HMM path sat in the donor state, which is not the
+        # same as where the donor is the better match: once in the donor state the path
+        # has no reason to leave while donor and major are identical, and its ends are
+        # only as fine as the window grid. The reported span is the part of the segment
+        # that the distinguishing sites support (see _tract_span). The sign test above
+        # stays on the segment, so which regions are called does not depend on this
+        # step -- only their coordinates do.
+        lo, hi = _tract_span(work, seg, major)
+        # Identity over the reported columns, the same quantity the site-based callers
+        # report, on the same scale under either windowing (the per-window values of
+        # informative-site windowing are identity at polymorphic columns only).
+        mean_minor = region_identity(work.rows, work.query, seg.state, lo, hi)
+        mean_major = region_identity(work.rows, work.query, major, lo, hi)
         regions.append(
             Region(
                 minor_parent=seg.state, major_parent=major,
-                msa_start=seg.msa_start, msa_end=seg.msa_end,
-                query_start=seg.query_start, query_end=seg.query_end,
+                msa_start=lo, msa_end=hi,
+                query_start=work.column_to_query(lo), query_end=work.column_to_query(hi),
                 n_windows=seg.n_windows,
                 mean_sim_minor=round(mean_minor, 4), mean_sim_major=round(mean_major, 4),
                 margin=round(mean_minor - mean_major, 4),
@@ -356,6 +349,30 @@ def _call_regions_hmm(
             )
         )
     return regions, major, dropped
+
+
+def _tract_span(work: WindowSimilarity, seg: Segment, major: str) -> tuple[int, int]:
+    """MSA columns ``[start, end)`` of an HMM segment that its donor actually explains.
+
+    The span from the first to the last site where the query matches the donor and not
+    the major. Columns where the query matches both parents or neither carry no
+    information about which one it was copied from, so they cannot hold a region open:
+    a run of windows in which donor and major are identical is left out, and so is the
+    padding the window grid adds at either end.
+
+    A segment that includes the first (last) window is searched from the alignment
+    start (to its end): window centres stop half a window short of the ends, so a tract
+    reaching an end would otherwise be reported from the first centre.
+
+    Falls back to the segment's own span when no site in it favours the donor.
+    """
+    lo = 0 if seg.start_window == 0 else seg.msa_start
+    hi = work.width if seg.end_window == len(work.positions) - 1 else seg.msa_end
+    steps, cols = triplet_steps(work.rows, work.query, major, seg.state)
+    donor_cols = cols[(steps == -1) & (cols >= lo) & (cols < hi)]
+    if donor_cols.size == 0:
+        return seg.msa_start, seg.msa_end
+    return int(donor_cols[0]), int(donor_cols[-1]) + 1
 
 
 def _call_regions_heuristic(

@@ -71,11 +71,22 @@ recombination between near-identical lineages) is flagged as marginal rather tha
 dropped. The legacy `--method heuristic` (margin / merge-gap / min-region) is kept
 for comparison.
 
+**The reported span is not the segment.** A segment is where the HMM path sat in the
+donor state. Once there, the path has no reason to leave while donor and major are
+identical, and its ends are only as fine as the window grid. The coordinates reported
+for an HMM region therefore run from the first to the last site inside the segment at
+which the query matches the donor and not the major; columns matching both parents or
+neither cannot hold a region open. A segment that includes the first or last window is
+searched to the end of the alignment, so a tract reaching a genome end is reported from
+that end. The sign test, its p-value and `support` are computed on the whole segment, so
+this step changes where a region is drawn and never whether it is called.
+`mean_sim_minor` / `mean_sim_major` are identity over the reported columns.
+
 ```
 Recombination regions (major parent: cowpox_KC813504):
-  Minor parent  Major parent     Query start  Query end  Length(bp)  Sim minor  Sim major  Support  q-value  Breakpoint
-  --------------------------------------------------------------------------------------------------------------------
-  variola       cowpox_KC813504  66268        147150     80882       0.999      0.977      0.97     2e-300   66768
+  Minor parent  Major parent     Query start  Query end  Length(bp)  Sim minor  Sim major  Support  q-value   Breakpoint   Method(s)
+  ---------------------------------------------------------------------------------------------------------------------------------
+  variola       cowpox_KC813504  67252        146829     79577       0.999      0.9796     0.98     7.6e-195  67205-67319  hmm
 ```
 
 ### Near-duplicate references (lineage clustering)
