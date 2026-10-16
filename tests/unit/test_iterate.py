@@ -1167,3 +1167,47 @@ def test_a_user_lineage_map_still_overrides_the_sidecar_on_the_default_path(tmp_
     lineage_map, _ = iterate._type_panel(params, coll, "q", logger)
 
     assert lineage_map == {"OQ1.1": "B.1.617.2"}
+
+
+
+# --- audit 4: a requested curation that never ran is reported (D6) -----------------
+
+def test_a_requested_curation_that_never_ran_is_reported(monkeypatch, tmp_path, caplog):
+    """A freshly seeded panel is not curated before round 1, and a panel with no
+    coverage gap downloads nothing, so curation never runs. The report used to drop its
+    panel section and the log said nothing, which reads as "curated, nothing to drop"."""
+    import logging
+
+    query = tmp_path / "q.fasta"
+    query.write_text(">q\n" + "ACGT" * 100 + "\n")
+    out = tmp_path / "out"
+    _common_mocks(monkeypatch, [([], 0.95)])
+    monkeypatch.setattr(iterate, "skani_available", lambda: True)
+
+    def seed(params, collection, query_records, exclude, logger):
+        for name in ("S1", "S2"):
+            (collection / f"{name}.fasta").write_text(f">{name}\nACGT\n")
+
+    monkeypatch.setattr(iterate, "_seed_collection", seed)
+    sections: dict = {}
+    monkeypatch.setattr(iterate, "run_recomb", lambda p, logger, **kw: sections.update(kw))
+    log = logging.getLogger("fill_loop_test")
+    with caplog.at_level(logging.WARNING, logger="fill_loop_test"):
+        fill_references(FillParams(query=query, collection=None, output=out, curate=True), log)
+
+    assert "Curation (--curate) was requested but did not run" in caplog.text
+    body = dict(sections["extra_sections"])["Reference panel"]
+    assert "was requested but did not run" in body
+    assert not (out / "panel_lineages.tsv").exists()
+
+
+def test_no_curation_note_when_curation_was_not_requested(monkeypatch, tmp_path, logger):
+    """Guard (passes before and after): without --curate there is no panel section."""
+    query, coll, out = _setup(tmp_path)
+    _common_mocks(monkeypatch, [([], 0.95)])
+    sections: dict = {}
+    monkeypatch.setattr(iterate, "run_recomb", lambda p, logger, **kw: sections.update(kw))
+
+    fill_references(FillParams(query=query, collection=coll, output=out), logger)
+
+    assert "Reference panel" not in dict(sections["extra_sections"])

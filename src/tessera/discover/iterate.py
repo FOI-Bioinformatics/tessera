@@ -608,6 +608,16 @@ def _type_panel(
     return lineage_map, query_lineage
 
 
+CURATION_NOT_RUN = (
+    "Curation (--curate) was requested but did not run on this panel. A freshly seeded "
+    "collection is not curated before the first build (seeding applies its own sibling "
+    "filter), and curation then runs only on references a round downloads; this run "
+    "downloaded none that reached it, or found no whole-genome backbone to anchor the "
+    "sibling test. Close relatives of the query that seeding kept may still be in the "
+    "panel, and no panel_lineages.tsv was written."
+)
+
+
 def _report_sections(
     params: FillParams,
     trace: list[RoundResult],
@@ -623,6 +633,12 @@ def _report_sections(
         table = list(panel_rows.values())
         write_panel_tsv(params.output / "panel_lineages.tsv", table, logger, lineage_map)
         extra_sections.append(("Reference panel", panel_table_html(table, lineage_map)))
+    elif params.curate:
+        # A curation that did not run must not read as one that ran and kept everything.
+        logger.warning(CURATION_NOT_RUN)
+        extra_sections.append(
+            ("Reference panel", f'<p class="cap">{html.escape(CURATION_NOT_RUN)}</p>')
+        )
     # For a recombinant SARS-CoV-2 query, list the Pango-designated parents alongside
     # the recruited ones as a cross-check (best-effort; needs the cached alias key).
     if params.report and query_lineage and query_lineage.split(".")[0].startswith("X"):

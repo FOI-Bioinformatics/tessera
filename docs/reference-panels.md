@@ -296,8 +296,11 @@ The same curation runs inside the fill loop with `fill-references --curate`, and
 working collection holds genomes that have not been through it: the collection you
 supplied (before round 1), and each round's downloads (before the next build). A panel
 seeded from scratch is not curated before round 1, because seeding applies its own sibling
-filter. With `--reference`, that genome is never removed by curation; the sibling test
-stays anchored on the query's closest whole-genome relative, which the log names.
+filter; if no round then downloads anything (a seeded panel with no coverage gap),
+curation does not run at all. The log and the report's "Reference panel" section then say
+so, and no `panel_lineages.tsv` is written. With `--reference`, that genome is never
+removed by curation; the sibling test stays anchored on the query's closest whole-genome
+relative, which the log names.
 
 One limit: because the anchor is the closest whole-genome relative, a sibling that is
 itself the closest genome in the collection becomes the anchor and is kept. Curation then

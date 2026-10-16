@@ -238,6 +238,10 @@ Panel recruitment (fourth audit):
   NCBI Virus lineages recorded during recruitment in `ncbi_lineages.tsv`; names without a
   digit-bearing token of four or more characters (`B.1`, `A`, `XBB`) were lost and those
   genomes skipped lineage-aware handling. Both typing paths now read the sidecar.
+- When `--curate` was requested (always, for `detect` and `build-panel`) but never ran --
+  a seeded panel with no coverage gap downloads nothing for it to curate -- the run wrote
+  no panel table and no log line. The log and the report's "Reference panel" section now
+  state that curation did not run.
 
 ### Changed
 
