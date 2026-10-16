@@ -68,6 +68,9 @@ When a gap is found, `tessera find-references` searches NCBI for the missing gen
 it BLASTs the under-covered query subsequence against `nt`, reports candidate
 references (accession, identity, whether already in your collection), and -- with
 `--download` -- fetches the best new one into a collection directory to re-run with.
+Every candidate is listed in `candidate_references.tsv`; one is downloaded per gap,
+the one with the highest identity over the sub-interval it was found in (identity times
+query coverage, so a short perfect match does not outrank a hit that spans it).
 
 ```
 tessera find-references --msa msa.fasta --query my_query \
@@ -84,8 +87,10 @@ A gap longer than `--subtile` (default 400 bp) is searched in overlapping
 sub-intervals, not as one subsequence. A short divergent tract inside a longer gap is
 otherwise diluted by the gap's high-matching flanks: one whole-gap BLAST returns the
 flanks' donor and hides the tract's. (On a norovirus capsid gap this is the difference
-between recruiting only the flank reference and also recruiting the divergent core's
-distinct donor.) Resolution has two levers: `--window-size` controls whether a short
+between finding only the flank reference and also finding the divergent core's distinct
+donor. Both are listed as candidates; one reference is downloaded per gap per run, and
+`fill-references` can take another in a later round, when what remains of the gap is
+searched again.) Resolution has two levers: `--window-size` controls whether a short
 region is *detected* as a gap at all (a wide window averages it away), and `--subtile`
 controls whether its donor is *found* once detected. Set `--subtile 0` to disable;
 very short intervals (< ~150 bp) lose BLAST specificity.
@@ -304,6 +309,12 @@ already in the download directory are compared against but kept, and appear in
 `panel_lineages.tsv` as `sibling-kept` or `redundant-kept` if curation would otherwise
 have dropped them. Both need skani (and skDER for dereplication):
 `conda install -c bioconda skani skder`.
+
+Because one reference is downloaded per gap, a gap whose best candidate is a sibling of
+the query is left without a new reference once curation removes it; its other
+candidates are in `candidate_references.tsv`. Inside `fill-references --curate` (and
+`detect`, which curates) a genome curation removes is excluded from later searches,
+and the next round takes the gap's next candidate.
 
 ## Make a collection lineage-ready (`type-lineages`)
 

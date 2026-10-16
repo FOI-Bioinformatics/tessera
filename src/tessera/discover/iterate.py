@@ -404,15 +404,27 @@ def _grow_collection(
     curate_pending = params.curate and params.collection is not None
     backbone: Path | None = None
     pending_round: RoundResult | None = None  # the round whose downloads await curation
+    # Set when curation removed every reference the previous round downloaded: the next
+    # build then sees the panel the last one saw, and an unchanged shortfall says nothing
+    # about whether a further search could help.
+    all_added_curated_away = False
 
     def curate_if_pending() -> None:
-        nonlocal curate_pending, pending_round
+        nonlocal curate_pending, pending_round, all_added_curated_away
         if not curate_pending:
             return
         _curate_round(params, collection, backbone, panel_rows, logger)
+        # A genome curation removed would otherwise be found and downloaded again by
+        # every later search, in place of the gap's next candidate.
+        exclude.update(
+            _base_accession(row["genome"]) for row in panel_rows.values()
+            if row["role"].endswith("-dropped")
+        )
         if pending_round is not None:
             kept = _labels(collection)
-            pending_round.added = [a for a in pending_round.added if a in kept]
+            downloaded = pending_round.added
+            pending_round.added = [a for a in downloaded if a in kept]
+            all_added_curated_away = bool(downloaded) and not pending_round.added
         curate_pending, pending_round = False, None
 
     for rnd in range(1, params.max_rounds + 1):
@@ -454,7 +466,13 @@ def _grow_collection(
         # Judged on the shortfall, not on the worst gap: only the --top-gaps longest gaps
         # are searched, so a short gap outside that set held the worst-gap similarity
         # still and stopped the loop while the searched gaps were improving.
-        if (
+        if all_added_curated_away:
+            logger.info(
+                "Curation removed every reference the last round added; searching again "
+                "with them excluded."
+            )
+            all_added_curated_away = False
+        elif (
             prev_shortfall is not None
             and (prev_shortfall - shortfall) < params.min_improvement * prev_shortfall
         ):

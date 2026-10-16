@@ -943,3 +943,81 @@ def test_fill_summary_records_the_coverage_shortfall(monkeypatch, tmp_path, logg
     header, first, _ = (out / "fill_summary.tsv").read_text().splitlines()
     row = dict(zip(header.split("\t"), first.split("\t"), strict=True))
     assert row["coverage_shortfall"] == "50.0"  # 500 bp x (0.94 - 0.84)
+
+
+# --- audit 4: how many genomes one round may add (D1) ------------------------------
+
+def test_a_round_adds_at_most_one_reference_per_searched_gap(monkeypatch, tmp_path, logger):
+    """Two 1000 bp gaps, each searched in four sub-intervals of 400 bp returning five
+    hits each: the real collect_candidates and _download, with BLAST and efetch mocked."""
+    from tessera.discover import run as discover_run
+
+    query, coll, out = _setup(tmp_path)
+    _common_mocks(monkeypatch, [([_sized_gap(0, 1000, 0.8), _sized_gap(2000, 1000, 0.8)],
+                                 0.94), ([], 0.95)])
+    monkeypatch.setattr(iterate, "read_fasta", lambda path: [("q", "ACGT" * 1000)])
+    calls = iter(range(1000))
+
+    def fake_blast(seq, *, max_hits, logger, email=None, cache_dir=None, **kw):
+        n = next(calls)
+        return [Hit(f"H{n}_{k}", "t", 90.0 - k, 95.0, 1e-9) for k in range(max_hits)]
+
+    fetched: list[str] = []
+
+    def fake_efetch(accession, dest, logger):
+        fetched.append(accession)
+        (dest / f"{accession}.fasta").write_text(f">{accession}\nACGT\n")
+        return dest / f"{accession}.fasta"
+
+    monkeypatch.setattr(discover_run, "blast_subsequence", fake_blast)
+    monkeypatch.setattr(discover_run, "efetch_fasta", fake_efetch)
+
+    trace = fill_references(
+        FillParams(query=query, collection=coll, output=out, top_gaps=2, max_hits=5),
+        logger,
+    )
+
+    assert next(calls) == 8  # 2 gaps x 4 sub-intervals were searched
+    assert len(trace[0].added) == 2
+    assert fetched == trace[0].added
+
+
+def test_a_download_removed_by_curation_is_excluded_and_searched_past(
+    monkeypatch, tmp_path, logger
+):
+    """With one reference per gap, the best hit for a gap is often a sibling of the query,
+    which curation then removes. The removed genome is excluded from later searches, and
+    a round built from an unchanged panel is not read as a stall: the next round
+    searches again and recruits the gap's next candidate."""
+    from tessera.discover import run as discover_run
+
+    query, coll, out = _setup(tmp_path)
+    _common_mocks(monkeypatch, [([_gap(0.80)], 0.94), ([_gap(0.80)], 0.94)])
+    excluded_per_round: list[set[str]] = []
+
+    def collect(targets, query_row, existing, *, exclude, **kw):
+        excluded_per_round.append(set(exclude))
+        hits = [] if "SIB" in exclude else [Hit("SIB", "sibling", 99.0, 98.0, 0.0)]
+        return [Candidate(targets[0], h, False)
+                for h in hits + [Hit("DONOR", "donor", 88.0, 30.0, 1e-9)]]
+
+    monkeypatch.setattr(iterate, "collect_candidates", collect)
+
+    def fake_efetch(accession, dest, logger):
+        (dest / f"{accession}.fasta").write_text(f">{accession}\nACGT\n")
+        return dest / f"{accession}.fasta"
+
+    monkeypatch.setattr(discover_run, "efetch_fasta", fake_efetch)
+    _fake_skani(monkeypatch, {"refA": (92.0, 95.0), "SIB": (99.0, 98.0),
+                              "DONOR": (88.0, 30.0)})
+
+    trace = fill_references(
+        FillParams(query=query, collection=coll, output=out, curate=True, max_rounds=2),
+        logger,
+    )
+
+    assert [r.added for r in trace] == [[], ["DONOR"]]
+    assert "SIB" not in excluded_per_round[0] and "SIB" in excluded_per_round[1]
+    assert sorted(p.name for p in (out / "collection").iterdir()) == [
+        "DONOR.fasta", "refA.fasta",
+    ]

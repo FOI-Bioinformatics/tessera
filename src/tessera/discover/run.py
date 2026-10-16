@@ -269,26 +269,66 @@ def _print_candidates(candidates: list[Candidate], logger: logging.Logger) -> No
         )
 
 
+def _subinterval_identity(candidate: Candidate) -> tuple[float, float]:
+    """Rank key: identity over the searched sub-interval, then the HSP's own identity.
+
+    ``pct_identity`` is measured over the aligned part only, so a 60 bp HSP at 100 %
+    would outrank a hit that spans the sub-interval at 95 %. Weighting by query coverage
+    counts the unaligned remainder as unmatched.
+    """
+    hit = candidate.hit
+    return (hit.pct_identity * hit.query_coverage / 100.0, hit.pct_identity)
+
+
+def _ranked_new_by_gap(candidates: list[Candidate]) -> list[list[Candidate]]:
+    """The new (not yet held) candidates of each gap, best first, gaps in search order."""
+    by_gap: dict[tuple[int, int], list[Candidate]] = {}
+    for c in candidates:
+        if not c.in_collection:
+            by_gap.setdefault((c.gap.msa_start, c.gap.msa_end), []).append(c)
+    # sorted() is stable, so equal keys keep BLAST's own order.
+    return [sorted(group, key=_subinterval_identity, reverse=True) for group in by_gap.values()]
+
+
 def _download(
     candidates: list[Candidate], dest: Path, logger: logging.Logger
 ) -> list[Candidate]:
-    """Fetch the best new hit per gap (dedup by accession). Returns what was saved."""
-    chosen: dict[str, Candidate] = {}
-    for c in candidates:
-        if not c.in_collection and c.hit.accession not in chosen:
-            chosen[c.hit.accession] = c
-    if not chosen:
+    """Fetch the best new reference per gap. Returns what was saved.
+
+    A gap searched in sub-intervals contributes up to ``--max-hits`` candidates per
+    sub-interval; all of them are reported in ``candidate_references.tsv``, but only the
+    best is downloaded (see :func:`_subinterval_identity`). When that fetch fails the
+    next candidate is tried. A gap whose best candidate was already fetched for an
+    earlier gap is served by it and gets no second reference.
+    """
+    ranked = _ranked_new_by_gap(candidates)
+    if not ranked:
         logger.info("No new references to download (all hits already in the collection).")
         return []
-    logger.info("Downloading %d new reference(s) to %s", len(chosen), dest)
+    logger.info("Downloading the best new reference for each of %d gap(s) to %s",
+                len(ranked), dest)
     downloaded: list[Candidate] = []
-    for accession, candidate in chosen.items():
-        try:
-            out = efetch_fasta(accession, dest, logger)
-            logger.info("  + %s -> %s", accession, out.name)
+    fetched: set[str] = set()
+    failed: set[str] = set()
+    for options in ranked:
+        for candidate in options:
+            accession = candidate.hit.accession
+            if accession in fetched:
+                break  # this gap is served by a reference another gap fetched
+            if accession in failed:
+                continue
+            try:
+                out = efetch_fasta(accession, dest, logger)
+            except Exception as exc:  # noqa: BLE001 - report and try the gap's next candidate
+                logger.warning("  ! failed to download %s: %s", accession, exc)
+                failed.add(accession)
+                continue
+            logger.info("  + %s -> %s (gap query %d-%d, %.1f%% identity)",
+                        accession, out.name, candidate.gap.query_start,
+                        candidate.gap.query_end, candidate.hit.pct_identity)
+            fetched.add(accession)
             downloaded.append(candidate)
-        except Exception as exc:  # noqa: BLE001 - report and continue the batch
-            logger.warning("  ! failed to download %s: %s", accession, exc)
+            break
     return downloaded
 
 

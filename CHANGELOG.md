@@ -225,9 +225,20 @@ Panel recruitment (fourth audit):
 - `fill-references` stopped after round 2 whenever there were more coverage gaps than
   `--top-gaps`: the stop test watched the worst gap, while the search reached only the
   longest ones, so an unsearched short gap held the measure still.
+- The fill loop re-downloaded, every round, the genomes curation had just removed, because
+  they were never added to the exclusion list. They now are.
 
 ### Changed
 
+- **One new reference is downloaded per coverage gap**, as documented. Every sub-interval
+  search contributed all of its hits, so at the defaults one round could add up to 20
+  genomes for a 1000 bp gap and 145 for a 6 kb gap, all of which went into the next
+  alignment. The best candidate is the one with the highest identity over the searched
+  sub-interval; `candidate_references.tsv` still lists them all. This applies to
+  `find-references --download`, `fill-references`, `detect` and `build-panel`. With
+  `--curate`, a gap whose best candidate is a sibling of the query gets its next
+  candidate in the following round rather than in the same one; `find-references`, which
+  runs once, leaves such a gap without a download.
 - **The fill loop stops on the coverage shortfall.** A round must reduce the under-covered
   length, weighted by how far each gap falls below the threshold, by at least
   `--min-improvement` of the previous round's value. **`--min-improvement` is now a
