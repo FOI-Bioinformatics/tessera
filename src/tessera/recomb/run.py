@@ -633,6 +633,7 @@ def run_recomb(
             extra_sections=extra_sections, lineage_map=lineage_map,
             query_lineage=query_lineage, signal=signal, organism=params.organism,
             methods_run=params.methods, method_breakdown=method_breakdown, per_major=per_major,
+            major_parent=major_parent,
             not_run=not_run, alpha=params.alpha,
         ),
     )

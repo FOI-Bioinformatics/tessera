@@ -77,12 +77,21 @@ def _not_run_caveat(methods_run: tuple[str, ...], not_run: dict[str, str]) -> st
 
 
 def _summary(
-    result: WindowSimilarity, regions: list[Region], datasets: list[str]
+    result: WindowSimilarity, regions: list[Region], datasets: list[str],
+    major_parent: str | None = None,
 ) -> dict:
-    """Headline numbers: query length, backbone, donor list, recombinant fraction."""
+    """Headline numbers: query length, backbone, donor list, recombinant fraction.
+
+    The backbone is the run's reconciled ``major_parent`` when given, so the verdict and
+    run_provenance.json name the same genome. The first region's major or the leading
+    dataset is only a fallback: with lineage pooling the HMM's major is a cluster's
+    representative, which need not be the reference that wins the most windows.
+    """
     qcum = result.query_cumulative
     query_len = int(qcum[-1]) if len(qcum) else 0
-    if regions:
+    if major_parent:
+        major = major_parent
+    elif regions:
         major = regions[0].major_parent
     elif datasets:
         major = datasets[0]
@@ -159,8 +168,8 @@ def _verdict_html(
                 'below).')
         return f'<p class="verdict">{lead}{q_clause}{_absent_clause(s)}</p>'
     if s["n_regions"] == 0:
-        lead = (f'No recombination among the present references &mdash; the query is most '
-                f'similar to <strong>{major}</strong> throughout.')
+        lead = (f'No recombination among the present references &mdash; the query follows '
+                f'<strong>{major}</strong> (the major parent) throughout.')
         return f'<p class="verdict">{lead}{q_clause}{_absent_clause(s)}</p>'
     donors = ", ".join(
         f'{_swatch(colors.get(m, GREY))}<strong>{html.escape(typed(m, lineage_map))}</strong>'
@@ -670,7 +679,7 @@ def write_html_report(
     # Colour every label a region names, not only the top-N: with --top-n 1 the donor
     # is outside the plotted datasets and its swatch and mosaic segment were grey.
     colors = _color_map(region_labels(datasets, regions))
-    s = _summary(result, regions, datasets)
+    s = _summary(result, regions, datasets, ctx.major_parent)
     untested = bool(ctx.methods_run) and len(ctx.methods_not_run) == len(ctx.methods_run)
     organism_html = (
         f'<div class="organism">{html.escape(ctx.organism)}</div>' if ctx.organism else ""

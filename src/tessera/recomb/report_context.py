@@ -45,6 +45,10 @@ class ReportContext:
     not_run: dict[str, str] = field(default_factory=dict)
     method_breakdown: list[dict] | None = None
     per_major: dict[str, str] | None = None
+    # The run's reconciled major parent -- the one the provenance records and the
+    # region rows are relabelled to. The headline names it; ``None`` when no caller
+    # reported one, and the report then falls back to the leading dataset.
+    major_parent: str | None = None
     # Set only when the scan used informative-site windowing: the per-window identity
     # at polymorphic columns that the HMM segmented, and its analysis. Reported as its
     # own track and file, never under the name "similarity" -- it is on a different
