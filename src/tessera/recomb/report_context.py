@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .analyze import AnalysisResult
-from .coverage import BREAKPOINT_KIND, CoverageGap
+from .coverage import BREAKPOINT_KIND, DIVERGENT_KIND, LOW_INFORMATION_KIND, CoverageGap
 from .diagnostics import RecombinationSignal
 from .similarity import WindowSimilarity
 from .typing import LineageMap
@@ -77,3 +77,18 @@ class ReportContext:
         it out.
         """
         return [g for g in self.gaps if g.kind != BREAKPOINT_KIND]
+
+    @property
+    def missing_reference_gaps(self) -> list[CoverageGap]:
+        """The gaps that may mean a missing reference in the headline: ``divergent`` only.
+
+        A ``low_information`` gap has too few comparable bases to judge -- an unsequenced
+        or masked stretch of the query, say -- so it says nothing about the panel and is
+        given its own note instead of the advice to search for a reference.
+        """
+        return [g for g in self.gaps if g.kind == DIVERGENT_KIND]
+
+    @property
+    def low_information_gaps(self) -> list[CoverageGap]:
+        """The gaps with too few comparable bases to judge."""
+        return [g for g in self.gaps if g.kind == LOW_INFORMATION_KIND]

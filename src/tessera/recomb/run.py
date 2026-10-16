@@ -14,6 +14,8 @@ from ..core.io import strip_sequence_extension
 from ..msa.build import read_provenance
 from .analyze import analyze, winners_per_window
 from .coverage import (
+    DIVERGENT_KIND,
+    LOW_INFORMATION_KIND,
     CoverageParams,
     call_coverage_gaps,
     flag_undercovered_regions,
@@ -503,12 +505,18 @@ def run_recomb(
     n_breakpoint = mark_breakpoint_gaps(
         coverage_gaps, regions, bp_result, params.window_size, coverage_threshold,
     )
-    n_poor = len(coverage_gaps) - n_breakpoint
+    n_poor = sum(1 for g in coverage_gaps if g.kind == DIVERGENT_KIND)
+    n_low_info = sum(1 for g in coverage_gaps if g.kind == LOW_INFORMATION_KIND)
     if n_poor:
         logger.info(
             "Reference coverage: %d region(s) where the closest reference is below "
             "%.3f -- a better reference may be missing.",
             n_poor, coverage_threshold,
+        )
+    if n_low_info:
+        logger.info(
+            "Reference coverage: %d stretch(es) with too few comparable bases to judge "
+            "(e.g. unsequenced); not treated as a missing reference.", n_low_info,
         )
     if n_breakpoint:
         logger.info(

@@ -483,15 +483,34 @@ def _caveat_html(gaps: list[CoverageGap], threshold: float) -> str:
     )
 
 
+def _low_information_html(gaps: list[CoverageGap]) -> str:
+    """A note for stretches with too few comparable bases: uncertain, not a gap in the panel."""
+    if not gaps:
+        return ""
+    n = len(gaps)
+    word = "stretch" if n == 1 else "stretches"
+    verb = "has" if n == 1 else "have"
+    total = sum(max(0, g.query_end - g.query_start) for g in gaps)
+    return (
+        f'<div class="caveat"><span class="ic">&#9888;</span><div>'
+        f'<strong>Too little sequence to judge.</strong> {n} {word} of the query '
+        f'(<span class="mono">{_fmt_kb(total)}</span>) {verb} too few comparable bases '
+        f'to compare with the references, for example an unsequenced or masked stretch. '
+        f'Recombination there could be neither called nor excluded; this is not evidence '
+        f'of a missing reference. See <em>Reference coverage</em> below.</div></div>'
+    )
+
+
 def _coverage_html(gaps: list[CoverageGap], threshold: float) -> str:
     intro = (
         f'<p class="cap">Stretches where even the closest reference is below the '
         f'<span class="mono">{threshold:.3f}</span> best-similarity threshold. '
         f'<strong>divergent</strong> = the query is genuinely far from every reference '
         f'(a likely missing reference); <strong>low information</strong> = too few comparable '
-        f'bases to judge; <strong>breakpoint</strong> = windows straddling a called '
-        f'breakpoint, where the two parents together explain the query (not a missing '
-        f'reference, and not counted in the caveat above).</p>'
+        f'bases to judge (not counted as a missing reference); <strong>breakpoint</strong> = '
+        f'windows beside a called breakpoint in which a single switch between that '
+        f'region\'s two parents reaches the threshold in every under-covered window (not a '
+        f'missing reference, and not counted in the caveat above).</p>'
     )
     if not gaps:
         return (
@@ -675,7 +694,8 @@ def write_html_report(
         f"{organism_html}"
         f"{_verdict_html(s, result.query, colors, lineage_map, ctx.query_lineage, untested)}"
         f"{_not_run_caveat(ctx.methods_run, ctx.not_run)}"
-        f"{_caveat_html(caveat_gaps, threshold)}</header>"
+        f"{_caveat_html(ctx.missing_reference_gaps, threshold)}"
+        f"{_low_information_html(ctx.low_information_gaps)}</header>"
         f"{_cards_html(s, colors, lineage_map)}"
         '<section class="section"><div class="eyebrow">Query mosaic</div>'
         f"{_mosaic_html(regions, colors, s, caveat_gaps, lineage_map)}</section>"
