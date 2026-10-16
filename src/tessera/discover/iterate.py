@@ -437,13 +437,14 @@ def _grow_collection(
     curate_pending = params.curate and params.collection is not None
     backbone: Path | None = None
     pending_round: RoundResult | None = None  # the round whose downloads await curation
-    # Set when curation removed every reference the previous round downloaded: the next
-    # build then sees the panel the last one saw, and an unchanged shortfall says nothing
-    # about whether a further search could help.
-    all_added_curated_away = False
+    # Set to the number of references curation removed from the previous round's downloads
+    # (zero when none): the next build then lacks the replacement for each searched gap
+    # whose download was removed, so its shortfall says little about whether a further
+    # search could help.
+    n_curated_away = 0
 
     def curate_if_pending() -> None:
-        nonlocal curate_pending, pending_round, all_added_curated_away
+        nonlocal curate_pending, pending_round, n_curated_away
         if not curate_pending:
             return
         _curate_round(params, collection, backbone, panel_rows, logger)
@@ -457,7 +458,7 @@ def _grow_collection(
             kept = _labels(collection)
             downloaded = pending_round.added
             pending_round.added = [a for a in downloaded if a in kept]
-            all_added_curated_away = bool(downloaded) and not pending_round.added
+            n_curated_away = len(downloaded) - len(pending_round.added)
         curate_pending, pending_round = False, None
 
     for rnd in range(1, params.max_rounds + 1):
@@ -499,12 +500,12 @@ def _grow_collection(
         # Judged on the shortfall, not on the worst gap: only the --top-gaps longest gaps
         # are searched, so a short gap outside that set held the worst-gap similarity
         # still and stopped the loop while the searched gaps were improving.
-        if all_added_curated_away:
+        if n_curated_away:
             logger.info(
-                "Curation removed every reference the last round added; searching again "
-                "with them excluded."
+                "Curation removed %d reference(s) the last round added; searching again "
+                "with them excluded.", n_curated_away,
             )
-            all_added_curated_away = False
+            n_curated_away = 0
         elif (
             prev_shortfall is not None
             and (prev_shortfall - shortfall) < params.min_improvement * prev_shortfall

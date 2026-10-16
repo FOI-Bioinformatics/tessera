@@ -1023,6 +1023,64 @@ def test_a_download_removed_by_curation_is_excluded_and_searched_past(
     ]
 
 
+class _SiblingOrDonor(dict):
+    """skani table: labels starting with SIB are siblings of the query, others donors."""
+
+    def __missing__(self, key):
+        return (99.0, 98.0) if key.startswith("SIB") else (88.0, 30.0)
+
+
+def _partly_curated_run(monkeypatch, tmp_path, logger, *, max_rounds):
+    """Two gaps; each round downloads one sibling for the first (curated away) and one donor
+    for the second (kept). The gaps never improve, so the shortfall is unchanged."""
+    from tessera.discover import run as discover_run
+
+    query, coll, out = _setup(tmp_path)
+    _common_mocks(monkeypatch, [([_sized_gap(0, 1000, 0.80), _sized_gap(2000, 900, 0.80)], 0.94)]
+                   * (max_rounds + 1))
+    searches: list[int] = []
+
+    def collect(targets, query_row, existing, *, exclude, **kw):
+        n = len(searches)
+        searches.append(n)
+        return [Candidate(targets[0], Hit(f"SIB{n}", "sibling", 99.0, 98.0, 0.0), False),
+                Candidate(targets[1], Hit(f"DONOR{n}", "donor", 88.0, 30.0, 1e-9), False)]
+
+    monkeypatch.setattr(iterate, "collect_candidates", collect)
+
+    def fake_efetch(accession, dest, logger):
+        (dest / f"{accession}.fasta").write_text(f">{accession}\nACGT\n")
+        return dest / f"{accession}.fasta"
+
+    monkeypatch.setattr(discover_run, "efetch_fasta", fake_efetch)
+    _fake_skani(monkeypatch, _SiblingOrDonor({"refA": (92.0, 95.0)}))
+    trace = fill_references(
+        FillParams(query=query, collection=coll, output=out, curate=True,
+                   max_rounds=max_rounds, top_gaps=2),
+        logger,
+    )
+    return trace, searches
+
+
+def test_a_partly_curated_round_is_not_read_as_a_stall(monkeypatch, tmp_path, logger):
+    """Round 1 downloads two references and curation removes one of them. The next round's
+    unchanged shortfall reflects a panel that lacks the removed reference's replacement, so
+    it does not stop the loop."""
+    trace, searches = _partly_curated_run(monkeypatch, tmp_path, logger, max_rounds=2)
+
+    assert searches == [0, 1]  # round 2 searched again instead of stopping
+    assert trace[0].added == ["DONOR0"]
+
+
+def test_consecutive_partly_curated_rounds_still_stop_at_max_rounds(
+    monkeypatch, tmp_path, logger
+):
+    trace, searches = _partly_curated_run(monkeypatch, tmp_path, logger, max_rounds=4)
+
+    assert [r.round for r in trace] == [1, 2, 3, 4]
+    assert searches == [0, 1, 2, 3]
+
+
 # --- audit 4: saturation needs a kept hit (D4) -------------------------------------
 
 @pytest.mark.parametrize(
