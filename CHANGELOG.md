@@ -32,6 +32,11 @@ alignment reaches the scan, not how the scan calls regions:
   and which part depended on the order of the queries. The backbone row is now the
   backbone's own sequence. Checked against a fake of the tool only: progressiveMauve is
   not installed in CI or on the development machine.
+- **The `sibeliaz` backend wrote no alignment on macOS.** Its wrapper uses
+  `paste --delimiters`, which BSD `paste` reads as a file name, and an `xargs -I` command
+  longer than BSD's 255-byte default; either left the MAF without rows, and the adapter
+  reported this as spoa running out of memory. The patched wrapper now rewrites both.
+  Reproduced and checked with SibeliaZ 1.2.7 on macOS; Linux is unaffected.
 
 Data safety and alignment:
 

@@ -419,3 +419,23 @@ def test_copy_collection_accepts_an_empty_existing_directory(tmp_path: Path) -> 
     copy_collection(source, dest)
 
     assert [p.name for p in collection_genomes(dest)] == ["a.fasta"]
+
+
+def test_sibeliaz_bsd_wrapper_rewrites_paste_and_xargs(monkeypatch, tmp_path: Path) -> None:
+    # BSD paste takes no long options and reads '--delimiters' as a file name, so the
+    # wrapper's MAF step wrote headers only and the adapter reported an empty MAF
+    # (blamed on memory) for every input on macOS.
+    wrapper = tmp_path / "sibeliaz"
+    wrapper.write_text(
+        'find $outdir -name "*.tmp" -printf "%p\\n"\n'
+        "paste <(echo \"$header\") <(echo \"$output\") --delimiters ' ' >> \"$alignment_output\"\n"
+        "find $outdir -name \"*.tmp\" | xargs -I @ -P $threads bash -c \"block_align @\"\n"
+    )
+    monkeypatch.setattr(sibeliaz.sys, "platform", "darwin")
+    monkeypatch.setattr(sibeliaz.shutil, "which", lambda name: str(wrapper))
+    cmd = sibeliaz._sibeliaz_invocation(tmp_path, _LOG)
+    patched = Path(cmd[-1]).read_text()
+    assert "--delimiters" not in patched
+    assert "paste -d ' ' <(echo \"$header\") <(echo \"$output\")" in patched
+    # BSD xargs caps an -I replacement at 255 bytes; two absolute paths exceed it.
+    assert "xargs -S 4096 -I @ -P $threads" in patched
