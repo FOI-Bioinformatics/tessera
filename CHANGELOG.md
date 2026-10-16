@@ -254,7 +254,9 @@ Panel recruitment (fourth audit):
   identical genome set. It no longer is. A cache written by an earlier version is keyed
   differently and is fetched once more on first use.
 - Nearest-reference typing took a Nextclade tip labelled `?` for a clade named `?`; it
-  now uses the shared set of "no clade" markers.
+  now uses the shared set of "no clade" markers. The per-clade consensus step in the
+  Nextclade pool builder skipped only `NA`, so tips labelled `?` or `example` each got a
+  consensus genome for a clade that does not exist; it uses the same set.
 
 ### Changed
 
