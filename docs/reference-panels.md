@@ -373,7 +373,7 @@ datasets, so the per-segment nearest strains can be compared. The call is pairwi
 coverage-aware: two segments are concordant when a strain is near-best (within `--margin` ANI
 percentage points, default 0.5; the accepted range is above 0 and at most 5, because a window wide enough to span the candidates' ANI spread makes every pair concordant and every query clonal, and a zero window turns a tie-break between two tips into different parents; the cap is a fixed sanity bound, not a calibrated optimum. `--ani-floor` is a percentage too; a value of 1 or below is rejected as a likely fraction) for both, discordant when a near-best parent of one is typed in the other's
 tree but not near-best there (different parents), and uninformative when neither's near-best parents
-appear in the other's tree. A query is `reassortant` when any pair is discordant, `clonal` when the
+appear in the other's tree. A query is `reassortant` when any pair is discordant and the discordant segments fall in different parent groups, `clonal` when the
 concordant pairs link every segment to one parent, and `undetermined` when cross-typing is too
 sparse to decide. Treating missing cross-typing as "cannot tell" rather than as disagreement is what
 keeps a clonal whole-genome isolate from reading `reassortant` as segment count grows.
@@ -382,8 +382,17 @@ Segments are grouped into parent constellations (written to `out/constellation.t
 group); a `parent_group` column in `out/reassortment.tsv` records each segment's group. A group whose
 segments are linked only transitively (segment A shares a strain with B, B with C, but A and C share
 none) has no single spanning strain, so its `parent_strains` is empty and the text mosaic shows `?`
-for it; the verdict is still `clonal` because no pair disagrees. Segments
-below `--ani-floor` to every tip, or aligning over less than 50 % of their length, or with no resolvable
+for it; the verdict is still `clonal` because no pair disagrees.
+
+The reverse case -- a middle segment concordant with two segments that are discordant
+with each other -- links all three into one group although two of them disagree. The
+parents then cannot be separated at this margin, and the verdict is `undetermined` with a
+note naming the pair, not `reassortant` beside a group with no parent strain; a smaller
+`--margin` may resolve it. Every pair's relation and the strains it rests on are written
+to `out/segment_pairs.tsv` (`segment_a`, `segment_b`, `relation`, `note`) and to the log,
+whatever the verdict.
+
+Segments below `--ani-floor` to every tip, or aligning over less than 50 % of their length, or with no resolvable
 dataset, are reported `unassigned` and excluded from the call. Because there is no influenza taxon
 alias, flu auto-typing needs the `nextclade` CLI (for `nextclade sort`) or explicit `--dataset
 SEGMENT=path` overrides; without either, each flu segment resolves to nothing and is left

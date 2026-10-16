@@ -117,11 +117,20 @@ def reassort(
             f"group {i} {{{','.join(g.segments)}}} = {','.join(g.parent_strains) or '?'}"
             for i, g in enumerate(result.groups)
         )
+        # The pairwise evidence behind the verdict, for every verdict: which pair
+        # disagreed, and on which strains, is what a reader needs to check a call.
+        ptsv = output / "segment_pairs.tsv"
+        with open(ptsv, "w") as fo:
+            fo.write("segment_a\tsegment_b\trelation\tnote\n")
+            for pair in result.pairs:
+                fo.write(f"{pair.segment_a}\t{pair.segment_b}\t{pair.relation}\t"
+                         f"{' '.join(pair.note.split())}\n")
+
         logger.info("Reassortment verdict: %s", result.verdict.upper())
         logger.info("Parent constellation: %s", mosaic or "(no segments assigned)")
-        if result.verdict == "undetermined" and result.pair_notes:
-            logger.info("Why undetermined: %s", "; ".join(result.pair_notes))
-        logger.info("Wrote %s and %s", tsv, ctsv)
+        if result.pair_notes:
+            logger.info("Pairwise evidence: %s", "; ".join(result.pair_notes))
+        logger.info("Wrote %s, %s and %s", tsv, ctsv, ptsv)
 
         if result.scans:
             stsv = output / "segment_scan.tsv"

@@ -85,3 +85,40 @@ def test_transitively_linked_segments_are_one_clonal_group():
 def test_fewer_than_two_segments_is_undetermined():
     c = call_constellation({"HA": [("S1", 99.0)]}, {"HA": {"S1"}}, margin=0.5)
     assert c.verdict == "undetermined"
+
+
+# --- audit 4: E3, E14 ---------------------------------------------------------
+
+def test_discordant_pair_inside_one_concordant_group_is_undetermined():
+    """HA shares Y with NA and X with PB1, so all three form one group, while NA and PB1
+    disagree. The verdict was reassortant beside a single group that names no parent."""
+    candidates = {
+        "HA": [("X", 99.9), ("Y", 99.8)],
+        "NA": [("Y", 99.9), ("Z", 99.8)],
+        "PB1": [("X", 99.9)],
+    }
+    universe = {"X", "Y", "Z"}
+    c = call_constellation(candidates, {k: set(universe) for k in candidates}, margin=0.5)
+    assert len(c.groups) == 1 and c.groups[0].parent_strains == []
+    assert c.verdict == "undetermined"
+    within = [p for p in c.pairs if p.relation == "discordant_within_group"]
+    assert [(p.segment_a, p.segment_b) for p in within] == [("NA", "PB1")]
+    assert "cannot be separated" in within[0].note
+
+
+def test_discordant_pair_across_groups_is_still_reassortant():
+    """Guard (passes before and after): the seven-plus-one case keeps its verdict."""
+    seven = [f"seg{i}" for i in range(7)]
+    candidates = {s: [("A", 99.0)] for s in seven}
+    candidates["odd"] = [("B", 99.0)]
+    universes = {s: {"A", "B"} for s in [*seven, "odd"]}
+    assert call_constellation(candidates, universes, margin=0.5).verdict == "reassortant"
+
+
+def test_a_segment_with_no_candidates_is_uninformative_not_discordant():
+    """The public function made a reassortant call from an empty candidate list."""
+    universe = {"A", "B"}
+    c = call_constellation({"HA": [], "NA": [("A", 99.0)]},
+                           {"HA": set(universe), "NA": set(universe)}, margin=0.5)
+    assert c.verdict == "undetermined"
+    assert [p.relation for p in c.pairs] == ["uninformative"]

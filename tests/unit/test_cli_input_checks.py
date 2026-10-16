@@ -459,3 +459,36 @@ def test_reassort_accepts_the_margin_bound(tmp_path: Path, monkeypatch) -> None:
         "--margin", "5",
     ])
     assert result.exit_code == 0, result.output
+
+
+def test_reassort_writes_the_pairwise_evidence_for_a_reassortant_call(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The notes were logged only for an undetermined verdict, so a reassortant call
+    recorded nowhere which pair disagreed or on which strains."""
+    from tessera.reassort.assign import ReassortmentResult, SegmentAssignment
+    from tessera.reassort.constellation import call_constellation
+
+    call = call_constellation({"HA": [("S1", 99.0)], "NA": [("S3", 99.0)]},
+                              {"HA": {"S1", "S3"}, "NA": {"S1", "S3"}}, margin=0.5)
+
+    def fake_assign(query, **kwargs):
+        return ReassortmentResult(
+            segments=[SegmentAssignment("HA", "d", "S1", "c1", 99.0, "assigned"),
+                      SegmentAssignment("NA", "d", "S3", "c2", 99.0, "assigned")],
+            verdict=call.verdict, groups=call.groups, pair_notes=call.pair_notes,
+            pairs=call.pairs,
+        )
+
+    monkeypatch.setattr("tessera.cli.cmd_reassort.assign_segments", fake_assign)
+    out = tmp_path / "out"
+    result = runner.invoke(app, [
+        "reassort", "--query", str(_segments(tmp_path)), "--output", str(out),
+    ])
+    assert result.exit_code == 0, result.output
+    assert call.verdict == "reassortant"
+    lines = (out / "segment_pairs.tsv").read_text().splitlines()
+    assert lines[0] == "segment_a\tsegment_b\trelation\tnote"
+    assert lines[1].split("\t")[:3] == ["HA", "NA", "discordant"]
+    assert "S1 vs S3" in lines[1]
+    assert "Pairwise evidence" in result.output

@@ -25,7 +25,7 @@ from ..core.io import (
 from ..discover.nextclade import NON_CLADE_MARKERS, build_pool, resolve_dataset
 from ..discover.panel import skani_available, skani_query_ani
 from ..recomb.typing import first_header
-from .constellation import DEFAULT_MARGIN, ParentGroup, call_constellation
+from .constellation import DEFAULT_MARGIN, PairCall, ParentGroup, call_constellation
 from .scan import SegmentScan, require_aligner, scan_segment, unique_scan_dirs
 
 DEFAULT_ANI_FLOOR = 80.0  # a segment below this ANI to every tip is left unassigned
@@ -51,6 +51,7 @@ class ReassortmentResult:
     verdict: str = "undetermined"
     groups: list[ParentGroup] = field(default_factory=list)
     pair_notes: list[str] = field(default_factory=list)
+    pairs: list[PairCall] = field(default_factory=list)
     scans: list[SegmentScan] = field(default_factory=list)
 
 
@@ -188,6 +189,7 @@ def assign_segments(
     result.verdict = call.verdict
     result.groups = call.groups
     result.pair_notes = call.pair_notes
+    result.pairs = call.pairs
 
     if scan_segments:
         scan_dirs = unique_scan_dirs([s.segment for s in result.segments])
