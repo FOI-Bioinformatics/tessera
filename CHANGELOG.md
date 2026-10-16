@@ -61,6 +61,10 @@ alignment reaches the scan, not how the scan calls regions:
   NCBI Virus panel is: a pool another run finished first is kept, a directory without a
   completeness record is replaced, and the pool carries such a record. Pools cached by
   earlier releases are still used.
+- **A file or symlink at `<output>/collection` gave a raw error.** When a previous run's
+  marker was present, clearing the working collection failed with `NotADirectoryError`,
+  an `OSError` for a symlink, or `FileExistsError` for a dangling one. Each is now a user
+  error that names the path; a symlink is refused rather than followed.
 
 Data safety and alignment:
 

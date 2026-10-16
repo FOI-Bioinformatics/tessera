@@ -145,13 +145,21 @@ def _clear_working_copy(dest: Path) -> None:
     non-empty directory is removed only when a previous run left its marker (or, for
     output written by an older release, its other files) beside it; otherwise refuse.
     """
+    if dest.is_symlink() or (dest.exists() and not dest.is_dir()):
+        # Only a directory can be cleared; a symlink is refused even when it points at
+        # one, as clearing it would empty a directory somewhere else.
+        raise UserInputError(
+            f"{dest} exists and is not a directory. A run keeps its working copy of the "
+            "references there; move it elsewhere or choose a different output "
+            "directory."
+        )
     if not dest.exists():
         return
     parent = dest.parent
     ours = (parent / _WORKING_COPY_MARKER).exists() or any(
         (parent / name).exists() for name in _RUN_ARTEFACTS
     )
-    if not ours and (not dest.is_dir() or any(dest.iterdir())):
+    if not ours and any(dest.iterdir()):
         raise UserInputError(
             f"{dest} already exists and was not created by Tessera. A run clears that "
             "directory to hold its working copy of the references, which would delete "

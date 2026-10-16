@@ -439,3 +439,30 @@ def test_sibeliaz_bsd_wrapper_rewrites_paste_and_xargs(monkeypatch, tmp_path: Pa
     assert "paste -d ' ' <(echo \"$header\") <(echo \"$output\")" in patched
     # BSD xargs caps an -I replacement at 255 bytes; two absolute paths exceed it.
     assert "xargs -S 4096 -I @ -P $threads" in patched
+
+
+@pytest.mark.parametrize("kind", ["file", "symlink", "dangling"])
+def test_a_non_directory_at_the_working_collection_path_is_a_user_error(
+    tmp_path: Path, kind: str
+) -> None:
+    # A previous run's marker is present, so the path counts as Tessera's own; what
+    # sits there is not a directory. Clearing it raised a bare NotADirectoryError (an
+    # OSError for a symlink, a FileExistsError for a dangling one), reported as
+    # "Unexpected error".
+    source = _collection(tmp_path / "src")
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / ".tessera-working-collection").write_text("")
+    dest = out / "collection"
+    if kind == "file":
+        dest.write_text("not a directory\n")
+    elif kind == "dangling":
+        dest.symlink_to(tmp_path / "gone", target_is_directory=True)
+    else:
+        elsewhere = _collection(tmp_path / "elsewhere", names=("keep",))
+        dest.symlink_to(elsewhere, target_is_directory=True)
+    with pytest.raises(UserInputError, match=r"collection.*not a directory"):
+        copy_collection(source, dest)
+    assert dest.exists() or dest.is_symlink()
+    if kind == "symlink":
+        assert (tmp_path / "elsewhere" / "keep.fasta").exists()
