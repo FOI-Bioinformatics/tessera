@@ -266,7 +266,6 @@ HMM_ONE_STATE = (
     "lineage clustering pooled every reference into one lineage, so the HMM had no "
     "second state to switch to; rerun with --no-cluster-lineages"
 )
-HMM_ONE_REFERENCE = "the panel has a single reference, so the HMM had no second state to switch to"
 
 
 def _call_regions_hmm(
@@ -284,8 +283,6 @@ def _call_regions_hmm(
     """
     if len(result.similarities) < 2:
         only = next(iter(result.similarities), None)
-        if not_run is not None:
-            not_run["hmm"] = HMM_ONE_REFERENCE
         return [], only, []
 
     # Front-end: pool near-duplicate references into lineage clusters and compete the

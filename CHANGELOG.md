@@ -18,9 +18,10 @@ region, 8 regions, all HMM, and positive control 3/3 detected, 3/3 correct donor
 median breakpoint error; no byte-baseline was captured for that setting.
 
 - A test or caller that gave no result is reported as `not run`, with the reason, in the
-  report, the TSVs and `run_provenance.json`: the PHI test under `--no-phi`, with too few
-  informative sites or when not testable (`parent_free_support` now reads `not run`
-  instead of `no`), and an HMM that lineage clustering left with one state.
+  report, the TSVs and `run_provenance.json`: the PHI test under `--no-phi` or with too few
+  informative sites, and an HMM that lineage clustering left with one state. A PHI test
+  that is not testable at the window used keeps `not testable` in `run_provenance.json`.
+  `parent_free_support` reads `not run` instead of `no` in all three PHI cases.
 - A `low_information` coverage gap is no longer announced as a possible missing
   reference.
 - `run_provenance.json` gains `coordinates`; under informative-site windowing

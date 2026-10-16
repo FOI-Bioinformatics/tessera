@@ -307,9 +307,9 @@ reaches the minimum of ten informative sites. Should the test still be undefined
 reports `not testable` (`NA` in the `recombination_profile.tsv` header) rather than a
 non-significant result. When the test gives no result -- not testable, fewer than ten
 informative sites, or turned off with `--no-phi` -- the report says so with the reason,
-`run_provenance.json` records it under `recombination signal (PHI)` as
-`not run (<reason>)`, and `parent_free_support` reads `not run` in both TSVs and in the
-method comparison. That is not a negative: no region was corroborated or contradicted.
+and `parent_free_support` reads `not run` in both TSVs and in the method comparison.
+`run_provenance.json` records the last two under `recombination signal (PHI)` as
+`not run (<reason>)` and the first as `not testable (<n> informative sites, window <w>)`. That is not a negative: no region was corroborated or contradicted.
 With few informative sites the window is only a few ranks wide and the test has limited power.
 
 This all remains an **indicative screen**: the built-in HMM and 3SEQ tests are fast
