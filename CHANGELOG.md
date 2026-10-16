@@ -69,6 +69,9 @@ alignment reaches the scan, not how the scan calls regions:
   have waited on the terminal, and alignment has no default timeout. Every external tool,
   and every version probe, now runs with standard input closed. No current tool is known
   to have done this. Reconfiguring logging also now closes the previous run log.
+- **`cactus`: two labels differing only in `.` and `_` would share one row.** Cactus
+  sample names cannot contain `.`, and the adapter maps it to `_`; such inputs are now
+  refused before Cactus starts. Checked without the binary, which is not installed here.
 
 Data safety and alignment:
 

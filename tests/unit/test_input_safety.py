@@ -365,7 +365,7 @@ def test_xmfa_without_the_reference_is_reported_against_the_file(tmp_path: Path)
         "> 1:1-4 + /data/a.fasta\nACGT\n> 2:1-4 + /data/b.fasta\nACGT\n=\n"
     )
     with pytest.raises(UserInputError, match=r"other\.xmfa.*/data/ref\.fasta"):
-        xmfa_to_fasta(xmfa, "/data/ref.fasta", 0, tmp_path / "out.fasta")
+        xmfa_to_fasta(xmfa, "/data/ref.fasta", tmp_path / "out.fasta")
 
 
 def test_empty_mafft_output_is_a_tessera_error(tmp_path: Path) -> None:

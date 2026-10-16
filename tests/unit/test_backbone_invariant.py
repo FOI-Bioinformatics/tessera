@@ -186,3 +186,25 @@ def test_progressivemauve_rejects_a_projection_wider_than_the_backbone(
         pm_mod.ProgressiveMauveAligner().align(
             genomes, genomes[0], tmp_path / "out", AlignParams(threads=1), _LOG
         )
+
+
+def test_cactus_refuses_labels_that_collide_once_dots_are_replaced(
+    monkeypatch, tmp_path: Path
+) -> None:
+    # Cactus sample names may not contain '.', so the adapter maps it to '_'. Two
+    # accessions differing only there would then share one sample name and one row.
+    from tessera.core.errors import UserInputError
+
+    def must_not_run(caps, cmd, **kw):
+        raise AssertionError("cactus-pangenome must not be started")
+
+    monkeypatch.setattr(cactus_mod, "run_tool", must_not_run)
+    genomes = []
+    for label in ("ref", "MN908947.3", "MN908947_3"):
+        path = tmp_path / f"{label}.fasta"
+        path.write_text(f">{label}\nACGT\n")
+        genomes.append(path)
+    with pytest.raises(UserInputError, match=r"MN908947\.3.*MN908947_3.*MN908947_3"):
+        cactus_mod.CactusAligner().align(
+            genomes, genomes[0], tmp_path / "out", AlignParams(threads=1), _LOG
+        )

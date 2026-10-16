@@ -81,7 +81,7 @@ class ProgressiveMauveAligner(Aligner):
                 logger=logger,
                 log_prefix=f"progressivemauve:{stem}",
             )
-            xmfa_to_fasta(xmfa, ref_arg, 0, fa, reference_length=ref_length)
+            xmfa_to_fasta(xmfa, ref_arg, fa, reference_length=ref_length)
             return stem, fa
 
         per_query = parallel_map(align_query, queries, workers, logger=logger)
