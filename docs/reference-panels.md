@@ -25,7 +25,8 @@ stable `panel/panel.msa.fasta` alignment, and `panel/panel_lineages.tsv`. The ex
 `tessera recomb` follow-up command is logged on completion. The panel is recruited for
 this query (donors are its regional best matches), so it is not a reusable
 organism-wide reference set. Pass `--collection` to grow an existing collection
-instead of recruiting from scratch. The full-featured `fill-references` command takes
+instead of recruiting from scratch. `--keep-recombinant-lineages`, `--deep-typing` and
+`--pool-consensus` shape the panel as they do for `detect`. The full-featured `fill-references` command takes
 `--no-report` for the same effect.
 
 ## Typed lineage names in the report

@@ -110,7 +110,7 @@ State the query label to `recomb` as it appears in the MSA (for a FASTA you alig
 yourself, the query file name without extension). To build the alignment from
 unaligned genomes first, run `tessera msa --query q.fasta --collection refs/ --output
 msa.fasta` (see [docs/aligners.md](docs/aligners.md); `--query-as-backbone` uses a
-single-contig query as the backbone). The window, step, caller, and region-calling
+single-contig query as the backbone; it cannot be combined with `--reference`). The window, step, caller, and region-calling
 parameters are configurable -- see [docs/detection-methods.md](docs/detection-methods.md)
 and `tessera recomb --help`.
 

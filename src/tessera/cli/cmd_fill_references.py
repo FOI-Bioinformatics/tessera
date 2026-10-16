@@ -41,7 +41,9 @@ def fill_references(
     seed_source: str = typer.Option(
         "blast", "--seed-source",
         help="Fresh-start source (no --collection): 'blast' (NCBI nt), 'local' (a genome pool "
-        "directory, --candidate-pool), or 'ncbi-virus' (a taxon-scoped set, --taxon).",
+        "directory, --candidate-pool), 'ncbi-virus' (a taxon-scoped set, --taxon), or "
+        "'nextclade' (a Nextclade dataset's reference tree, --nextclade-dataset or "
+        "auto-detected from the query).",
     ),
     candidate_pool: Path | None = typer.Option(
         None, "--candidate-pool",

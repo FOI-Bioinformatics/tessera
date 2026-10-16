@@ -23,9 +23,7 @@ def find_references(
     msa: Path = typer.Option(
         ..., "-i", "--input", "--msa", help="Path to the multiple sequence alignment file."
     ),
-    query: Path = typer.Option(
-        ..., "-q", "--query", help="Query label as it appears in the MSA."
-    ),
+    query: str = typer.Option(..., "-q", "--query", help="Query label as it appears in the MSA."),
     output: Path = typer.Option(
         ..., "-o", "--output", help="Output directory for the candidate report."
     ),
@@ -102,7 +100,7 @@ def find_references(
         _require_coverage_fractions(coverage_floor, coverage_rel_drop)
         _require_search_counts(max_hits=max_hits, top_gaps=top_gaps, subtile=subtile)
         params = FindRefParams(
-            msa=msa, query=str(query), output=output, collection=collection,
+            msa=msa, query=query, output=output, collection=collection,
             window_size=window_size, window_step=window_step,
             coverage_floor=coverage_floor, coverage_rel_drop=coverage_rel_drop,
             max_hits=max_hits, top_gaps=top_gaps, subtile=subtile,
