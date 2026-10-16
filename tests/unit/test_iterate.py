@@ -1021,3 +1021,41 @@ def test_a_download_removed_by_curation_is_excluded_and_searched_past(
     assert sorted(p.name for p in (out / "collection").iterdir()) == [
         "DONOR.fasta", "refA.fasta",
     ]
+
+
+# --- audit 4: saturation needs a kept hit (D4) -------------------------------------
+
+@pytest.mark.parametrize(
+    ("hit", "exclude"),
+    [(Hit("OWN", "the query's own record", 99.9, 99.0, 0.0), set()),  # a self-hit
+     (Hit("BAD1", "excluded by the user", 97.0, 98.0, 0.0), {"BAD1"})],  # --exclude
+)
+def test_windowed_seeding_is_not_saturated_when_every_hit_was_filtered(
+    monkeypatch, tmp_path, logger, hit, exclude
+):
+    """Every search returned something, and the filters removed all of it. Nothing was
+    kept, so nothing says the query's lineage saturates NCBI; reporting saturation would
+    start a negative-lineage sweep and a whole-taxon download on a false explanation."""
+    monkeypatch.setattr(iterate, "blast_subsequence", lambda seq, **k: [hit])
+    params = FillParams(query=tmp_path / "q.fasta", collection=None, output=tmp_path / "o",
+                        seed_window=100)
+
+    windowed = iterate._seed_windowed("A" * 300, params, exclude, logger, drop_siblings=True)
+    whole = iterate._seed_whole("A" * 300, params, exclude, logger)
+
+    assert windowed == ([], False)
+    assert whole == ([], False)  # the whole-query seeder already got this right
+
+
+def test_windowed_seeding_is_saturated_when_every_kept_hit_is_a_sibling(
+    monkeypatch, tmp_path, logger
+):
+    """Guard (passes before and after): the true saturation case still reports it."""
+    monkeypatch.setattr(iterate, "blast_subsequence",
+                        lambda seq, **k: [Hit("SIB", "sibling", 98.0, 99.0, 0.0)])
+    params = FillParams(query=tmp_path / "q.fasta", collection=None, output=tmp_path / "o",
+                        seed_window=100)
+
+    _, saturated = iterate._seed_windowed("A" * 300, params, set(), logger, drop_siblings=True)
+
+    assert saturated is True

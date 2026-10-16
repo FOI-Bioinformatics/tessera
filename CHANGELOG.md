@@ -227,6 +227,10 @@ Panel recruitment (fourth audit):
   longest ones, so an unsearched short gap held the measure still.
 - The fill loop re-downloaded, every round, the genomes curation had just removed, because
   they were never added to the exclusion list. They now are.
+- Windowed BLAST seeding reported that the query's lineage saturates NCBI when every hit
+  had been filtered out (the query's own record, or `--exclude` accessions), and then ran
+  the negative-lineage search and the NCBI Virus download on that false explanation. It
+  now needs a kept hit, as whole-query seeding already did.
 
 ### Changed
 

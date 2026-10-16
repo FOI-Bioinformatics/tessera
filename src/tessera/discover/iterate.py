@@ -999,13 +999,11 @@ def _seed_windowed(
         "No starting references: seeding from a %d-window NCBI search (%s)...",
         len(chunks), label,
     )
-    per_window_hits: list[list] = []
-    any_hits = False  # did any search return anything, before filtering?
+    per_window_hits: list[list] = []  # each window's hits after the self/--exclude filter
     for chunk in chunks:
         if len(chunk) < MIN_SUBSEQ:
             continue
         hits = _blast_or_none(chunk, params, logger)
-        any_hits = any_hits or bool(hits)
         per_window_hits.append([h for h in hits if _keep(h, exclude, params)])
 
     selected: list[str] = []
@@ -1039,12 +1037,12 @@ def _seed_windowed(
             "Suppressed %d sibling hit(s) (>= %.0f%% identity over near-full coverage) to "
             "recruit parental lineages.", len(dropped_siblings), SEED_SIBLING_IDENTITY,
         )
-    # "Only siblings were found" needs something to have been found. When every
-    # search failed or came back empty there is no evidence about what NCBI holds, and
-    # calling that saturation would switch the seed source under a false explanation.
-    saturated = any_hits and not any(
-        not _is_sibling_hit(h) for kept in per_window_hits for h in kept
-    )
+    # "Only siblings were found" needs something to have been kept. When every search
+    # failed, came back empty, or returned only the query's own record or --exclude
+    # accessions, there is no evidence about what NCBI holds, and calling that saturation
+    # would switch the seed source under a false explanation. Same rule as _seed_whole.
+    kept_hits = [h for kept in per_window_hits for h in kept]
+    saturated = bool(kept_hits) and all(_is_sibling_hit(h) for h in kept_hits)
     return selected[:SEED_TOTAL_CAP], saturated
 
 
