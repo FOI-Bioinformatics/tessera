@@ -568,16 +568,17 @@ def _type_panel(
     accession. Returns the resolved lineage map and the query's own lineage.
     """
     coll_files = collection_genomes(collection)
+    # The consolidated sidecar records the full fetched NCBI-Virus set; restrict the
+    # datasets rows to accessions that survived selection so lineages.tsv describes the
+    # panel, not the download. Both branches read it: mining the headers again loses
+    # every lineage name without a digit-bearing token of four or more characters.
+    panel_accessions = {strip_sequence_extension(p.name) for p in coll_files}
+    recorded = _read_ncbi_lineages(params.output)
+    datasets_rows = (
+        [(acc, lin) for acc, lin in recorded if acc in panel_accessions]
+        if recorded else None
+    )
     if params.deep_typing:
-        # The consolidated sidecar records the full fetched NCBI-Virus set; restrict the
-        # datasets rows to accessions that survived selection so lineages.tsv describes the
-        # panel, not the download.
-        panel_accessions = {strip_sequence_extension(p.name) for p in coll_files}
-        recorded = _read_ncbi_lineages(params.output)
-        datasets_rows = (
-            [(acc, lin) for acc, lin in recorded if acc in panel_accessions]
-            if recorded else None
-        )
         lineage_rows = assign_lineages(
             coll_files,
             user_lineage_map=params.lineage_map,
@@ -591,6 +592,7 @@ def _type_panel(
     else:
         lineage_rows = build_lineage_map(
             user_tsv=params.lineage_map,
+            datasets_rows=datasets_rows,
             title_by_label=titles_from_collection(coll_files),
             organism=params.taxon,
         )

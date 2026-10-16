@@ -1116,3 +1116,54 @@ def test_a_taxon_with_no_genome_at_all_is_a_clear_error_and_caches_nothing(
 
     cache_root = tmp_path / "cache" / "ncbi_virus"
     assert not cache_root.exists() or not any(p.is_dir() for p in cache_root.iterdir())
+
+
+# --- audit 4: the default typing path reads the lineage sidecar (D3) ---------------
+
+def test_default_and_deep_typing_agree_on_a_sidecar_typed_panel(tmp_path, logger):
+    """Recruitment records each NCBI Virus genome's exact lineage in
+    <output>/ncbi_lineages.tsv. Only the deep branch read it; the default branch mined
+    the headers again with a rule that needs a digit-bearing token of four characters or
+    more, so B.1, A and XBB were lost and those genomes skipped lineage-aware handling."""
+    coll = tmp_path / "collection"
+    coll.mkdir()
+    lineages = {"OQ1.1": "B.1", "OQ2.1": "A", "OQ3.1": "XBB"}
+    for acc, lineage in lineages.items():
+        (coll / f"{acc}.fasta").write_text(f">{acc} {lineage}\nACGT\n")
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "ncbi_lineages.tsv").write_text(
+        "".join(f"{acc}\t{lin}\n" for acc, lin in lineages.items())
+        + "NOTINPANEL.1\tBA.2\n"  # fetched, not selected: must not reach lineages.tsv
+    )
+    query = tmp_path / "q.fasta"
+    query.write_text(">q\nACGT\n")
+
+    def typed(deep: bool) -> dict[str, str]:
+        params = FillParams(query=query, collection=None, output=out, deep_typing=deep)
+        lineage_map, _ = iterate._type_panel(params, coll, "q", logger)
+        return lineage_map
+
+    default = typed(False)
+    assert default == lineages
+    assert typed(True) == default
+    assert "NOTINPANEL" not in (out / "lineages.tsv").read_text()
+
+
+def test_a_user_lineage_map_still_overrides_the_sidecar_on_the_default_path(tmp_path, logger):
+    """Priority stays user map > NCBI datasets lineage > mined header."""
+    coll = tmp_path / "collection"
+    coll.mkdir()
+    (coll / "OQ1.1.fasta").write_text(">OQ1.1 B.1\nACGT\n")
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "ncbi_lineages.tsv").write_text("OQ1.1\tB.1\n")
+    user_map = tmp_path / "mine.tsv"
+    user_map.write_text("OQ1.1\tB.1.617.2\n")
+    query = tmp_path / "q.fasta"
+    query.write_text(">q\nACGT\n")
+
+    params = FillParams(query=query, collection=None, output=out, lineage_map=user_map)
+    lineage_map, _ = iterate._type_panel(params, coll, "q", logger)
+
+    assert lineage_map == {"OQ1.1": "B.1.617.2"}

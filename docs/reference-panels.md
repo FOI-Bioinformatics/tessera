@@ -333,10 +333,12 @@ is header/metadata mining only. Pass `--deep-typing` to run the full `type-linea
 the recruited references instead, so genomes that carry no clean header lineage still get a
 Nextclade nearest-neighbour or de-novo label. It writes the same `lineages.tsv` and feeds the
 lineage-aware panel selection. It is off by default because it adds a Nextclade/skani pass at
-the end of the run; it needs skani (the command errors early if skani is absent). References
-fetched from NCBI Virus are additionally tagged with the source `ncbi-datasets` -- their
+the end of the run; it needs skani (the command errors early if skani is absent). With or
+without `--deep-typing`, references fetched from NCBI Virus are typed from their
 structured datasets lineage, captured during download in an `ncbi_lineages.tsv` sidecar,
-rather than a token mined back out of the header.
+and tagged with the source `ncbi-datasets`, rather than from a token mined back out of the
+header (which loses short names such as `B.1` or `XBB`). A `--lineage-map` still takes
+precedence.
 
 ## Detect reassortment across segments (`reassort`)
 

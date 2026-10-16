@@ -234,6 +234,10 @@ Panel recruitment (fourth audit):
 - A taxon with no RefSeq genome stopped the run with "NCBI Virus returned no genomes"
   instead of broadening to complete genomes, which it did for a taxon with one or two
   RefSeq genomes. It now broadens; the error remains for a taxon with no genome at all.
+- Without `--deep-typing`, the panel was typed by mining headers again, ignoring the exact
+  NCBI Virus lineages recorded during recruitment in `ncbi_lineages.tsv`; names without a
+  digit-bearing token of four or more characters (`B.1`, `A`, `XBB`) were lost and those
+  genomes skipped lineage-aware handling. Both typing paths now read the sidecar.
 
 ### Changed
 
