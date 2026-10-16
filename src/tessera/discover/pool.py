@@ -26,7 +26,13 @@ from pathlib import Path
 
 from ..core.binaries import BinarySpec
 from ..core.errors import UserInputError
-from ..core.io import read_fasta, strip_sequence_extension, write_fasta_record
+from ..core.io import (
+    _require_fasta,
+    collection_genomes,
+    read_fasta,
+    strip_sequence_extension,
+    write_fasta_record,
+)
 from ..core.ncbi import eutils_env, eutils_throttle
 from ..core.plugins import ToolCapabilities
 from ..core.process import FETCH_TIMEOUT, default_timeout, run_tool
@@ -66,15 +72,19 @@ def datasets_available() -> bool:
 
 
 def iter_pool_genomes(pool: Path) -> list[Path]:
-    """List the genome FASTA files in a pool directory."""
+    """List the genome files in a pool directory, read the way a collection is read.
+
+    Every non-hidden file is a genome, whatever its extension and gzip-compressed or
+    not, and a file that is not FASTA is an error rather than something to skip. A list
+    of accepted extensions dropped a ``.fas`` or ``.fsa`` genome in silence.
+    """
     if not pool.is_dir():
         raise UserInputError(f"Candidate pool {pool} is not a directory.")
-    genomes = sorted(
-        p for p in pool.iterdir()
-        if p.is_file() and p.suffix.lower() in {".fasta", ".fa", ".fna", ".gz"}
-    )
+    genomes = collection_genomes(pool)
     if not genomes:
-        raise UserInputError(f"Candidate pool {pool} has no FASTA genome files.")
+        raise UserInputError(f"Candidate pool {pool} has no genome files.")
+    for genome in genomes:
+        _require_fasta(genome)
     return genomes
 
 

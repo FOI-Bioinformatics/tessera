@@ -239,6 +239,13 @@ tessera fill-references --query q.fasta --output out/ --seed-source nextclade \
     --nextclade-dataset nextstrain/sars-cov-2/XBB
 ```
 
+`--candidate-pool` and `--nextclade`/`--nextclade-dataset` each choose where `detect` and
+`build-panel` recruit from, so giving both is refused. `--pool-consensus` applies only to
+a Nextclade pool and is refused with any other seed source, and in `fill-references`
+`--candidate-pool` needs `--seed-source local`. A candidate pool is read like a
+collection: every non-hidden file is a genome, whatever its extension, and a file that is
+not FASTA is an error.
+
 A Nextclade dataset is a clade-typing reference tree, so the pool spans clade
 representatives rather than clean recombinant-parental endpoints; it suits a broad
 screen. Single-segment datasets (most flu segments) yield segment-length pool genomes,

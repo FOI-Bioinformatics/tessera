@@ -121,6 +121,24 @@ class FillParams:
     keep_recombinant: bool = False  # keep recombinant (CRF/URF/X) lineages in a typed panel
     deep_typing: bool = False  # type the recruited panel with the full ladder, not just headers
 
+    def __post_init__(self) -> None:
+        # Options that act through one seed source are refused under another rather than
+        # ignored: a run that dropped a requested pool or consensus in silence reads like
+        # one that used it.
+        if self.pool_consensus and self.seed_source != "nextclade":
+            raise UserInputError(
+                "--pool-consensus builds one consensus genome per clade of a Nextclade "
+                f"pool, but the seed source here is '{self.seed_source}'. Add --nextclade "
+                "(detect, build-panel) or --seed-source nextclade (fill-references), or "
+                "leave out --pool-consensus."
+            )
+        if self.candidate_pool is not None and self.seed_source != "local":
+            raise UserInputError(
+                "--candidate-pool is read only with --seed-source local, but the seed "
+                f"source here is '{self.seed_source}'. Add --seed-source local, or leave "
+                "out --candidate-pool."
+            )
+
     @classmethod
     def for_detection(
         cls,
@@ -151,17 +169,11 @@ class FillParams:
 
         Recruit the parental lineages (drop the query's siblings, curate the
         panel) so a recombinant query whose own lineage is common in NCBI is
-        not masked. The seed source follows the supplied input: a local pool
-        wins, then a Nextclade dataset, then the default BLAST recruitment.
-        This is the single home for the preset so ``tessera detect`` does not
-        duplicate (and drift from) the field list.
+        not masked. The seed source follows the supplied input
+        (:func:`seed_source_for`). This is the single home for the preset so
+        ``tessera detect`` does not duplicate (and drift from) the field list.
         """
-        if candidate_pool:
-            seed_source = "local"
-        elif nextclade or nextclade_dataset:
-            seed_source = "nextclade"
-        else:
-            seed_source = "blast"
+        seed_source = seed_source_for(candidate_pool, nextclade, nextclade_dataset)
         return cls(
             query=query, collection=None, output=output,
             aligner=aligner, max_rounds=max_rounds,
@@ -177,6 +189,27 @@ class FillParams:
             keep_recombinant=keep_recombinant,
             deep_typing=deep_typing,
         )
+
+
+def seed_source_for(
+    candidate_pool: Path | None, nextclade: bool, nextclade_dataset: str | None
+) -> str:
+    """The seed source ``detect`` and ``build-panel`` take from their inputs.
+
+    A local pool gives ``local``, a Nextclade flag or dataset ``nextclade``, and neither
+    the default BLAST recruitment. A pool together with a Nextclade request names two
+    seed sources; the pool used to win in silence, so it is refused instead.
+    """
+    if candidate_pool and (nextclade or nextclade_dataset):
+        raise UserInputError(
+            "--candidate-pool and --nextclade/--nextclade-dataset each choose where the "
+            "panel is recruited from; give one of them."
+        )
+    if candidate_pool:
+        return "local"
+    if nextclade or nextclade_dataset:
+        return "nextclade"
+    return "blast"
 
 
 @dataclass

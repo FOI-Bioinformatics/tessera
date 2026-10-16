@@ -257,9 +257,16 @@ Panel recruitment (fourth audit):
   now uses the shared set of "no clade" markers. The per-clade consensus step in the
   Nextclade pool builder skipped only `NA`, so tips labelled `?` or `example` each got a
   consensus genome for a clade that does not exist; it uses the same set.
+- The candidate-pool reader accepted four file extensions, so a `.fas` or `.fsa` genome
+  was left out of the pool without notice. It now reads a pool as every other command
+  reads a collection, and rejects a file that is not FASTA.
 
 ### Changed
 
+- **Seed options that cannot act are refused.** `detect` and `build-panel` used
+  `--candidate-pool` and ignored `--nextclade`/`--nextclade-dataset` when both were given;
+  `--pool-consensus` did nothing without a Nextclade pool; and `fill-references` ignored
+  `--candidate-pool` without `--seed-source local`. Each is now a usage error.
 - **One new reference is downloaded per coverage gap**, as documented. Every sub-interval
   search contributed all of its hits, so at the defaults one round could add up to 20
   genomes for a 1000 bp gap and 145 for a 6 kb gap, all of which went into the next

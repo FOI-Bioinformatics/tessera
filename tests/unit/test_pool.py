@@ -185,3 +185,36 @@ def test_select_regional_falls_back_to_the_whole_query_when_no_half_matches(
     sel = pool.select_regional(query, [par_a, par_b], window=1500, per_window=1, logger=logger)
 
     assert [p.stem for p in sel.selected] == ["PAR_A"]
+
+
+# --- audit 4: a candidate pool is read like a collection (E5) ----------------------
+
+def test_candidate_pool_reads_the_same_files_as_a_collection(tmp_path):
+    """The pool reader accepted four extensions where every collection reader takes each
+    non-hidden file, so a .fas or .fsa genome was dropped from the pool in silence."""
+    import gzip
+
+    from tessera.core.io import collection_genomes
+
+    for name in ("a.fasta", "b.fas", "c.fsa", "d"):
+        (tmp_path / name).write_text(f">{name}\nACGT\n")
+    with gzip.open(tmp_path / "e.fa.gz", "wt") as fo:
+        fo.write(">e\nACGT\n")
+    (tmp_path / ".DS_Store").write_bytes(b"\x00\x01")
+
+    genomes = pool.iter_pool_genomes(tmp_path)
+
+    assert genomes == collection_genomes(tmp_path)
+    assert [p.name for p in genomes] == ["a.fasta", "b.fas", "c.fsa", "d", "e.fa.gz"]
+
+
+def test_candidate_pool_refuses_a_file_that_is_not_fasta(tmp_path):
+    import pytest
+
+    from tessera.core.errors import UserInputError
+
+    (tmp_path / "a.fasta").write_text(">a\nACGT\n")
+    (tmp_path / "README.txt").write_text("pool assembled 2026-09\n")
+
+    with pytest.raises(UserInputError, match="does not look like a FASTA file"):
+        pool.iter_pool_genomes(tmp_path)
