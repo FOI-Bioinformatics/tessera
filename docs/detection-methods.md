@@ -71,6 +71,15 @@ recombination between near-identical lineages) is flagged as marginal rather tha
 dropped. The legacy `--method heuristic` (margin / merge-gap / min-region) is kept
 for comparison.
 
+**Which options apply to which caller.** `--min-region` (default: the window size) is
+read by the HMM and the heuristic caller, and as the run length of lineage clustering and
+sibling exclusion. For the HMM it bounds the length of the segment before the reported
+span is trimmed (next paragraph), so a reported HMM region can be shorter than
+`--min-region`. 3SEQ, MaxChi, Bootscan, GENECONV and barcode do not apply it. `--margin`
+(a similarity fraction, 0-1) and `--merge-gap` are read by the heuristic caller only; the
+coverage diagnostic merges gaps within one window size whatever `--merge-gap` says. The
+`--help` text of each scoped option names the callers that read it.
+
 **The reported span is not the segment.** A segment is where the HMM path sat in the
 donor state. Once there, the path has no reason to leave while donor and major are
 identical, and its ends are only as fine as the window grid. The coordinates reported
@@ -81,6 +90,9 @@ searched to the end of the alignment, so a tract reaching a genome end is report
 that end. The sign test, its p-value and `support` are computed on the whole segment, so
 this step changes where a region is drawn and never whether it is called.
 `mean_sim_minor` / `mean_sim_major` are identity over the reported columns.
+`n_windows` and `posterior` describe the segment too, not the reported span: a trimmed
+region can list more windows than its length holds, and its posterior is the mean over
+the whole segment.
 
 ```
 Recombination regions (major parent: cowpox_KC813504):
@@ -343,7 +355,7 @@ The practical readings:
 | File | Contents |
 |---|---|
 | `report.html` | Self-contained report: run provenance, the region table, the per-dataset stats, and an embedded interactive plot |
-| `recombination_regions.tsv` | Called regions: minor/major parent, start/end in **both MSA columns and query bases**, `length_bp` / `length_msa`, `support`, `pvalue` / `qvalue` with the `test` and `statistic` that produced them, mean similarities, the calling `methods`, and `parent_free_support` (`not run` when the PHI test gave no result) |
+| `recombination_regions.tsv` | Called regions: minor/major parent, start/end in **both MSA columns and query bases**, `length_bp` / `length_msa`, `n_windows` and `posterior` (for an HMM region both describe the HMM segment, not the trimmed span), `support`, `pvalue` / `qvalue` with the `test` and `statistic` that produced them, mean similarities, the calling `methods`, and `parent_free_support` (`not run` when the PHI test gave no result) |
 | `recombination_methods.tsv` | Ensemble breakdown (only when several methods run): one row per region with `yes` / `no` per method (`not run` for a selected caller that could not run) and the parent-free flag; the parent-free flag is `not run` likewise |
 | `recombination_profile.tsv` | Parent-free signal: header with the PHI p-value (`NA` when not testable) and Rmin, then per-informative-site local incompatibility (the PHI profile) |
 | `similarity_windows.tsv` | Full per-window matrix: `msa_position`, `query_position`, `winner`, and one similarity column per dataset. Always base-pair windows (identity over all comparable columns) |

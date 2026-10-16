@@ -69,17 +69,23 @@ def recomb(
     ),
     min_region: int | None = typer.Option(
         None, "--min-region",
-        help="Minimum recombinant region length in bp (default: the window size).",
+        help="Minimum length in alignment columns of an HMM segment before its reported "
+        "span is trimmed to the sites that support the donor, and of a heuristic region "
+        "(hmm, heuristic; also the run length used by lineage clustering and sibling "
+        "exclusion). A reported HMM region can be shorter; 3seq, maxchi, bootscan, "
+        "geneconv and barcode do not apply it. Default: the window size.",
     ),
     margin: float = typer.Option(
         0.0, "--margin",
-        help="Minimum similarity a minor parent must exceed the major parent by to "
-        "mark a window recombinant.",
+        help="Minimum similarity (a fraction, 0-1) by which a minor parent must exceed "
+        "the major parent to mark a window recombinant (heuristic only; the other "
+        "callers ignore it).",
     ),
     merge_gap: int | None = typer.Option(
         None, "--merge-gap",
-        help="Merge same-parent regions separated by at most this many bp "
-        "(default: the window size).",
+        help="Merge same-parent regions separated by at most this many bp (heuristic "
+        "only; the other callers and the coverage diagnostic ignore it). Default: the "
+        "window size.",
     ),
     coverage_floor: float | None = typer.Option(
         None, "--coverage-floor",

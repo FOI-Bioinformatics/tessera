@@ -91,8 +91,12 @@ class RecombParams:
     # base-pair window dilutes the few discriminating sites). 8% sits below the
     # genotype-level panels that work in base-pair mode (measles ~10%, HIV ~37%).
     informative_max_fraction: float = 0.08
-    # Heuristic-only thresholds (None -> derive from the window size).
+    # Region-length floor (None -> the window size). Read by the HMM, on the segment
+    # before its span is trimmed, by its lineage clustering and sibling exclusion, and by
+    # the heuristic caller; the site callers do not apply it.
     min_region: int | None = None
+    # Heuristic-only thresholds. merge_gap is not passed to the coverage diagnostic,
+    # which merges gaps within one window size.
     margin: float = 0.0
     merge_gap: int | None = None
     # Reference-coverage diagnostic.
