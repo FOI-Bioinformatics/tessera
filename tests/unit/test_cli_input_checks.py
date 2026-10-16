@@ -426,3 +426,36 @@ def test_msa_says_when_it_overwrites_an_alignment(tmp_path: Path, monkeypatch) -
     ])
     assert result.exit_code == 0, result.output
     assert "Overwriting the existing alignment" in result.output
+
+
+# --- reassort: margin and ANI units (audit 4, E2 and E5) ---------------------
+
+@pytest.mark.parametrize(
+    ("option", "value", "needle"),
+    [("--margin", "0", "Invalid --margin"),
+     ("--margin", "40", "Invalid --margin"),
+     ("--ani-floor", "0.8", "Did you mean --ani-floor 80?")],
+)
+def test_reassort_rejects_a_margin_or_floor_on_the_wrong_scale(
+    tmp_path: Path, no_reassort, option: str, value: str, needle: str
+) -> None:
+    """A margin of 40 made every query clonal and 0 made a 0.01-point tie-break a
+    reassortment; an ANI floor of 0.8 (meant as 80 %) accepted every tip."""
+    result = runner.invoke(app, [
+        "reassort", "--query", str(_segments(tmp_path)), "--output", str(tmp_path / "out"),
+        option, value,
+    ])
+    _rejected(result, needle)
+
+
+def test_reassort_accepts_the_margin_bound(tmp_path: Path, monkeypatch) -> None:
+    """Guard: 5 points is inside the range (the bound is inclusive)."""
+    from tessera.reassort.assign import ReassortmentResult
+
+    monkeypatch.setattr("tessera.cli.cmd_reassort.assign_segments",
+                        lambda query, **kwargs: ReassortmentResult())
+    result = runner.invoke(app, [
+        "reassort", "--query", str(_segments(tmp_path)), "--output", str(tmp_path / "out"),
+        "--margin", "5",
+    ])
+    assert result.exit_code == 0, result.output

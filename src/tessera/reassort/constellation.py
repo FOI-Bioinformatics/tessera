@@ -13,6 +13,11 @@ from dataclasses import dataclass, field
 from itertools import combinations
 
 DEFAULT_MARGIN = 0.5  # ANI percentage-point window that defines a segment's "near-best" parents
+# The widest margin accepted. The window absorbs near-ties between tips and ANI estimation
+# noise, a fraction of a point; once it spans the ANI spread of the candidates every pair
+# shares a strain and every query reads clonal (measured: 0.5 gives reassortant on a case
+# that 40 calls clonal). A fixed sanity bound, not a calibrated optimum.
+MAX_MARGIN = 5.0
 
 
 @dataclass

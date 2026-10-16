@@ -371,7 +371,7 @@ is typed independently against its own Nextclade dataset
 Because Nextclade flu trees label tips by strain name, the same strain appears across segment
 datasets, so the per-segment nearest strains can be compared. The call is pairwise and
 coverage-aware: two segments are concordant when a strain is near-best (within `--margin` ANI
-points, default 0.5) for both, discordant when a near-best parent of one is typed in the other's
+percentage points, default 0.5; the accepted range is above 0 and at most 5, because a window wide enough to span the candidates' ANI spread makes every pair concordant and every query clonal, and a zero window turns a tie-break between two tips into different parents; the cap is a fixed sanity bound, not a calibrated optimum. `--ani-floor` is a percentage too; a value of 1 or below is rejected as a likely fraction) for both, discordant when a near-best parent of one is typed in the other's
 tree but not near-best there (different parents), and uninformative when neither's near-best parents
 appear in the other's tree. A query is `reassortant` when any pair is discordant, `clonal` when the
 concordant pairs link every segment to one parent, and `undetermined` when cross-typing is too

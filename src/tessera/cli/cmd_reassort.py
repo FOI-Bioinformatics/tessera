@@ -17,7 +17,7 @@ from ..core.errors import UserInputError
 from ..core.io import read_fasta
 from ..reassort import assign_segments
 from ..reassort.assign import DEFAULT_ANI_FLOOR
-from ..reassort.constellation import DEFAULT_MARGIN
+from ..reassort.constellation import DEFAULT_MARGIN, MAX_MARGIN
 from .main import _require_file, _require_range, app, get_logger, stage_errors
 
 
@@ -38,11 +38,14 @@ def reassort(
     ),
     ani_floor: float = typer.Option(
         DEFAULT_ANI_FLOOR, "--ani-floor",
-        help="A segment below this ANI to every reference tip is left unassigned.",
+        help="A segment below this ANI (a percentage, 0-100) to every reference tip is "
+        "left unassigned.",
     ),
     margin: float = typer.Option(
         DEFAULT_MARGIN, "--margin",
-        help="ANI window (percentage points) for a segment's near-best parents.",
+        help="ANI window in percentage points (above 0, at most 5) for a segment's "
+        "near-best parents. Not the 0-1 similarity fraction 'recomb --margin' takes. A "
+        "wide window lets every pair share a strain, so every query reads clonal.",
     ),
     scan_segments: bool = typer.Option(
         False, "--scan-segments",
@@ -56,10 +59,19 @@ def reassort(
     logger = get_logger(output)
     with stage_errors(logger):
         _require_file(query, "Query file")
-        # ANI is a percentage. Above 100 nothing can be assigned; a negative margin
-        # leaves every near-best set empty, so a clonal pair reads as undetermined.
+        # ANI is a percentage. Above 100 nothing can be assigned; a value in (0, 1] is
+        # almost certainly a fraction meant as a percentage (0.8 for 80), and would
+        # accept every tip skani reports.
         _require_range(ani_floor, "--ani-floor", lo=0.0, hi=100.0)
-        _require_range(margin, "--margin", lo=0.0)
+        if 0.0 < ani_floor <= 1.0:
+            raise UserInputError(
+                f"Invalid --ani-floor {ani_floor:g}: ANI is a percentage (0-100), not a "
+                f"fraction. Did you mean --ani-floor {100 * ani_floor:g}?"
+            )
+        # A margin of zero makes a 0.01-point tie-break between two tips read as
+        # different parents; a wide one makes every pair share a strain, so the verdict
+        # is clonal whatever the data (0.5 gave reassortant where 40 gave clonal).
+        _require_range(margin, "--margin", lo=0.0, hi=MAX_MARGIN, lo_open=True)
         overrides: dict[str, str] = {}
         for item in dataset or []:
             if "=" not in item:
