@@ -104,10 +104,11 @@ def call_constellation(
                 "each, so the parents cannot be separated at this margin (a smaller "
                 "--margin may resolve it)"
             )
-    if within:
-        verdict = "undetermined"
-    elif discordant:
+    across = [(i, j) for i, j in discordant if (i, j) not in within]
+    if across:
         verdict = "reassortant"
+    elif within:
+        verdict = "undetermined"
     elif concordant and len(groups) == 1:
         verdict = "clonal"
     else:

@@ -122,3 +122,19 @@ def test_a_segment_with_no_candidates_is_uninformative_not_discordant():
                            {"HA": set(universe), "NA": set(universe)}, margin=0.5)
     assert c.verdict == "undetermined"
     assert [p.relation for p in c.pairs] == ["uninformative"]
+
+
+def test_within_group_pair_does_not_veto_a_cross_group_discordance():
+    """A-C is ambiguous inside the linked group {A,B,C}, but D disagrees with all three
+    across groups, so the evidence still separates two parents."""
+    candidates = {
+        "A": [("X", 99.9), ("Y", 99.8)],
+        "B": [("Y", 99.9), ("Z", 99.8)],
+        "C": [("Z", 99.9)],
+        "D": [("W", 99.9)],
+    }
+    universe = {"X", "Y", "Z", "W"}
+    c = call_constellation(candidates, {k: set(universe) for k in candidates}, margin=0.5)
+    relations = {p.relation for p in c.pairs}
+    assert {"discordant", "discordant_within_group"} <= relations
+    assert c.verdict == "reassortant"
