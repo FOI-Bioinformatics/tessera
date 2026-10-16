@@ -1,7 +1,7 @@
 """XMFA -> FASTA converter (Python 3 port of x2fa.py).
 
 Port of ``x2fa.py`` v9 by Adrian Larkeryd, originally invoked as a Python 2
-subprocess by the legacy ``phylo.py``. Behaviour is preserved: the reference
+subprocess by the legacy ``phylo.py``. Otherwise behaviour is preserved: the reference
 sequence defines the coordinate system, reference gaps are removed, and every
 sequence is projected onto the reference coordinates. The original's optional
 deletion-flank screen is not carried over: no caller used it. Strings are handled

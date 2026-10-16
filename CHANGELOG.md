@@ -17,8 +17,10 @@ around the callers change: the `donor_undercovered` flag and
 donor-absent rows where a coverage gap is now recognised as a breakpoint artefact; runs
 that select the barcode caller on a panel where it cannot run (it no longer counts toward
 `--min-methods`, and a barcode-only run is refused); and what reaches the scan -- an
-alignment built with the MAFFT or MAF-based backends, or a panel built with `--curate`,
-may now be a different (corrected) one.
+alignment built with the MAFFT or MAF-based backends, an alignment built with
+progressiveMauve (the backbone row is now the reference itself), a sibeliaz alignment on
+macOS (which previously came out empty), or a panel built with `--curate`, may now be a
+different (corrected) one.
 
 ### Fixed
 

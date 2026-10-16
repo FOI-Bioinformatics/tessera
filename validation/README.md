@@ -162,10 +162,12 @@ not inter-lineage mosaic recombination -- and is out of scope for Tessera and th
 
 ### Aligner note (orthopoxvirus)
 
-`sibeliaz` (the default backend) OOMs on the large collinear orthopox blocks on
-a typical laptop -- its spoa step is killed and it writes an empty MAF, with a
-clear error directing you to more memory or another backend. `orthopox_example`
-therefore uses `minimap2`, the assembly-to-reference backend, which suits the
+On the orthopox collection `sibeliaz` (the default backend) wrote an empty MAF, which
+was attributed to its spoa step running out of memory on the large collinear blocks.
+Before this release the same symptom on macOS also came from an incompatibility between
+the sibeliaz wrapper and the BSD `paste`/`xargs` tools (now patched). The orthopox case
+has not been re-run with the patched wrapper, so the cause there is not established.
+`orthopox_example` uses `minimap2`, the assembly-to-reference backend, which suits the
 fragmented 8-contig query and runs in seconds.
 
 ### One caveat to confirm

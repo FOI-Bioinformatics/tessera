@@ -361,3 +361,24 @@ def test_build_pool_marks_the_installed_pool_complete(monkeypatch, tmp_path, log
     assert manifest is not None
     assert manifest["dataset"] == "x/y" and manifest["tag"] == "t"
     assert manifest["genomes"] == 3
+
+
+def test_build_pool_uses_a_pool_cached_before_manifests_existed(monkeypatch, tmp_path, logger):
+    """Guard for the CHANGELOG claim "Pools cached by earlier releases are still used".
+
+    A cache directory holding a genome FASTA but no tessera_cache.json manifest is
+    returned as is, with no download. This passes both before and after the
+    alignment-integrity changes; it pins existing behaviour and is not a regression test.
+    """
+    cache = tmp_path / "c"
+    cache.mkdir()
+    genome = cache / "OLD1.fasta"
+    genome.write_text(">OLD1 X\nACGTACGTAC\n")
+    assert not (cache / "tessera_cache.json").exists()
+
+    def boom(*args, **kwargs):
+        raise AssertionError("no download on a cache hit")
+
+    monkeypatch.setattr(nc, "_download_text", boom)
+    pool = nc.build_pool(_dataset(), cache_dir=cache, logger=logger)
+    assert pool == [genome]
