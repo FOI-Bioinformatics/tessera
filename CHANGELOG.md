@@ -30,15 +30,19 @@ median breakpoint error; no byte-baseline was captured for that setting.
   `recombination_regions.tsv`, donor-absent regions included.
 - Every command rejects an output path that is a file. The discover commands range-check
   the coverage fractions and search counts (`--top-gaps 0` is an error). `msa` refuses
-  `--reference` with `--query-as-backbone` and warns before overwriting.
+  `--reference` with `--query-as-backbone` and warns before overwriting. `--threads` is
+  range-checked on `detect`, `build-panel`, `fill-references` and `reassort`.
   `find-references -q` is kept verbatim. `build-panel` takes `--pool-consensus`,
   `--keep-recombinant-lineages` and `--deep-typing`.
 - `reassort --margin` must be above 0 and at most 5 ANI points, and an `--ani-floor`
-  of 1 or below is rejected as a likely fraction. A discordant pair inside one parent
-  group gives `undetermined` instead of `reassortant`; every pair's relation is written
-  to `segment_pairs.tsv`. `reassort` takes `--threads` for `--scan-segments`.
+  above 0 and at most 1 is rejected as a likely fraction. A discordant pair inside one
+  parent group gives `undetermined` instead of `reassortant`, unless another discordant
+  pair crosses parent groups, which still gives `reassortant`; every pair's relation is
+  written to `segment_pairs.tsv`. `reassort` takes `--threads` for `--scan-segments`.
 - The help of `--min-region`, `--margin` and `--merge-gap` names the callers that read
-  them; the validation harnesses parse their arguments with `argparse`.
+  them. `validation/run_specificity.py`, `run_regimes.py` and `characterise_false_regions.py`
+  parse their arguments with `argparse`; the other harnesses, including `run_hybrids.py`,
+  still parse them by hand, so `--help` there is not handled.
 
 Fixes from the post-1.2.0 audit
 (`docs/superpowers/specs/2026-10-01-post-1.2.0-audit-design.md`, items A1-A10, B1-B11 and
