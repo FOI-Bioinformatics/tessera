@@ -380,7 +380,9 @@ def run_recomb(
     excluded_siblings: list = []
     for method in params.methods:
         res, ana = (result, analysis) if method == "hmm" else (bp_result, analysis_bp)
-        regs, major_m, sibs = call_regions(res, ana, params.window_size, _region_params(method))
+        regs, major_m, sibs = call_regions(
+            res, ana, params.window_size, _region_params(method), not_run=not_run
+        )
         per_method[method] = regs
         majors[method] = major_m
         if method == "hmm":
@@ -411,6 +413,14 @@ def run_recomb(
             "The barcode caller could not run (%s); it is reported as 'not run', not as "
             "a negative.", reason,
         )
+    if "hmm" in not_run:
+        logger.warning(
+            "The hmm caller could not test (%s); it is reported as 'not run', not as a "
+            "negative.", not_run["hmm"],
+        )
+    # Only the barcode caller lowers the agreement gate. A one-state HMM is reported as
+    # not run but still counted here: lowering the gate for it would change which
+    # regions are reported, which this reporting change does not do.
     n_ran = len(params.methods) - len(callers_not_run)
 
     major_parent, per_major = reconcile_major(majors, window_wins=analysis_bp.winners_with_ties)

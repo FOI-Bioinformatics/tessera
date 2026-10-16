@@ -225,14 +225,19 @@ def call_regions(
     analysis: AnalysisResult,
     window_size: int,
     params: RegionParams,
+    *,
+    not_run: dict[str, str] | None = None,
 ) -> tuple[list[Region], str | None, list[SiblingEvidence]]:
     """Call recombinant regions.
 
     Returns ``(regions, major_parent, excluded_siblings)`` -- the third element lists
     the query's whole-genome siblings set aside before segmenting (HMM caller only).
+
+    A caller that ran but could not test (the HMM left with one state) records why in
+    ``not_run`` under its own name, when a mapping is given; its result is unchanged.
     """
     if params.method == "hmm":
-        regions, major, siblings = _call_regions_hmm(result, window_size, params)
+        regions, major, siblings = _call_regions_hmm(result, window_size, params, not_run)
     elif params.method == "3seq":
         from .threeseq import call_regions_3seq
         regions, major, siblings = call_regions_3seq(result, analysis, params)
@@ -256,8 +261,17 @@ def call_regions(
     return regions, major, siblings
 
 
+# Why the HMM could not test when lineage clustering left it a single state.
+HMM_ONE_STATE = (
+    "lineage clustering pooled every reference into one lineage, so the HMM had no "
+    "second state to switch to; rerun with --no-cluster-lineages"
+)
+HMM_ONE_REFERENCE = "the panel has a single reference, so the HMM had no second state to switch to"
+
+
 def _call_regions_hmm(
-    result: WindowSimilarity, window_size: int, params: RegionParams
+    result: WindowSimilarity, window_size: int, params: RegionParams,
+    not_run: dict[str, str] | None = None,
 ) -> tuple[list[Region], str | None, list[SiblingEvidence]]:
     """HMM segmentation; a non-major segment is reported only when its donor is a
     significantly better match than the major on the sites distinguishing them.
@@ -270,6 +284,8 @@ def _call_regions_hmm(
     """
     if len(result.similarities) < 2:
         only = next(iter(result.similarities), None)
+        if not_run is not None:
+            not_run["hmm"] = HMM_ONE_REFERENCE
         return [], only, []
 
     # Front-end: pool near-duplicate references into lineage clusters and compete the
@@ -281,6 +297,10 @@ def _call_regions_hmm(
         clusters = cluster_references(result, window_size, params)
         if not all_singletons(clusters):
             work, cluster_size = clustered_view(result, clusters)
+    if len(work.similarities) < 2 and not_run is not None:
+        # One state cannot switch, so the decode below cannot call a region whatever
+        # the data. The run continues unchanged; the caller is reported as not run.
+        not_run["hmm"] = HMM_ONE_STATE
 
     states: list[str] | None = None
     dropped: list[SiblingEvidence] = []

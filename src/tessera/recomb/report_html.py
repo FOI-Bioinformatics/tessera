@@ -52,6 +52,30 @@ def _union_length(spans: list[tuple[int, int]]) -> int:
     return total
 
 
+def _not_run_caveat(methods_run: tuple[str, ...], not_run: dict[str, str]) -> str:
+    """A header note naming every selected caller that could not test, with the reason.
+
+    Shown whatever the number of callers: the method comparison, which also marks them,
+    is omitted for a single-caller run, and a caller that tested nothing must not leave
+    the verdict reading as a negative.
+    """
+    callers = [m for m in methods_run if m in not_run]
+    if not callers:
+        return ""
+    items = "; ".join(
+        f'<strong>{html.escape(m)}</strong> ({html.escape(not_run[m])})' for m in callers
+    )
+    lead = (
+        "No selected caller could test this alignment" if len(callers) == len(methods_run)
+        else "Not every selected caller could test this alignment"
+    )
+    return (
+        f'<div class="caveat"><span class="ic">&#9888;</span><div><strong>{lead}.</strong> '
+        f'Not run: {items}. A caller that did not run tested nothing; a region it does not '
+        f'list is not a negative result from it.</div></div>'
+    )
+
+
 def _summary(
     result: WindowSimilarity, regions: list[Region], datasets: list[str]
 ) -> dict:
@@ -125,10 +149,15 @@ def _query_lineage_clause(query: str, query_lineage: str | None) -> str:
 
 def _verdict_html(
     s: dict, query: str, colors: dict[str, str], lineage_map: LineageMap | None = None,
-    query_lineage: str | None = None,
+    query_lineage: str | None = None, untested: bool = False,
 ) -> str:
     major = html.escape(typed(s["major"], lineage_map))
     q_clause = _query_lineage_clause(query, query_lineage)
+    if s["n_regions"] == 0 and untested:
+        lead = ('No recombinant region was called, but no selected caller could test this '
+                'alignment, so this is <strong>not a negative result</strong> (see the note '
+                'below).')
+        return f'<p class="verdict">{lead}{q_clause}{_absent_clause(s)}</p>'
     if s["n_regions"] == 0:
         lead = (f'No recombination among the present references &mdash; the query is most '
                 f'similar to <strong>{major}</strong> throughout.')
@@ -621,6 +650,7 @@ def write_html_report(
     # is outside the plotted datasets and its swatch and mosaic segment were grey.
     colors = _color_map(region_labels(datasets, regions))
     s = _summary(result, regions, datasets)
+    untested = bool(ctx.methods_run) and len(ctx.methods_not_run) == len(ctx.methods_run)
     organism_html = (
         f'<div class="organism">{html.escape(ctx.organism)}</div>' if ctx.organism else ""
     )
@@ -643,7 +673,8 @@ def write_html_report(
         '<header><div class="eyebrow">Tessera &middot; recombination report</div>'
         f'<h1 class="mono">{html.escape(result.query)}</h1>'
         f"{organism_html}"
-        f"{_verdict_html(s, result.query, colors, lineage_map, ctx.query_lineage)}"
+        f"{_verdict_html(s, result.query, colors, lineage_map, ctx.query_lineage, untested)}"
+        f"{_not_run_caveat(ctx.methods_run, ctx.not_run)}"
         f"{_caveat_html(caveat_gaps, threshold)}</header>"
         f"{_cards_html(s, colors, lineage_map)}"
         '<section class="section"><div class="eyebrow">Query mosaic</div>'

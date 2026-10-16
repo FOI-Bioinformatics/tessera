@@ -85,3 +85,75 @@ def test_too_few_informative_sites_is_recorded_in_the_provenance(
     run = json.loads((out / "run_provenance.json").read_text())["run"]
     assert run["recombination signal (PHI)"].startswith("not run (fewer than 10 informative")
     assert "not run" in (out / "report.html").read_text()
+
+
+def _one_lineage_panel(tmp_path: Path) -> Path:
+    """Five references 0.25 % apart and a query carrying a real 6 kb tract from one.
+
+    Under base-pair windowing every pair of references stays above the 98.5 % pooling
+    floor in every window, so lineage clustering pools them into a single HMM state.
+    """
+    import random
+
+    rng = random.Random(3)
+    anc = [rng.choice("ACGT") for _ in range(20000)]
+
+    def mut(seq: list[str], rate: float) -> list[str]:
+        return [rng.choice([b for b in "ACGT" if b != c]) if rng.random() < rate else c
+                for c in seq]
+
+    refs = {f"ref_{i}": mut(anc, 0.0025) for i in range(5)}
+    query = list(refs["ref_0"])
+    query[8000:14000] = refs["ref_3"][8000:14000]
+    msa = tmp_path / "pool.fasta"
+    msa.write_text(">query\n" + "".join(query) + "\n"
+                   + "".join(f">{k}\n{''.join(v)}\n" for k, v in refs.items()))
+    return msa
+
+
+def test_single_state_hmm_is_reported_as_not_run(tmp_path: Path, logger) -> None:
+    out = tmp_path / "out"
+    run_recomb(
+        RecombParams(msa=_one_lineage_panel(tmp_path), output=out, query="query",
+                     plot_format="png", methods=("hmm",), informative_sites=False),
+        logger,
+    )
+    assert _rows(out / "recombination_regions.tsv") == []  # unchanged: nothing called
+    run = json.loads((out / "run_provenance.json").read_text())["run"]
+    assert run["callers not run"].startswith("hmm (lineage clustering pooled every reference")
+    report = (out / "report.html").read_text()
+    assert "No recombination among the present references" not in report
+    assert "not a negative result" in report
+    assert "--no-cluster-lineages" in report
+
+
+def test_single_state_hmm_is_not_run_in_the_method_table(tmp_path: Path, logger) -> None:
+    """In an ensemble the other callers still call the tract; the HMM column must not
+    read as a caller that looked and found nothing."""
+    out = tmp_path / "out"
+    run_recomb(
+        RecombParams(msa=_one_lineage_panel(tmp_path), output=out, query="query",
+                     plot_format="png", informative_sites=False),
+        logger,
+    )
+    rows = _rows(out / "recombination_methods.tsv")
+    assert rows, "the site callers find the 6 kb tract"
+    assert {r["hmm"] for r in rows} == {"not run"}  # was "no"
+    regions = _rows(out / "recombination_regions.tsv")
+    assert all("hmm" not in r["methods"] for r in regions)
+
+
+def test_barcode_and_one_state_hmm_are_both_reported_not_run(tmp_path: Path, logger) -> None:
+    """Review focus 2: two callers not run in one run, each with its own reason. Only
+    the barcode lowers the agreement gate (a one-state HMM still counts; see plan G)."""
+    out = tmp_path / "out"
+    run_recomb(
+        RecombParams(msa=_one_lineage_panel(tmp_path), output=out, query="query",
+                     plot_format="png", informative_sites=False,
+                     methods=("hmm", "3seq", "barcode"), min_methods=2),
+        logger,
+    )
+    run = json.loads((out / "run_provenance.json").read_text())["run"]
+    assert run["callers not run"].startswith("hmm (lineage clustering")
+    assert "; barcode (it needs typed references" in run["callers not run"]
+    assert run["min methods (agreement gate)"] == "2"

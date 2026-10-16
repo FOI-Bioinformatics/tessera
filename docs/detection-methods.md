@@ -108,6 +108,10 @@ compared on the informative columns only, so distinct lineages stay apart. The l
 remains when base-pair windowing is forced on such a panel (`--no-informative-sites`):
 run with `--no-cluster-lineages` to keep the HMM's vote. The site-based callers (3SEQ,
 MaxChi) are unaffected either way. `run_provenance.json` records whether clustering was on.
+When clustering does leave the HMM a single state, the run says so: the HMM is reported
+as `not run` with this reason in the report header, the method comparison and
+`run_provenance.json` (`callers not run`), not as a caller that found nothing. It still
+counts toward `--min-methods`.
 
 ### Low-divergence panels (intra-species sets, DNA viruses)
 
