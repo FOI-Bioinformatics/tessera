@@ -6,6 +6,40 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fourth audit, plan F: reporting, CLI and reassortment
+
+From `docs/superpowers/specs/2026-10-12-audit-swot-gap.md` (B1, B3, B5, B7-B9, the smaller
+reporting items, E1-E4, E5 in part, E14, F1-F5; help text and documentation for B2, B4,
+B6, A4). None of these changes which regions are called or their coordinates. The
+specificity harness at the default gate (`run_specificity.py --reps 3`, `--min-methods 2`:
+0/12 runs with a false region) gives output byte-identical to the run before the branch,
+apart from its two header lines. With `--min-methods 1` it gave 7/12 runs with a false
+region, 8 regions, all HMM, and positive control 3/3 detected, 3/3 correct donor, 13 bp
+median breakpoint error; no byte-baseline was captured for that setting.
+
+- A test or caller that gave no result is reported as `not run`, with the reason, in the
+  report, the TSVs and `run_provenance.json`: the PHI test under `--no-phi`, with too few
+  informative sites or when not testable (`parent_free_support` now reads `not run`
+  instead of `no`), and an HMM that lineage clustering left with one state.
+- A `low_information` coverage gap is no longer announced as a possible missing
+  reference.
+- `run_provenance.json` gains `coordinates`; under informative-site windowing
+  `window / step` says it describes the base-pair scan.
+- The report headline names the run's reconciled major parent; the pair plot uses the
+  report's colours; `recombination_methods.tsv` has one row per row of
+  `recombination_regions.tsv`, donor-absent regions included.
+- Every command rejects an output path that is a file. The discover commands range-check
+  the coverage fractions and search counts (`--top-gaps 0` is an error). `msa` refuses
+  `--reference` with `--query-as-backbone` and warns before overwriting.
+  `find-references -q` is kept verbatim. `build-panel` takes `--pool-consensus`,
+  `--keep-recombinant-lineages` and `--deep-typing`.
+- `reassort --margin` must be above 0 and at most 5 ANI points, and an `--ani-floor`
+  of 1 or below is rejected as a likely fraction. A discordant pair inside one parent
+  group gives `undetermined` instead of `reassortant`; every pair's relation is written
+  to `segment_pairs.tsv`. `reassort` takes `--threads` for `--scan-segments`.
+- The help of `--min-region`, `--margin` and `--merge-gap` names the callers that read
+  them; the validation harnesses parse their arguments with `argparse`.
+
 Fixes from the post-1.2.0 audit
 (`docs/superpowers/specs/2026-10-01-post-1.2.0-audit-design.md`, items A1-A10, B1-B11 and
 C1-C5, C7, C8). The data-safety and reporting fixes (A, B) leave the callers alone: for a
