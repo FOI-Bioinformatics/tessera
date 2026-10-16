@@ -39,6 +39,7 @@ exact magnitude on real panels.
 
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
 import tempfile
@@ -218,16 +219,29 @@ def _scan(seqs: dict[str, str], logger: logging.Logger, min_methods: int) -> lis
         return _read_regions(out / "recombination_regions.tsv")
 
 
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    """The harness options. ``--help`` prints them and exits before any simulation; an
+    unknown flag or a non-integer value is an error, not silently ignored."""
+    parser = argparse.ArgumentParser(
+        allow_abbrev=False,
+        prog="run_specificity.py",
+        description="Count the false regions Tessera reports on simulated clonal data, "
+        "with a matching positive control. Needs no aligner, network or data.",
+    )
+    parser.add_argument("--reps", type=int, default=10,
+                        help="replicates per scenario (default 10)")
+    parser.add_argument("--min-methods", type=int, default=2,
+                        help="agreement gate passed to the scan (default 2, the harness "
+                        "default; the CLI default is 1)")
+    args = parser.parse_args(argv)
+    if args.reps < 1 or args.min_methods < 1:
+        parser.error("--reps and --min-methods must be at least 1")
+    return args
+
+
 def main(argv: list[str]) -> int:
-    reps = 10
-    min_methods = 2
-    for flag, target in (("--reps", "reps"), ("--min-methods", "min_methods")):
-        if flag in argv:
-            value = int(argv[argv.index(flag) + 1])
-            if target == "reps":
-                reps = value
-            else:
-                min_methods = value
+    args = parse_args(argv)
+    reps, min_methods = args.reps, args.min_methods
 
     logger = logging.getLogger("tessera.specificity")
     logger.addHandler(logging.NullHandler())

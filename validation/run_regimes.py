@@ -35,6 +35,7 @@ exists and roughly how large it is, not its magnitude on real panels.
 
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
 import tempfile
@@ -228,13 +229,29 @@ def _median(values: list[int]) -> str:
     return f"{int(np.median(values))} bp" if values else "n/a"
 
 
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    """The harness options; ``--help`` exits before any simulation."""
+    parser = argparse.ArgumentParser(
+        allow_abbrev=False,
+        prog="run_regimes.py",
+        description="Simulate the near-identical and sibling-tract regimes and score the "
+        "scan. Needs no aligner, network or data.",
+    )
+    parser.add_argument("--reps", type=int, default=10, help="replicates (default 10)")
+    parser.add_argument("--min-methods", type=int, default=1,
+                        help="agreement gate passed to the scan (default 1)")
+    parser.add_argument("--no-cluster-lineages", action="store_true",
+                        help="turn lineage clustering off")
+    args = parser.parse_args(argv)
+    if args.reps < 1 or args.min_methods < 1:
+        parser.error("--reps and --min-methods must be at least 1")
+    return args
+
+
 def main(argv: list[str]) -> int:
-    reps, min_methods = 10, 1
-    if "--reps" in argv:
-        reps = int(argv[argv.index("--reps") + 1])
-    if "--min-methods" in argv:
-        min_methods = int(argv[argv.index("--min-methods") + 1])
-    cluster = "--no-cluster-lineages" not in argv
+    args = parse_args(argv)
+    reps, min_methods = args.reps, args.min_methods
+    cluster = not args.no_cluster_lineages
 
     logger = logging.getLogger("tessera.regimes")
     logger.addHandler(logging.NullHandler())
