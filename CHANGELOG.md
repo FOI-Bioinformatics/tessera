@@ -32,7 +32,7 @@ median breakpoint error; no byte-baseline was captured for that setting.
 - Every command rejects an output path that is a file. The discover commands range-check
   the coverage fractions and search counts (`--top-gaps 0` is an error). `msa` refuses
   `--reference` with `--query-as-backbone` and warns before overwriting. `--threads` is
-  range-checked on `detect`, `build-panel`, `fill-references` and `reassort`.
+  range-checked on `detect`, `build-panel`, `fill-references`, `msa` and `reassort`.
   `find-references -q` is kept verbatim. `build-panel` takes `--pool-consensus`,
   `--keep-recombinant-lineages` and `--deep-typing`.
 - `reassort --margin` must be above 0 and at most 5 ANI points, and an `--ani-floor`
