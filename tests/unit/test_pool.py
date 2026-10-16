@@ -125,3 +125,63 @@ def test_select_regional_warns_when_every_genome_is_a_sibling(monkeypatch, tmp_p
     assert sel.selected  # still a panel: the siblings are all there is
     assert "Every pool genome is a sibling of the query" in caplog.text
     assert "no distinct parental lineage found in the pool" in caplog.text
+
+
+# --- audit 4: a short query is still matched region by region (D9) -----------------
+
+def test_select_regional_cuts_a_short_query_into_two_windows(monkeypatch, tmp_path, logger):
+    """A 2.9 kb query at the default 1500 bp window was one window over the whole query,
+    so a genome that matches only one half could not be recruited for that half."""
+    par_a, par_b = _genomes(tmp_path, ["PAR_A", "PAR_B"])
+    query = tmp_path / "q.fasta"
+    query.write_text(">q\n" + "A" * 2900 + "\n")
+    _patch_selection(
+        monkeypatch,
+        {"PAR_A": (90.0, 85.0), "PAR_B": (88.0, 84.0)},
+        {"PAR_A": {"win_0": (96.0, 80.0), "win_1": (85.0, 80.0)},
+         "PAR_B": {"win_0": (85.0, 80.0), "win_1": (96.0, 80.0)}},
+    )
+
+    sel = pool.select_regional(query, [par_a, par_b], window=1500, per_window=1, logger=logger)
+
+    assert {p.stem for p in sel.selected} == {"PAR_A", "PAR_B"}
+    assert [(r["query_start"], r["query_end"]) for r in sel.table] == [(0, 1450), (1450, 2900)]
+
+
+def test_select_regional_keeps_one_window_for_a_query_no_longer_than_it(
+    monkeypatch, tmp_path, logger
+):
+    """Guard (passes before and after): nothing to split at or below one window."""
+    par_a, par_b = _genomes(tmp_path, ["PAR_A", "PAR_B"])
+    query = tmp_path / "q.fasta"
+    query.write_text(">q\n" + "A" * 1500 + "\n")
+    _patch_selection(
+        monkeypatch,
+        {"PAR_A": (90.0, 85.0), "PAR_B": (88.0, 84.0)},
+        {"PAR_A": {"win_0": (96.0, 80.0)}, "PAR_B": {"win_0": (85.0, 80.0)}},
+    )
+
+    sel = pool.select_regional(query, [par_a, par_b], window=1500, per_window=1, logger=logger)
+
+    assert [(r["query_start"], r["query_end"]) for r in sel.table] == [(0, 1500)]
+
+
+def test_select_regional_falls_back_to_the_whole_query_when_no_half_matches(
+    monkeypatch, tmp_path, logger
+):
+    """skani may report nothing for a sub-window chunk (it is a genome-scale tool). The
+    split must not then leave a short query with an empty panel where the single
+    whole-query window used to select one: the whole-genome ranking is used instead."""
+    par_a, par_b = _genomes(tmp_path, ["PAR_A", "PAR_B"])
+    query = tmp_path / "q.fasta"
+    query.write_text(">q\n" + "A" * 2900 + "\n")
+    _patch_selection(
+        monkeypatch,
+        {"PAR_A": (90.0, 85.0), "PAR_B": (88.0, 84.0)},
+        {"PAR_A": {"win_0": (0.0, 0.0), "win_1": (0.0, 0.0)},
+         "PAR_B": {"win_0": (0.0, 0.0), "win_1": (0.0, 0.0)}},
+    )
+
+    sel = pool.select_regional(query, [par_a, par_b], window=1500, per_window=1, logger=logger)
+
+    assert [p.stem for p in sel.selected] == ["PAR_A"]

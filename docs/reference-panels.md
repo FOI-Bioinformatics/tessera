@@ -204,8 +204,9 @@ For an over-represented lineage, seed from a **finite pool** instead
   dump, a subtype reference set, or a lab collection). Because the pool is finite it is
   dereplicated and the query's siblings (near-identical genome-wide) are dropped, so
   the divergent parents are no longer out-ranked. The query is then matched region by
-  region and the best-covering genomes are kept -- a focused parental panel, offline
-  and reproducible.
+  region (in windows of `--seed-window`, 1500 bp by default; a query between one and two
+  windows long is cut into two halves) and the best-covering genomes are kept -- a
+  focused parental panel, offline and reproducible.
 - `ncbi-virus` -- a taxon-scoped set fetched with the `datasets` CLI (`--taxon
   "HIV-1"`, auto-detected if omitted). By default it pulls the RefSeq representative
   set (one genome per lineage, diverse by construction); add `--source-complete` for

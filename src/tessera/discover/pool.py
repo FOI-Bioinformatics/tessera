@@ -349,6 +349,13 @@ def select_regional(
 
     query_seq = records[0][1].replace("-", "")
     n_windows = max(1, len(query_seq) // window)
+    # Integer division gives a query between one and two windows long a single window
+    # over the whole of it, which is whole-genome selection under another name (a 2.9 kb
+    # genome at the default 1500 bp). Cut such a query into two equal halves instead.
+    split_short = n_windows == 1 and len(query_seq) > window
+    if split_short:
+        n_windows = 2
+        window = -(-len(query_seq) // 2)  # ceiling: the two halves cover the query
     selected: list[Path] = []
     table: list[dict] = []
     seen = set()
@@ -374,6 +381,18 @@ def select_regional(
                     "window": w, "query_start": start, "query_end": end,
                     "genome": strip_sequence_extension(g.name), "ani": ani[g][0],
                 })
+    if not selected and split_short:
+        # skani is a genome-scale tool and may report nothing for a half-length chunk.
+        # Fall back to the whole-query ranking the single window used to give, rather
+        # than return an empty panel for a short genome.
+        logger.info(
+            "No pool genome matched either half of the %d bp query; selecting on the "
+            "whole query instead.", len(query_seq),
+        )
+        ranked = sorted(
+            (g for g in related if whole[g][0] > 0), key=lambda g: whole[g][0], reverse=True
+        )
+        selected = ranked[:per_window]
     logger.info(
         "Regional selection: %d genome(s) cover the query across %d window(s).",
         len(selected), n_windows,

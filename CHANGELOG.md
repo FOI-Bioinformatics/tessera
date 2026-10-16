@@ -245,6 +245,10 @@ Panel recruitment (fourth audit):
 - Pool selection kept every genome without comment when all of them were siblings of the
   query, and returned a normal-looking panel. It now logs a warning, as BLAST seeding
   already did for the same situation.
+- Regional pool selection treated a query between one and two selection windows long
+  (1.5-3 kb at the default) as a single window, which is whole-genome selection. Such a
+  query is now cut into two halves, with the whole-genome ranking as a fallback if neither
+  half matches. Longer queries are unaffected.
 
 ### Changed
 
