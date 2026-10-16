@@ -248,6 +248,8 @@ The sibling drop uses an absolute identity cutoff, which suits divergent-lineage
 recombinants (HIV subtypes ~12 % apart). For closely related parents that have no
 masking sibling (e.g. SARS-CoV-2 sublineages), add `--seed-keep-siblings`. NCBI Virus
 / `datasets` needs `conda install -c conda-forge ncbi-datasets-cli`.
+When every genome in the pool is a sibling, none is dropped (the pool would be empty),
+and the run logs a warning that no distinct parental lineage was found in the pool.
 
 ## Auto-diversify
 

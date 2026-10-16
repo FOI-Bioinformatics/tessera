@@ -242,6 +242,9 @@ Panel recruitment (fourth audit):
   a seeded panel with no coverage gap downloads nothing for it to curate -- the run wrote
   no panel table and no log line. The log and the report's "Reference panel" section now
   state that curation did not run.
+- Pool selection kept every genome without comment when all of them were siblings of the
+  query, and returned a normal-looking panel. It now logs a warning, as BLAST seeding
+  already did for the same situation.
 
 ### Changed
 

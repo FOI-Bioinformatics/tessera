@@ -334,6 +334,16 @@ def select_regional(
                 len(siblings), sibling_identity,
             )
             pool = [g for g in pool if g not in siblings]
+        elif siblings:
+            # Dropping them would empty the pool, so they stay; say so, as BLAST seeding
+            # does, rather than return a panel that looks like any other.
+            logger.warning(
+                "Every pool genome is a sibling of the query (>= %.0f%% ANI over near-full "
+                "coverage); selecting among them instead (no distinct parental lineage "
+                "found in the pool). Siblings match the query everywhere and can mask a "
+                "recombination.",
+                sibling_identity,
+            )
     # Drop genomes unrelated to the query (keep everything if the floor removes all).
     related = [g for g in pool if whole[g][0] >= ani_floor] or pool
 

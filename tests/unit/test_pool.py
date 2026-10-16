@@ -94,3 +94,34 @@ def test_lineage_labels_parses_isolate_and_pangolin(tmp_path):
     )
     labels = pool._lineage_labels(report)
     assert labels == {"A1": "GII.4", "A2": "XBB.1"}
+
+
+def _patch_selection(monkeypatch, whole, window):
+    monkeypatch.setattr(pool, "skani_available", lambda: True)
+    monkeypatch.setattr(pool, "dereplicate", lambda g, ani, logger: (list(g), []))
+    monkeypatch.setattr(pool, "skani_query_ani", _fake_ani(whole, window))
+
+
+# --- audit 4: an all-sibling pool is reported (D7) ---------------------------------
+
+def test_select_regional_warns_when_every_genome_is_a_sibling(monkeypatch, tmp_path, caplog):
+    """Four genomes at 99 % ANI over 99 % coverage: the sibling drop would empty the pool,
+    so it is skipped. That used to happen in silence and yield a normal-looking panel."""
+    import logging
+
+    names = ["S1", "S2", "S3", "S4"]
+    genomes = _genomes(tmp_path, names)
+    query = tmp_path / "q.fasta"
+    query.write_text(">q\n" + "A" * 3000 + "\n")
+    _patch_selection(
+        monkeypatch,
+        {n: (99.0, 99.0) for n in names},
+        {n: {"win_0": (99.0, 80.0), "win_1": (99.0, 80.0)} for n in names},
+    )
+    log = logging.getLogger("pool_test")
+    with caplog.at_level(logging.WARNING, logger="pool_test"):
+        sel = pool.select_regional(query, genomes, window=1500, per_window=2, logger=log)
+
+    assert sel.selected  # still a panel: the siblings are all there is
+    assert "Every pool genome is a sibling of the query" in caplog.text
+    assert "no distinct parental lineage found in the pool" in caplog.text
