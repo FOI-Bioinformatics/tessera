@@ -52,8 +52,10 @@ class ProgressiveMauveAligner(Aligner):
 
         # Pin every per-query projection to the full reference length so the
         # rows concatenate into a rectangular MSA regardless of how far each
-        # query aligns.
-        ref_length = sum(len(seq) for _, seq in read_fasta(reference))
+        # query aligns. A multi-record reference is read by progressiveMauve as one
+        # concatenated sequence, so the backbone row is that concatenation.
+        ref_seq = "".join(seq for _, seq in read_fasta(reference))
+        ref_length = len(ref_seq)
 
         queries = [g for g in genomes if g != reference]
 
@@ -85,14 +87,20 @@ class ProgressiveMauveAligner(Aligner):
         per_query = parallel_map(align_query, queries, workers, logger=logger)
 
         msa = out_dir / "msa.fasta"
-        _concatenate(per_query, reference.stem, msa)
+        _concatenate(per_query, reference.stem, ref_seq, msa)
         return AlignResult(msa_fasta=msa)
 
 
 def _concatenate(
-    per_query: list[tuple[str, Path]], reference_label: str, out_path: Path
+    per_query: list[tuple[str, Path]], reference_label: str, reference_seq: str,
+    out_path: Path,
 ) -> None:
-    """Write the reference row once, then one row per query, named by staged label.
+    """Write the backbone row once, then one row per query, named by staged label.
+
+    The backbone row is the reference's own sequence, not a projection. Each
+    per-query projection carries a reference row gapped wherever that query did not
+    align, so taking it from any one projection would lose the columns that query
+    missed -- and which columns were lost would depend on the order of the queries.
 
     Each per-query FASTA holds exactly two records, in a fixed order: the reference
     projection, then the query's. The names inside those files are the paths
@@ -102,7 +110,8 @@ def _concatenate(
     never from those names.
     """
     with open(out_path, "w") as out:
-        for i, (label, fa) in enumerate(per_query):
+        write_fasta_record(out, reference_label, reference_seq)
+        for label, fa in per_query:
             records = read_fasta(fa)
             if len(records) != 2:
                 raise OutputError(
@@ -111,6 +120,11 @@ def _concatenate(
                     f"{len(records)} record(s). progressiveMauve's output is not a "
                     "pairwise alignment."
                 )
-            if i == 0:
-                write_fasta_record(out, reference_label, records[0][1])
-            write_fasta_record(out, label, records[1][1])
+            row = records[1][1]
+            if len(row) != len(reference_seq):
+                raise OutputError(
+                    f"The projection of '{label}' in {fa} is {len(row)} column(s) wide; "
+                    f"the backbone '{reference_label}' is {len(reference_seq)} bp. "
+                    "progressiveMauve reported coordinates beyond the backbone."
+                )
+            write_fasta_record(out, label, row)

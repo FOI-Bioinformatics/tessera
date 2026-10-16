@@ -22,6 +22,17 @@ may now be a different (corrected) one.
 
 ### Fixed
 
+Alignment integrity, from the fourth audit
+(`docs/superpowers/specs/2026-10-12-audit-swot-gap.md`, section 1.3). These change what
+alignment reaches the scan, not how the scan calls regions:
+
+- **The progressiveMauve backbone row could lose columns.** It was taken from the first
+  query's projection, which is gapped wherever that query did not align; with queries
+  covering different parts of the backbone, the rest of the backbone came out as gaps,
+  and which part depended on the order of the queries. The backbone row is now the
+  backbone's own sequence. Checked against a fake of the tool only: progressiveMauve is
+  not installed in CI or on the development machine.
+
 Data safety and alignment:
 
 - **The MAFFT backend ignored strand.** A genome, or one contig of a draft assembly, on the
