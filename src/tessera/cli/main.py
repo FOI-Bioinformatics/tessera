@@ -129,8 +129,21 @@ def _parse_key_values(items: list[str], label: str) -> dict[str, str]:
 
 
 def get_logger(output_dir: Path | None = None) -> logging.Logger:
-    """Return the configured logger; with ``output_dir`` also persist a run log there."""
-    return configure_logging(output_dir=output_dir, level=_RUN_STATE["log_level"])  # type: ignore[arg-type]
+    """Return the configured logger; with ``output_dir`` also persist a run log there.
+
+    The run log is opened before a command enters :func:`stage_errors`, so an output
+    path that is an existing file is checked here. It is rejected with the message every
+    other command gives (:func:`_require_output_directory`) instead of a raw
+    ``FileExistsError`` traceback.
+    """
+    level: int = _RUN_STATE["log_level"]  # type: ignore[assignment]
+    if output_dir is not None:
+        try:
+            _require_output_directory(output_dir)
+        except UserInputError as exc:
+            configure_logging(level=level).error("%s", exc)
+            raise typer.Exit(code=1) from exc
+    return configure_logging(output_dir=output_dir, level=level)
 
 
 @contextmanager

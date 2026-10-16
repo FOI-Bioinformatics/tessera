@@ -11,6 +11,7 @@ from .main import (
     _require_directory,
     _require_file,
     _require_lineage_map,
+    _require_output_directory,
     _require_range,
     _require_scan_windows,
     app,
@@ -211,6 +212,7 @@ def fill_references(
     with stage_errors(logger):
         _require_file(query, "Query file")
         _require_lineage_map(lineage_map)
+        _require_output_directory(output)
         # Checked here, before any network or aligner work: a round count of zero
         # builds nothing and still exits 0, and a bad window otherwise surfaces only
         # after the panel has been recruited and aligned.
