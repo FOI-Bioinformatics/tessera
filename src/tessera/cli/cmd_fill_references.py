@@ -104,7 +104,9 @@ def fill_references(
     ),
     min_improvement: float = typer.Option(
         0.01, "--min-improvement",
-        help="Stop once a round improves the worst gap's best similarity by less than this.",
+        help="Stop once a round reduces the coverage shortfall (under-covered length "
+        "weighted by how far each gap falls below the threshold) by less than this "
+        "fraction of the previous round's shortfall (0-1).",
     ),
     max_hits: int = typer.Option(5, "--max-hits", help="BLAST hits to keep per gap."),
     top_gaps: int = typer.Option(3, "--top-gaps", help="Search the N longest gaps each round."),
@@ -211,6 +213,7 @@ def fill_references(
         # builds nothing and still exits 0, and a bad window otherwise surfaces only
         # after the panel has been recruited and aligned.
         _require_range(max_rounds, "--max-rounds", lo=1)
+        _require_range(min_improvement, "--min-improvement", lo=0.0, hi=1.0)
         _require_scan_windows(window_size, window_step)
         if collection is not None:
             _require_directory(collection, "Collection directory")

@@ -102,9 +102,14 @@ tessera fill-references --query my_query.fasta \
 ```
 
 It stops when the gaps close, when no new reference can be found, or when a round no
-longer improves the worst gap (so a genuinely hypervariable region is reported, not
-chased forever). Each round is recorded in `filled/fill_summary.tsv`, and the query's
-own record is auto-excluded from its FASTA header. This needs an aligner and Entrez
+longer reduces the coverage shortfall -- the under-covered length weighted by how far
+each gap falls below the threshold -- by at least `--min-improvement` (default 0.01, a
+fraction of the previous round's shortfall), so a genuinely hypervariable region is
+reported, not chased forever. Only the `--top-gaps` longest gaps are searched each round;
+a shorter gap outside that set adds the same amount every round and does not stop the
+loop. Each round, with its `coverage_shortfall`, is recorded in
+`filled/fill_summary.tsv`, and the query's own record is auto-excluded from its FASTA
+header. This needs an aligner and Entrez
 Direct, and rebuilds the alignment every round. If the last permitted round
 (`--max-rounds`) still downloaded references, one more alignment (`final.msa.fasta`) is
 built from them without a further search, so `panel.msa.fasta` holds every reference the

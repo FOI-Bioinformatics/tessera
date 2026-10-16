@@ -891,3 +891,55 @@ def test_fresh_seed_clears_its_own_working_copy_on_a_rerun(monkeypatch, tmp_path
         fill_references(FillParams(query=query, collection=None, output=out), logger)
 
     assert sorted(p.name for p in (out / "collection").iterdir()) == ["S2.fasta", "other.fasta"]
+
+
+# --- audit 4: the stop test follows the gaps the loop searches (D2) -----------------
+
+def _sized_gap(start: int, length: int, mean_best: float) -> CoverageGap:
+    return CoverageGap(
+        msa_start=start, msa_end=start + length, query_start=start, query_end=start + length,
+        length_bp=length, n_windows=max(1, length // 100), best_label="refA",
+        mean_best=mean_best, kind="divergent",
+    )
+
+
+def test_stop_test_is_not_pinned_by_a_gap_the_search_never_reaches(
+    monkeypatch, tmp_path, logger
+):
+    """Three long gaps are searched every round and improve (0.70, 0.80, 0.90) without
+    clearing the 0.94 threshold, so their length does not change. A short fourth gap is
+    below --top-gaps, never searched, and stays at 0.55. The old test compared the worst
+    gap (always 0.55) and stopped after round 2; an under-covered base count would also
+    stop, because the long gaps keep their length while they improve."""
+    query, coll, out = _setup(tmp_path)
+
+    def gaps(long_best: float) -> list[CoverageGap]:
+        return [_sized_gap(0, 2000, long_best), _sized_gap(3000, 2000, long_best),
+                _sized_gap(6000, 2000, long_best), _sized_gap(9000, 200, 0.55)]
+
+    _common_mocks(monkeypatch, [
+        (gaps(0.70), 0.94), (gaps(0.80), 0.94), (gaps(0.90), 0.94), ([], 0.95),
+    ])
+    _one_new_hit_per_round(monkeypatch)
+
+    trace = fill_references(
+        FillParams(query=query, collection=coll, output=out, max_rounds=5, top_gaps=3),
+        logger,
+    )
+
+    assert [r.round for r in trace] == [1, 2, 3, 4]
+    assert trace[-1].n_gaps == 0
+    assert [r.undercovered_bp for r in trace[:3]] == [6200, 6200, 6200]
+    assert [r.shortfall for r in trace[:3]] == [1518.0, 918.0, 318.0]
+
+
+def test_fill_summary_records_the_coverage_shortfall(monkeypatch, tmp_path, logger):
+    query, coll, out = _setup(tmp_path)
+    _common_mocks(monkeypatch, [([_gap(0.84)], 0.94), ([], 0.95)])
+    _one_new_hit_per_round(monkeypatch)
+
+    fill_references(FillParams(query=query, collection=coll, output=out), logger)
+
+    header, first, _ = (out / "fill_summary.tsv").read_text().splitlines()
+    row = dict(zip(header.split("\t"), first.split("\t"), strict=True))
+    assert row["coverage_shortfall"] == "50.0"  # 500 bp x (0.94 - 0.84)

@@ -30,7 +30,7 @@ from ..core.io import (
     strip_sequence_extension,
 )
 from ..msa.build import MsaParams, build_msa, provenance_path
-from ..recomb.coverage import CoverageParams, call_coverage_gaps
+from ..recomb.coverage import CoverageGap, CoverageParams, call_coverage_gaps
 from ..recomb.pango import crosscheck_html, expand_recombinant, load_alias_key
 from ..recomb.regions import DEFAULT_METHODS
 from ..recomb.run import RecombParams, run_recomb
@@ -103,7 +103,9 @@ class FillParams:
     exclude: tuple[str, ...] = ()
     keep_self_hits: bool = False
     threads: int = 4
-    min_improvement: float = 0.01  # stop if the worst gap's best-sim gains less than this
+    # Stop once a round reduces the coverage shortfall by less than this fraction of the
+    # previous round's shortfall (see coverage_shortfall).
+    min_improvement: float = 0.01
     curate: bool = False  # drop the query's siblings and dereplicate each round (skani/skDER)
     sibling_margin: float = 3.0  # query-ANI must beat the backbone's by this many % to be a sibling
     af_min: float = 80.0  # ... over at least this % of the query (whole-genome match)
@@ -184,7 +186,20 @@ class RoundResult:
     undercovered_bp: int
     worst_best_sim: float
     threshold: float
+    shortfall: float = 0.0  # coverage_shortfall of this round's gaps
     added: list[str] = field(default_factory=list)
+
+
+def coverage_shortfall(gaps: list[CoverageGap], threshold: float) -> float:
+    """Under-covered length weighted by how far each gap falls below the threshold.
+
+    The sum over gaps of ``length_bp * (threshold - mean_best)``. It falls when a gap
+    closes and also when a gap's best match improves without yet clearing the threshold,
+    which an under-covered base count does not register. A gap that no search reaches
+    adds the same amount every round, so it cannot hold the measure still the way it
+    held the worst-gap similarity still.
+    """
+    return sum(g.length_bp * max(0.0, threshold - g.mean_best) for g in gaps)
 
 
 def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundResult]:
@@ -384,7 +399,7 @@ def _grow_collection(
     panel_rows: dict[str, dict] = {}
     last_msa: Path | None = None
     built_from: set[str] = set()  # labels the last MSA was built from
-    prev_worst: float | None = None
+    prev_shortfall: float | None = None
     # Curation owed before the next build, and the backbone to anchor it on.
     curate_pending = params.curate and params.collection is not None
     backbone: Path | None = None
@@ -421,23 +436,35 @@ def _grow_collection(
         gaps, threshold = call_coverage_gaps(result, params.window_size, cov)
         undercovered = sum(max(0, g.query_end - g.query_start) for g in gaps)
         worst = min((g.mean_best for g in gaps), default=1.0)
-        rr = RoundResult(rnd, len(gaps), undercovered, round(worst, 4), round(threshold, 4))
+        shortfall = coverage_shortfall(gaps, threshold)
+        rr = RoundResult(
+            rnd, len(gaps), undercovered, round(worst, 4), round(threshold, 4),
+            round(shortfall, 1),
+        )
         trace.append(rr)
         logger.info(
-            "Round %d: %d gap(s), %d bp under-covered, worst best-similarity %.3f.",
-            rnd, len(gaps), undercovered, worst,
+            "Round %d: %d gap(s), %d bp under-covered, coverage shortfall %.1f, "
+            "worst best-similarity %.3f.",
+            rnd, len(gaps), undercovered, shortfall, worst,
         )
 
         if not gaps:
             logger.info("Converged: no coverage gaps remain.")
             break
-        if prev_worst is not None and (worst - prev_worst) < params.min_improvement:
+        # Judged on the shortfall, not on the worst gap: only the --top-gaps longest gaps
+        # are searched, so a short gap outside that set held the worst-gap similarity
+        # still and stopped the loop while the searched gaps were improving.
+        if (
+            prev_shortfall is not None
+            and (prev_shortfall - shortfall) < params.min_improvement * prev_shortfall
+        ):
             logger.info(
-                "Stopping: coverage stopped improving (worst best-sim %.3f vs %.3f last round).",
-                worst, prev_worst,
+                "Stopping: coverage stopped improving (shortfall %.1f against %.1f last "
+                "round; a reduction below %g of it).",
+                shortfall, prev_shortfall, params.min_improvement,
             )
             break
-        prev_worst = worst
+        prev_shortfall = shortfall
 
         records = dict(read_fasta(str(msa)))
         query_row = records[query_label]
@@ -1025,7 +1052,9 @@ def _progress_section(trace: list[RoundResult], final_size: int) -> str:
         '<p class="cap">Each round rebuilt the alignment from the growing collection, '
         'searched the worst gaps on NCBI, and added the best new reference per gap &mdash; '
         f'ending with {final_size} references. The run stops when the gaps close, no new '
-        'reference is found, or a round no longer improves the worst gap.</p>'
+        'reference is found, or a round no longer reduces the coverage shortfall (the '
+        'under-covered length weighted by how far each gap falls below the '
+        'threshold).</p>'
     )
     return f'{cap}<div class="scroll"><table class="table">{head}{rows}</table></div>'
 
@@ -1034,11 +1063,11 @@ def _write_trace(output: Path, trace: list[RoundResult], logger: logging.Logger)
     path = output / "fill_summary.tsv"
     logger.info("Writing fill summary: %s", path)
     header = ["round", "n_gaps", "undercovered_bp", "worst_best_similarity",
-              "threshold", "references_added"]
+              "threshold", "references_added", "coverage_shortfall"]
     with open(path, "w") as fo:
         fo.write("\t".join(header) + "\n")
         for r in trace:
             fo.write("\t".join(map(str, [
                 r.round, r.n_gaps, r.undercovered_bp, r.worst_best_sim,
-                r.threshold, ",".join(r.added) or "-",
+                r.threshold, ",".join(r.added) or "-", r.shortfall,
             ])) + "\n")

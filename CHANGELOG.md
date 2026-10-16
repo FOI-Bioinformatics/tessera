@@ -220,7 +220,19 @@ Callers:
   the callers disagreed on the backbone, and could report one donor lineage as two
   overlapping regions on a typed panel.
 
+Panel recruitment (fourth audit):
+
+- `fill-references` stopped after round 2 whenever there were more coverage gaps than
+  `--top-gaps`: the stop test watched the worst gap, while the search reached only the
+  longest ones, so an unsearched short gap held the measure still.
+
 ### Changed
+
+- **The fill loop stops on the coverage shortfall.** A round must reduce the under-covered
+  length, weighted by how far each gap falls below the threshold, by at least
+  `--min-improvement` of the previous round's value. **`--min-improvement` is now a
+  fraction (0-1, default unchanged at 0.01)**, where it was an absolute gain in the worst
+  gap's best similarity. `fill_summary.tsv` gains a last column, `coverage_shortfall`.
 
 - **HMM region coordinates are the span the donor explains, not the HMM segment.** A
   segment ran on through columns where donor and major are identical (a 600 bp difference

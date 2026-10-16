@@ -247,3 +247,15 @@ def test_type_lineages_rejects_a_file_that_is_not_fasta(tmp_path: Path, no_pipel
         "type-lineages", "--collection", str(collection), "--output", str(tmp_path / "out"),
     ])
     _rejected(result, "does not look like a FASTA file")
+
+
+@pytest.mark.parametrize("value", ["-0.1", "1.5"])
+def test_fill_references_rejects_a_min_improvement_outside_zero_one(
+    tmp_path: Path, no_pipeline, value: str
+) -> None:
+    """--min-improvement is a fraction of the previous round's coverage shortfall."""
+    result = runner.invoke(app, [
+        "fill-references", "--query", str(_query(tmp_path)), "--output", str(tmp_path / "out"),
+        "--min-improvement", value,
+    ])
+    _rejected(result, "Invalid --min-improvement")
