@@ -89,3 +89,53 @@ def test_pair_plot_falls_back_to_the_window_ranking_without_a_called_donor() -> 
     assert pair_datasets([], ["cowpox", "cowpox2"]) == ["cowpox", "cowpox2"]
     absent = [_region("cowpox", "cowpox", donor_absent=True)]
     assert pair_datasets(absent, ["cowpox", "cowpox2"]) == ["cowpox", "cowpox2"]
+
+
+# --- the pair plot colours a dataset as the rest of the report does ----------
+
+def test_pair_plot_uses_the_report_colours(tmp_path: Path, monkeypatch) -> None:
+    """Audit 4, item B8: the pair plot built its palette from its own two labels, so a
+    donor ranked third was drawn in the colour the report gives the second reference."""
+    import logging
+
+    from matplotlib.axes import Axes
+    from matplotlib.colors import to_rgba
+
+    from tessera.recomb.report_plots import plot_pairwise
+
+    drawn: dict[str, tuple] = {}
+    original = Axes.plot
+
+    def spy(self, *args, **kwargs):
+        if "label" in kwargs:
+            drawn[kwargs["label"]] = kwargs.get("color")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Axes, "plot", spy)
+    result = compute_similarity(str(recombinant_msa(tmp_path, recombinant=True)), "query")
+    regions = [_region("B")]
+    report_order = region_labels(["A", "other", "B"], regions)  # B ranks third
+    plot_pairwise(result, ["A", "B"], regions, tmp_path, "png", logging.getLogger("t"),
+                  color_labels=report_order)
+    html_colours = _color_map(report_order)
+    assert drawn["B"] == to_rgba(html_colours["B"])
+    assert drawn["A"] == to_rgba(html_colours["A"])
+
+
+def test_write_reports_gives_the_pair_plot_the_report_colour_order(
+    tmp_path: Path, monkeypatch, logger
+) -> None:
+    from tessera.recomb.run import RecombParams, run_recomb
+
+    seen: dict = {}
+
+    def fake_pairwise(result, datasets, regions, output_dir, plot_format, logger, **kwargs):
+        seen.update(kwargs, datasets=datasets)
+        return None
+
+    monkeypatch.setattr("tessera.recomb.report.plot_pairwise", fake_pairwise)
+    run_recomb(RecombParams(msa=recombinant_msa(tmp_path, recombinant=True),
+                            output=tmp_path / "out", query="query", plot_format="png"),
+               logger)
+    assert "color_labels" in seen
+    assert set(seen["datasets"]) <= set(seen["color_labels"])

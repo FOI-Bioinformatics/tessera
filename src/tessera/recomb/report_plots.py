@@ -138,8 +138,14 @@ def plot_pairwise(
     output_dir: Path,
     plot_format: str,
     logger: logging.Logger,
+    color_labels: list[str] | None = None,
 ) -> Path | None:
-    """Static pairwise plot of the two leading datasets, regions shaded."""
+    """Static pairwise plot of the two leading datasets, regions shaded.
+
+    ``color_labels`` is the label order the rest of the report colours from (the HTML,
+    the mosaic and the top-N plot). Colours are positional, so building the palette from
+    the two plotted labels alone gave a donor the colour another reference has elsewhere.
+    """
     from matplotlib import pyplot as plt
 
     if len(datasets) < 2:
@@ -150,7 +156,9 @@ def plot_pairwise(
     if seq1 not in df.index or seq2 not in df.index:
         logger.warning("Pairwise datasets not both present; skipping pairwise plot.")
         return None
-    colors = _palette(region_labels([seq1, seq2], regions))
+    base = list(color_labels) if color_labels is not None else []
+    base += [label for label in (seq1, seq2) if label not in base]
+    colors = _palette(region_labels(base, regions))
 
     fig, ax = plt.subplots(figsize=(16, 6))
     _shade_regions(ax, regions, colors)

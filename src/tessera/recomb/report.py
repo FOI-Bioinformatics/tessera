@@ -38,7 +38,7 @@ from .analyze import AnalysisResult, rank_datasets, winners_per_window
 from .regions import Region
 from .report_context import PHI, ReportContext
 from .report_html import write_html_report
-from .report_plots import build_interactive_figure, plot_pairwise, plot_top_n
+from .report_plots import build_interactive_figure, plot_pairwise, plot_top_n, region_labels
 from .report_text import (
     print_coverage,
     print_regions,
@@ -136,7 +136,11 @@ def write_reports(
         ))
 
     pair = pair_datasets(regions, rank_datasets(ranking, 2))
-    plots.append(plot_pairwise(result, pair, regions, output_dir, plot_format, logger))
+    # The same label order the HTML colours from, so a dataset is one colour throughout.
+    plots.append(plot_pairwise(
+        result, pair, regions, output_dir, plot_format, logger,
+        color_labels=region_labels(top_datasets, regions),
+    ))
     # A plot function returns None when it had nothing to draw and wrote no file.
     companions += [path.name for path in plots if path is not None]
     if (output_dir / "run_provenance.json").exists():
