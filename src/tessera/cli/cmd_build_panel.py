@@ -91,6 +91,7 @@ def build_panel(
         # after the panel has been recruited and aligned.
         _require_range(max_rounds, "--max-rounds", lo=1)
         _require_scan_windows(window_size, window_step)
+        _require_range(threads, "--threads", lo=1)
         _require_choice(aligner, set(aligner_registry.names()), "--aligner")
         params = FillParams(
             query=query, collection=collection, output=output,

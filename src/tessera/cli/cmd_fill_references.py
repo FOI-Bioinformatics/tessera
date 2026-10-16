@@ -8,12 +8,14 @@ import typer
 
 from .main import (
     _require_choice,
+    _require_coverage_fractions,
     _require_directory,
     _require_file,
     _require_lineage_map,
     _require_output_directory,
     _require_range,
     _require_scan_windows,
+    _require_search_counts,
     app,
     get_logger,
     stage_errors,
@@ -219,6 +221,12 @@ def fill_references(
         _require_range(max_rounds, "--max-rounds", lo=1)
         _require_range(min_improvement, "--min-improvement", lo=0.0, hi=1.0)
         _require_scan_windows(window_size, window_step)
+        _require_coverage_fractions(coverage_floor, coverage_rel_drop)
+        _require_search_counts(
+            max_hits=max_hits, top_gaps=top_gaps, subtile=subtile, threads=threads,
+        )
+        _require_range(seed_hits, "--seed-hits", lo=1)
+        _require_range(seed_window, "--seed-window", lo=1)
         if collection is not None:
             _require_directory(collection, "Collection directory")
         _require_choice(aligner, set(aligner_registry.names()), "--aligner")

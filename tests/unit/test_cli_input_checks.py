@@ -316,3 +316,43 @@ def test_fill_references_refuses_a_candidate_pool_under_another_seed_source(
         "--candidate-pool", str(pool_dir),
     ])
     _rejected(result, "--seed-source local")
+
+
+# --- discover commands: coverage fractions and search counts (audit 4, E5) ---
+
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [("--coverage-floor", "50"), ("--coverage-rel-drop", "5"), ("--top-gaps", "0"),
+     ("--max-hits", "0"), ("--subtile", "-1")],
+)
+@pytest.mark.parametrize("command", ["fill-references", "find-references"])
+def test_discover_commands_reject_out_of_range_search_options(
+    tmp_path: Path, no_pipeline, command: str, option: str, value: str
+) -> None:
+    """recomb range-checked the coverage fractions; here --coverage-floor 50 made every
+    window a gap, and --top-gaps 0 searched nothing and exited cleanly."""
+    head = (["--msa", EXAMPLE, "--query", "query"] if command == "find-references"
+            else ["--query", str(_query(tmp_path))])
+    result = runner.invoke(app, [command, *head, "--output", str(tmp_path / "out"),
+                                 option, value])
+    _rejected(result, f"Invalid {option}")
+
+
+@pytest.mark.parametrize(("option", "value"), [("--seed-hits", "0"), ("--seed-window", "0")])
+def test_fill_references_rejects_empty_seed_searches(
+    tmp_path: Path, no_pipeline, option: str, value: str
+) -> None:
+    result = runner.invoke(app, [
+        "fill-references", "--query", str(_query(tmp_path)),
+        "--output", str(tmp_path / "out"), option, value,
+    ])
+    _rejected(result, f"Invalid {option}")
+
+
+@pytest.mark.parametrize("command", ["detect", "fill-references", "build-panel"])
+def test_panel_commands_reject_zero_threads(tmp_path: Path, no_pipeline, command: str) -> None:
+    result = runner.invoke(app, [
+        command, "--query", str(_query(tmp_path)), "--output", str(tmp_path / "out"),
+        "--threads", "0",
+    ])
+    _rejected(result, "Invalid --threads")

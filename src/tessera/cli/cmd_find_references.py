@@ -7,9 +7,11 @@ from pathlib import Path
 import typer
 
 from .main import (
+    _require_coverage_fractions,
     _require_file,
     _require_output_directory,
     _require_scan_windows,
+    _require_search_counts,
     app,
     get_logger,
     stage_errors,
@@ -97,6 +99,8 @@ def find_references(
         _require_file(msa, "MSA file")
         _require_output_directory(output)
         _require_scan_windows(window_size, window_step)
+        _require_coverage_fractions(coverage_floor, coverage_rel_drop)
+        _require_search_counts(max_hits=max_hits, top_gaps=top_gaps, subtile=subtile)
         params = FindRefParams(
             msa=msa, query=str(query), output=output, collection=collection,
             window_size=window_size, window_step=window_step,
