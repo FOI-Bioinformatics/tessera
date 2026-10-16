@@ -53,6 +53,8 @@ def reassort(
     ),
     aligner: str = typer.Option(
         "mafft", "--aligner", help="Aligner backend for --scan-segments."),
+    threads: int = typer.Option(
+        1, "-t", "--threads", help="Aligner worker threads for --scan-segments."),
 ) -> None:
     """Detect reassortment: assign each segment to its nearest reference lineage and
     report the per-segment genotype plus a clonal/reassortant verdict."""
@@ -72,6 +74,7 @@ def reassort(
         # different parents; a wide one makes every pair share a strain, so the verdict
         # is clonal whatever the data (0.5 gave reassortant where 40 gave clonal).
         _require_range(margin, "--margin", lo=0.0, hi=MAX_MARGIN, lo_open=True)
+        _require_range(threads, "--threads", lo=1)
         overrides: dict[str, str] = {}
         for item in dataset or []:
             if "=" not in item:
@@ -93,7 +96,7 @@ def reassort(
             query, dataset_overrides=overrides,
             email=email or os.environ.get("NCBI_EMAIL"),
             ani_floor=ani_floor, margin=margin, output=output,
-            scan_segments=scan_segments, aligner=aligner, logger=logger,
+            scan_segments=scan_segments, aligner=aligner, threads=threads, logger=logger,
         )
 
         output.mkdir(parents=True, exist_ok=True)

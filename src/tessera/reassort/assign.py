@@ -83,6 +83,26 @@ def _clade_of_tip(tip: Path) -> str | None:
     return None if clade in NON_CLADE_MARKERS else clade
 
 
+def clades_within_margin(
+    ranked: list[Path], ani: dict[Path, tuple[float, float]], margin: float
+) -> list[str]:
+    """The distinct clades of the tips within ``margin`` ANI of the best, best-first.
+
+    ``ranked`` is best-first. A tip without a clade label is skipped.
+    """
+    if not ranked:
+        return []
+    floor = ani[ranked[0]][0] - margin
+    clades: list[str] = []
+    for tip in ranked:
+        if ani[tip][0] < floor:
+            break
+        clade = _clade_of_tip(tip)
+        if clade and clade not in clades:
+            clades.append(clade)
+    return clades
+
+
 def _type_segment(seg, seq, overrides, ani_floor, margin, email, cache_dir, tmp, logger):
     """Type one segment. Returns ``(SegmentAssignment, candidates, universe, dataset)`` where
     ``candidates`` is ``[(strain, ani)]`` best-first (empty if unassigned), ``universe`` is every
@@ -128,6 +148,16 @@ def _type_segment(seg, seq, overrides, ani_floor, margin, email, cache_dir, tmp,
     best = ranked[0]
     logger.info("[%s] %s -> %s (%s), ANI %.1f%%", seg, dataset.path,
                 strip_sequence_extension(best.name), _clade_of_tip(best), ani[best][0])
+    near_clades = clades_within_margin(ranked, ani, margin)
+    if len(near_clades) > 1:
+        # The reported clade is the top tip's; a tie in ANI is broken by tip file name.
+        # Say when the near-best window holds several clades, so the clade column is not
+        # read as a unique assignment.
+        logger.info(
+            "[%s] %d clades lie within %g ANI points of the best tip (%s); the clade "
+            "reported is the highest-ANI tip's, ties broken by tip name.",
+            seg, len(near_clades), margin, ", ".join(near_clades),
+        )
     assignment = SegmentAssignment(seg, dataset.path, strip_sequence_extension(best.name),
                                    _clade_of_tip(best), ani[best][0], "assigned")
     return assignment, candidates, universe, dataset
@@ -144,6 +174,7 @@ def assign_segments(
     output: Path | None = None,
     scan_segments: bool = False,
     aligner: str = "mafft",
+    threads: int = 1,
     logger: logging.Logger,
 ) -> ReassortmentResult:
     """Type each segment record of ``query`` against its Nextclade dataset and call
@@ -200,7 +231,7 @@ def assign_segments(
                 result.scans.append(scan_segment(
                     s.segment, seq, dataset, output,
                     aligner=aligner, cache_dir=cache_dir, logger=logger,
-                    dir_name=scan_dirs[s.segment]))
+                    dir_name=scan_dirs[s.segment], threads=threads))
             else:
                 result.scans.append(SegmentScan(s.segment, False, False, 0, "unassigned"))
     return result

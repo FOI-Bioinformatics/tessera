@@ -366,7 +366,8 @@ with one record per segment, each with a distinct name (the first header token; 
 name is rejected, since it would otherwise be a homolog rather than a separate segment). Each segment
 is typed independently against its own Nextclade dataset
 (auto-detected, or pinned with `--dataset SEGMENT=path`), and its nearest reference tips give a
-`(strain, clade, ANI)`.
+`(strain, clade, ANI)`. When several clades lie within `--margin` of the best tip the reported clade is the
+highest-ANI tip's, ties broken by tip name, and the log lists the clades in the window.
 
 Because Nextclade flu trees label tips by strain name, the same strain appears across segment
 datasets, so the per-segment nearest strains can be compared. The call is pairwise and
@@ -405,6 +406,6 @@ through the ordinary recombination scan, writing the full `run_recomb` output to
 a rollup to `out/segment_scan.tsv` (`segment`, `intragenic_recombination`, `n_regions`, `note`). This
 asks a different question from the reassortment verdict: not which parent each whole segment came
 from, but whether a single segment is itself a within-segment mosaic of two lineages. It needs an
-aligner (`--aligner`, default `mafft`); a missing or unknown aligner is reported up front. A segment
+aligner (`--aligner`, default `mafft`) and aligns with `--threads` workers (default 1); a missing or unknown aligner is reported up front. A segment
 whose panel has fewer than two clades, or that is unassigned, is reported as not scanned rather than
 dropped.

@@ -492,3 +492,21 @@ def test_reassort_writes_the_pairwise_evidence_for_a_reassortant_call(
     assert lines[1].split("\t")[:3] == ["HA", "NA", "discordant"]
     assert "S1 vs S3" in lines[1]
     assert "Pairwise evidence" in result.output
+
+
+def test_reassort_passes_the_thread_count(tmp_path: Path, monkeypatch) -> None:
+    from tessera.reassort.assign import ReassortmentResult
+
+    seen = {}
+
+    def fake_assign(query, **kwargs):
+        seen.update(kwargs)
+        return ReassortmentResult()
+
+    monkeypatch.setattr("tessera.cli.cmd_reassort.assign_segments", fake_assign)
+    result = runner.invoke(app, [
+        "reassort", "--query", str(_segments(tmp_path)), "--output", str(tmp_path / "out"),
+        "--threads", "4",
+    ])
+    assert result.exit_code == 0, result.output
+    assert seen["threads"] == 4
