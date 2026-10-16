@@ -50,6 +50,11 @@ alignment reaches the scan, not how the scan calls regions:
   backends named it), and the scan later reported it as an alphabet problem. These
   backends now name such genomes, and the scan reports an all-gap row as unaligned,
   separately from a record whose letters it could not read.
+- **Two MAF inputs were absorbed instead of reported.** A MAF row cut off before its
+  sequence text was dropped, so its genome became an all-gap row that read as divergence;
+  and a backbone contig whose length in the MAF differed from the staged FASTA had its
+  blocks written onto the next contig's columns. Both now stop the run with a message
+  naming the file.
 
 Data safety and alignment:
 

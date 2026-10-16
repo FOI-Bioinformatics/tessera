@@ -197,3 +197,35 @@ def test_maf_genome_aligned_only_away_from_the_backbone_is_named(tmp_path: Path,
     assert seqs == {"ref": "AAAA", "A": "AAAT", "B": "----", "C": "----"}
     assert "2 genome(s)" in caplog.text
     assert "B, C" in caplog.text
+
+
+def test_maf_row_cut_before_its_text_is_reported_against_the_file(tmp_path: Path) -> None:
+    # A row cut off before its seventh field used to be dropped while parsing, so the
+    # width guard never saw it and the genome came out as an all-gap row -- read as
+    # divergence rather than as a truncated file.
+    import pytest
+
+    from tessera.core.errors import OutputError
+
+    maf = tmp_path / "cut.maf"
+    maf.write_text("a\ns ref.c 0 8 + 8 ACGTACGT\ns qry.x 0 8 + 8\n")
+    with pytest.raises(OutputError, match=r"cut\.maf.*line 3.*qry\.x"):
+        maf_to_fasta(maf, "ref", tmp_path / "msa.fasta")
+
+
+def test_maf_backbone_source_size_must_match_the_declared_contig(tmp_path: Path) -> None:
+    # The MAF says contig c1 is 6 bp; the backbone FASTA says 4. Laid out by the FASTA,
+    # a block at c1:4-6 would land on c2's columns.
+    import pytest
+
+    from tessera.core.errors import OutputError
+
+    maf = tmp_path / "size.maf"
+    maf.write_text(
+        "a\ns c1 4 2 + 6 GG\ns q1 0 2 + 2 GG\n\n"
+        "a\ns c2 0 4 + 4 TTTT\ns q1 0 4 + 4 TTTT\n"
+    )
+    name_map = {"c1": "ref", "c2": "ref", "q1": "qry"}
+    with pytest.raises(OutputError, match=r"size\.maf.*c1 \(6 bp in the MAF, 4 bp"):
+        maf_to_fasta(maf, "ref", tmp_path / "msa.fasta", name_map=name_map,
+                     ref_contigs=[("c1", 4), ("c2", 4)])
