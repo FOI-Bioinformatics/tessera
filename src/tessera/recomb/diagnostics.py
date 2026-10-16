@@ -42,6 +42,8 @@ from .similarity import CANONICAL_BASES
 
 # Below this many informative columns the statistics are not meaningful.
 _MIN_INFORMATIVE = 10
+# Public name for the reporting layer, which states the floor when the test cannot run.
+MIN_INFORMATIVE = _MIN_INFORMATIVE
 _PERMUTATIONS = 1000
 # The PHI window is capped at 1/_WINDOW_FRACTION of the informative sites; see
 # effective_phi_window.

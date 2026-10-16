@@ -10,13 +10,16 @@ field is added here once, not in every writer's signature and call site.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .analyze import AnalysisResult
 from .coverage import BREAKPOINT_KIND, CoverageGap
 from .diagnostics import RecombinationSignal
 from .similarity import WindowSimilarity
 from .typing import LineageMap
+
+# The key under which the parent-free PHI test is named in ``ReportContext.not_run``.
+PHI = "phi"
 
 
 @dataclass
@@ -34,11 +37,12 @@ class ReportContext:
     alpha: float = 0.05
     organism: str | None = None
     methods_run: tuple[str, ...] = ()
-    # Selected callers that could not run (barcode on an untyped panel). They stay in
-    # ``methods_run`` so the method table keeps a column for them, marked "not run".
-    methods_not_run: tuple[str, ...] = ()
-    # Why they could not run, in the run's own words (the same text the log gives).
-    not_run_reason: str = ""
+    # Callers and tests that produced no result, by name, with the reason in the run's
+    # own words (the text the log gives). A caller named here stays in ``methods_run``,
+    # so the method table keeps a column for it, marked "not run"; ``PHI`` is the
+    # parent-free test. Whatever is named here is reported as "not run", never as a
+    # negative.
+    not_run: dict[str, str] = field(default_factory=dict)
     method_breakdown: list[dict] | None = None
     per_major: dict[str, str] | None = None
     # Set only when the scan used informative-site windowing: the per-window identity
@@ -47,6 +51,16 @@ class ReportContext:
     # scale from identity over all columns.
     site_result: WindowSimilarity | None = None
     site_analysis: AnalysisResult | None = None
+
+    @property
+    def methods_not_run(self) -> tuple[str, ...]:
+        """The selected callers that could not run, in ``methods_run`` order."""
+        return tuple(m for m in self.methods_run if m in self.not_run)
+
+    @property
+    def phi_not_run(self) -> str | None:
+        """Why the parent-free test gave no result, or ``None`` when it did."""
+        return self.not_run.get(PHI)
 
     @property
     def gaps(self) -> list[CoverageGap]:

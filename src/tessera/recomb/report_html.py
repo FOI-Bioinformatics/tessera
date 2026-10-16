@@ -17,7 +17,7 @@ from .coverage import CoverageGap
 from .diagnostics import RecombinationSignal
 from .regions import Region
 from .report_assets import _CSS, _GLOSSARY, _REFERENCES
-from .report_context import ReportContext
+from .report_context import PHI, ReportContext
 from .report_plots import GREY, _color_map, build_interactive_figure, region_labels
 from .similarity import WindowSimilarity
 from .typing import LineageMap, typed
@@ -278,20 +278,24 @@ def _regions_html(
 
 def _method_comparison_html(
     breakdown: list[dict], methods_run: tuple[str, ...], per_major: dict[str, str],
-    lineage_map: LineageMap | None = None, methods_not_run: tuple[str, ...] = (),
-    not_run_reason: str = "",
+    lineage_map: LineageMap | None = None, not_run: dict[str, str] | None = None,
 ) -> str:
-    """A compact region x method agreement matrix; omitted for a single-method run."""
+    """A compact region x method agreement matrix; omitted for a single-method run.
+
+    ``not_run`` maps a caller (or ``PHI``) that gave no result to the reason; its
+    column reads "not run", never a negative.
+    """
     if len(methods_run) < 2:
         return ""
-    not_run_note = ""
-    if methods_not_run:
-        names = ", ".join(html.escape(m) for m in methods_not_run)
-        not_run_note = (
-            f'<p class="cap"><strong>Not run:</strong> {names}'
-            f'{" (" + html.escape(not_run_reason) + ")" if not_run_reason else ""}. '
-            f'It tested nothing; its column below is not a negative result.</p>'
-        )
+    not_run = not_run or {}
+    methods_not_run = tuple(m for m in methods_run if m in not_run)
+    phi_not_run = PHI in not_run
+    not_run_note = "".join(
+        f'<p class="cap"><strong>Not run:</strong> {html.escape(m)} '
+        f'({html.escape(not_run[m])}). It tested nothing; its column below is not a '
+        f'negative result.</p>'
+        for m in methods_not_run
+    )
     majors = ", ".join(
         f'<span class="mono">{html.escape(m)}</span> &rarr; '
         f'{html.escape(typed(per_major.get(m, "n/a"), lineage_map))}'
@@ -316,7 +320,10 @@ def _method_comparison_html(
             f'<td class="num">{"&check;" if m in b["per_method_support"] else "&middot;"}</td>'
             for m in methods_run
         )
-        phi = "&check;" if b["parent_free_support"] else "&middot;"
+        phi = (
+            "not run" if phi_not_run
+            else "&check;" if b["parent_free_support"] else "&middot;"
+        )
         rows += (
             "<tr>"
             f'<td class="lbl">{html.escape(typed(b["minor_parent"], lineage_map))}</td>'
@@ -330,12 +337,11 @@ def _method_comparison_html(
 def _method_section(
     method_breakdown: list[dict] | None, methods_run: tuple[str, ...],
     per_major: dict[str, str] | None, lineage_map: LineageMap | None,
-    methods_not_run: tuple[str, ...] = (), not_run_reason: str = "",
+    not_run: dict[str, str] | None = None,
 ) -> str:
     """Wrap the method-comparison table in a report section (empty for one method)."""
     body = _method_comparison_html(
-        method_breakdown or [], methods_run, per_major or {}, lineage_map, methods_not_run,
-        not_run_reason,
+        method_breakdown or [], methods_run, per_major or {}, lineage_map, not_run,
     )
     if not body:
         return ""
@@ -498,12 +504,23 @@ def _signal_profile_div(signal: RecombinationSignal) -> str:
     return fig.to_html(full_html=False, include_plotlyjs=False)
 
 
-def _signal_html(signal: RecombinationSignal | None, alpha: float = 0.05) -> str:
-    """The parent-free recombination-signal section: PHI p-value, Rmin, profile."""
+def _signal_html(
+    signal: RecombinationSignal | None, alpha: float = 0.05, not_run: str | None = None
+) -> str:
+    """The parent-free recombination-signal section: PHI p-value, Rmin, profile.
+
+    ``not_run`` is the run's reason when the test gave no result (``--no-phi``, or too
+    few informative sites). That is stated as such: a test that did not run is not a
+    negative, and the reason must be the real one -- ``--no-phi`` is not a poor alignment.
+    """
     if signal is None:
+        reason = not_run or "no result was recorded"
         return (
-            '<p class="cap">Too few informative sites in the alignment for a parent-free '
-            'recombination test.</p>'
+            f'<p class="cap">The parent-free recombination test was <strong>not run</strong>: '
+            f'{html.escape(reason)}. No region is corroborated or contradicted by it; the '
+            f'PHI/Rmin column of the method comparison and <span class="mono">'
+            f'parent_free_support</span> in the TSVs read <em>not run</em>. This is not '
+            f'evidence against recombination.</p>'
         )
     if signal.phi_p is None:
         # Every pair of informative sites is inside one window, so the permutation test
@@ -614,7 +631,7 @@ def write_html_report(
 
     method_section = _method_section(
         ctx.method_breakdown, ctx.methods_run, ctx.per_major, lineage_map,
-        ctx.methods_not_run, ctx.not_run_reason,
+        ctx.not_run,
     )
 
     doc = (
@@ -644,7 +661,7 @@ def write_html_report(
         f"{plot_div}</section>"
         f'{_site_track_html(ctx, datasets, regions, provenance.get("windowing", ""))}'
         '<section class="section"><div class="eyebrow">Recombination signal (parent-free)</div>'
-        f"{_signal_html(ctx.signal, ctx.alpha)}</section>"
+        f"{_signal_html(ctx.signal, ctx.alpha, ctx.phi_not_run)}</section>"
         '<section class="section"><div class="eyebrow">Window winners</div>'
         '<p class="cap">Windows in which each reference is the query\'s closest match '
         '(ties included).</p>'

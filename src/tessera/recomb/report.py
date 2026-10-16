@@ -36,7 +36,7 @@ from pathlib import Path
 
 from .analyze import AnalysisResult, rank_datasets, winners_per_window
 from .regions import Region
-from .report_context import ReportContext
+from .report_context import PHI, ReportContext
 from .report_html import write_html_report
 from .report_plots import build_interactive_figure, plot_pairwise, plot_top_n
 from .report_text import (
@@ -55,6 +55,7 @@ from .report_text import (
 from .similarity import WindowSimilarity
 
 __all__ = [
+    "PHI",
     "ReportContext",
     "print_summary", "print_regions", "print_coverage",
     "build_interactive_figure", "plot_top_n", "plot_pairwise",
@@ -98,11 +99,12 @@ def write_reports(
     # in a format that was not asked for.
     companions: list[str] = []
 
-    write_regions_tsv(regions, output_dir, logger)
+    write_regions_tsv(regions, output_dir, logger, phi_not_run=ctx.phi_not_run is not None)
     companions.append("recombination_regions.tsv")
     if len(ctx.methods_run) > 1 and ctx.method_breakdown is not None:
         write_methods_tsv(
-            ctx.method_breakdown, ctx.methods_run, output_dir, logger, ctx.methods_not_run
+            ctx.method_breakdown, ctx.methods_run, output_dir, logger, ctx.methods_not_run,
+            phi_not_run=ctx.phi_not_run is not None,
         )
         companions.append("recombination_methods.tsv")
     write_coverage_tsv(gaps, ctx.coverage_threshold, output_dir, logger)

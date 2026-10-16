@@ -289,8 +289,12 @@ change the statistic and the permutation p-value would be 1 whatever the data; t
 the window described above keeps the test clear of that case for any alignment that
 reaches the minimum of ten informative sites. Should the test still be undefined, Tessera
 reports `not testable` (`NA` in the `recombination_profile.tsv` header) rather than a
-non-significant result, and no region is flagged `parent_free_support`. With few
-informative sites the window is only a few ranks wide and the test has limited power.
+non-significant result. When the test gives no result -- not testable, fewer than ten
+informative sites, or turned off with `--no-phi` -- the report says so with the reason,
+`run_provenance.json` records it under `recombination signal (PHI)` as
+`not run (<reason>)`, and `parent_free_support` reads `not run` in both TSVs and in the
+method comparison. That is not a negative: no region was corroborated or contradicted.
+With few informative sites the window is only a few ranks wide and the test has limited power.
 
 This all remains an **indicative screen**: the built-in HMM and 3SEQ tests are fast
 triplet/segmentation screens, not a full tree-based analysis (such as GARD). Treat
@@ -335,8 +339,8 @@ The practical readings:
 | File | Contents |
 |---|---|
 | `report.html` | Self-contained report: run provenance, the region table, the per-dataset stats, and an embedded interactive plot |
-| `recombination_regions.tsv` | Called regions: minor/major parent, start/end in **both MSA columns and query bases**, `length_bp` / `length_msa`, `support`, `pvalue` / `qvalue` with the `test` and `statistic` that produced them, mean similarities, the calling `methods`, and `parent_free_support` |
-| `recombination_methods.tsv` | Ensemble breakdown (only when several methods run): one row per region with `yes` / `no` per method (`not run` for a selected caller that could not run) and the parent-free flag |
+| `recombination_regions.tsv` | Called regions: minor/major parent, start/end in **both MSA columns and query bases**, `length_bp` / `length_msa`, `support`, `pvalue` / `qvalue` with the `test` and `statistic` that produced them, mean similarities, the calling `methods`, and `parent_free_support` (`not run` when the PHI test gave no result) |
+| `recombination_methods.tsv` | Ensemble breakdown (only when several methods run): one row per region with `yes` / `no` per method (`not run` for a selected caller that could not run) and the parent-free flag; the parent-free flag is `not run` likewise |
 | `recombination_profile.tsv` | Parent-free signal: header with the PHI p-value (`NA` when not testable) and Rmin, then per-informative-site local incompatibility (the PHI profile) |
 | `similarity_windows.tsv` | Full per-window matrix: `msa_position`, `query_position`, `winner`, and one similarity column per dataset. Always base-pair windows (identity over all comparable columns) |
 | `informative_site_windows.tsv` | Only under informative-site windowing: the windows the HMM segmented -- `msa_position`, `query_position`, the window's `msa_start` / `msa_end` (end-exclusive), `winner`, and per dataset the query's identity **at polymorphic columns only**. Not comparable with similarity or ANI |

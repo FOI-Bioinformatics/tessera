@@ -21,12 +21,13 @@ from .coverage import (
     mark_breakpoint_gaps,
     reconcile_gaps,
 )
-from .diagnostics import corroborating_intervals, recombination_signal
+from .diagnostics import MIN_INFORMATIVE, corroborating_intervals, recombination_signal
 from .ensemble import consensus_regions, filter_by_agreement, reconcile_major
 from .hmm import DEFAULT_JUMP_RATE
 from .reattribute import reattribute_donors
 from .regions import DEFAULT_METHODS, RegionParams, call_regions
 from .report import (
+    PHI,
     ReportContext,
     print_coverage,
     print_regions,
@@ -317,20 +318,36 @@ def run_recomb(
     # Parent-free recombination signal: does the alignment carry recombination at all,
     # and where -- computed once from every sequence, independent of the caller. Most
     # informative where divergence is low or the true donor is absent from the panel.
+    # A test or caller that gives no result is recorded here, with the reason, and
+    # reported as "not run" -- never as a negative. The report, the TSVs and the
+    # provenance all read this one mapping.
+    not_run: dict[str, str] = {}
     signal = None
-    if params.phi:
+    if not params.phi:
+        not_run[PHI] = "disabled with --no-phi"
+    else:
         signal = recombination_signal(
             bp_result.rows, query_label, bp_result.column_to_query,
             window=params.phi_window,
         )
-        if signal is not None and signal.phi_p is None:
+        if signal is None:
+            not_run[PHI] = (
+                f"fewer than {MIN_INFORMATIVE} informative sites in the alignment, too few "
+                "for the test"
+            )
+            logger.info("Recombination signal (parent-free): not run (%s).", not_run[PHI])
+        elif signal.phi_p is None:
+            not_run[PHI] = (
+                f"not testable: every pair of the {signal.n_informative} informative sites "
+                f"lies within the window of {signal.phi_window} ranks"
+            )
             logger.info(
                 "Recombination signal (parent-free): PHI not testable (every pair of the "
                 "%d informative site(s) lies within the window of %d ranks; lower "
                 "--phi-window), Rmin=%d.",
                 signal.n_informative, signal.phi_window, signal.rmin,
             )
-        elif signal is not None:
+        else:
             logger.info(
                 "Recombination signal (parent-free): PHI p=%.4g, Rmin=%d (%d informative "
                 "sites).", signal.phi_p, signal.rmin, signal.n_informative,
@@ -372,16 +389,19 @@ def run_recomb(
     # The barcode caller needs typed references and returns no major parent when it
     # cannot run. That is "could not test", which must not be reported as "tested and
     # found nothing": refuse a run that selected nothing else, and say so otherwise.
-    not_run = tuple(m for m in params.methods if m == "barcode" and majors[m] is None)
-    not_run_reason = ""
-    if not_run:
-        reason = not_run_reason = (
+    callers_not_run = tuple(
+        m for m in params.methods if m == "barcode" and majors[m] is None
+    )
+    if callers_not_run:
+        reason = (
             "fewer than two typed clades carry enough characteristic markers"
             if lineage_map else
             "it needs typed references (a lineage map: --lineage-map, or a lineages.tsv "
             "beside the output or the MSA) and none was found"
         )
-        if len(not_run) == len(params.methods):
+        for m in callers_not_run:
+            not_run[m] = reason
+        if len(callers_not_run) == len(params.methods):
             raise UserInputError(
                 f"The barcode caller could not run: {reason}. No other caller was "
                 "selected, so this scan could not test for recombination. Supply typed "
@@ -391,7 +411,7 @@ def run_recomb(
             "The barcode caller could not run (%s); it is reported as 'not run', not as "
             "a negative.", reason,
         )
-    n_ran = len(params.methods) - len(not_run)
+    n_ran = len(params.methods) - len(callers_not_run)
 
     major_parent, per_major = reconcile_major(majors, window_wins=analysis_bp.winners_with_ties)
     # Parent-free corroboration needs both halves of the diagnostic: PHI to establish
@@ -411,7 +431,7 @@ def run_recomb(
     # The clamp is silent when the user simply selected fewer callers than --min-methods.
     # It is not when a selected caller could not run: the user asked for corroboration
     # the run cannot give, and the regions reported are then weaker than requested.
-    gate_lowered = bool(not_run) and min_agree < params.min_methods
+    gate_lowered = bool(callers_not_run) and min_agree < params.min_methods
     if gate_lowered:
         logger.warning(
             "--min-methods %d cannot be met: %d caller(s) ran. The agreement gate used "
@@ -536,8 +556,11 @@ def run_recomb(
         "major parent": major_parent or "n/a",
         "coverage threshold / gaps": f"{coverage_threshold:.3f} / {len(coverage_gaps)}",
     }
-    if not_run:
-        provenance["callers not run"] = f"{', '.join(not_run)} ({not_run_reason})"
+    reported_not_run = [m for m in params.methods if m in not_run]
+    if reported_not_run:
+        provenance["callers not run"] = "; ".join(
+            f"{m} ({not_run[m]})" for m in reported_not_run
+        )
     if excluded_siblings:
         provenance["excluded siblings (query's own lineage)"] = ", ".join(
             ev.label for ev in excluded_siblings
@@ -549,6 +572,8 @@ def run_recomb(
             f"window {signal.phi_window})"
         )
         provenance["min recombination events (Rmin)"] = str(signal.rmin)
+    else:
+        provenance["recombination signal (PHI)"] = f"not run ({not_run[PHI]})"
     # The four permutation callers seed their own RNG per call from a fixed value, so a
     # rerun on the same input reproduces the same p-values. Say so: a reader cannot
     # otherwise tell a deterministic result from one that happened to land twice.
@@ -578,7 +603,7 @@ def run_recomb(
             extra_sections=extra_sections, lineage_map=lineage_map,
             query_lineage=query_lineage, signal=signal, organism=params.organism,
             methods_run=params.methods, method_breakdown=method_breakdown, per_major=per_major,
-            methods_not_run=not_run, not_run_reason=not_run_reason, alpha=params.alpha,
+            not_run=not_run, alpha=params.alpha,
         ),
     )
     logger.info("All done.")
