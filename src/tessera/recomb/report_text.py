@@ -268,8 +268,9 @@ def write_regions_tsv(
     # No comment preamble here, deliberately. The `test` and `statistic` columns make
     # each row self-describing, which is what a consumer actually needs, and this is the
     # most widely parsed of the outputs -- a leading `#` line would break every reader
-    # that does not know to skip it. The FDR method and coordinate conventions go in
-    # run_provenance.json and the documentation instead.
+    # that does not know to skip it. The FDR method ("multiple testing") and the
+    # coordinate convention ("coordinates") are in run_provenance.json and the
+    # documentation instead.
     with open(path, "w") as fo:
         fo.write("\t".join(header) + "\n")
         for r in regions:

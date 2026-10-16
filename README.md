@@ -136,7 +136,7 @@ commands; regenerate with `python example_data/make_example.py`.
 
 ## How detection works
 
-The reference winning the most windows is the **major parent** (the backbone donor).
+The **major parent** (the backbone) is the reference the query follows over most of its length: for the HMM, its majority state after the query's own-lineage siblings are set aside and near-duplicate references pooled.
 By default Tessera runs an **ensemble** of four callers -- HMM segmentation, the 3SEQ
 triplet test, MaxChi, and Bootscan (`--method hmm,3seq,maxchi,bootscan`) -- and merges
 their regions into one consensus: the union raises recall (3SEQ recovers short

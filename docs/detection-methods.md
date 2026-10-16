@@ -394,7 +394,7 @@ not apply -- the barcode and heuristic callers report no p-value at all.
 
 The TSVs travel: once copied out of the output directory, nothing in them says which
 version or parameters produced them. `run_provenance.json` is the record to keep beside
-them. Its `run` block holds what the report's methods section shows; its `msa` block is
+them. Its `run` block holds what the report's methods section shows; it states the coordinate convention under `coordinates`, and under informative-site windowing `window / step` names the base-pair scan it describes (the HMM's windows are given under `windowing`); its `msa` block is
 the sidecar written next to the alignment by `tessera msa`
 (`<msa stem>.provenance.json`), naming the aligner, the resolved binary versions, any
 `--aligner-arg` values and the backbone. For an alignment you built yourself there is no

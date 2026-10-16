@@ -559,7 +559,15 @@ def run_recomb(
         "MSA": str(params.msa),
         **_msa_provenance_lines(msa_record),
         "datasets": str(len(result.similarities)),
-        "window / step": f"{params.window_size} / {params.window_step}",
+        # Under informative-site windowing the HMM did not use this geometry: the
+        # base-pair scan still drives the similarity track, the coverage diagnostic and
+        # the site callers, so the line says which scan it describes.
+        "window / step": (
+            f"{params.window_size} / {params.window_step}" if result is bp_result else
+            f"{params.window_size} / {params.window_step} (base-pair scan: similarity "
+            "track, coverage and the site callers; the HMM used informative-site windows)"
+        ),
+        "coordinates": "0-based, end-exclusive; MSA columns and query bases",
         "metric": params.metric,
         "caller": f"ensemble: {caller_desc}" if len(params.methods) > 1 else caller_desc,
         "windowing": windowing,

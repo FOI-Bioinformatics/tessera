@@ -41,5 +41,4 @@ tessera recomb --msa cryptic_insert.msa.fasta --query query --output out_cryptic
 ```
 
 Both runs also write the parent-free PHI / Rmin signal to `recombination_profile.tsv`.
-The cryptic example has 54 informative sites, fewer than the default PHI window of 100, so
-its PHI test is reported as `not testable`; add `--phi-window 5` to test it.
+The cryptic example has 54 informative sites, fewer than the default PHI window of 100. The window used is capped at a tenth of the informative sites (5 here), so the test runs without changing `--phi-window`, and the report states the window used.
