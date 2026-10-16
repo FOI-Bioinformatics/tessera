@@ -20,7 +20,7 @@ from ..core.executors import parallel_map
 from ..core.io import normalize_reference, read_fasta, write_fasta_record
 from ..core.plugins import ToolCapabilities
 from ..core.process import run_tool
-from .base import Aligner, AlignParams, AlignResult
+from .base import Aligner, AlignParams, AlignResult, split_thread_budget
 
 
 class Minimap2Aligner(Aligner):
@@ -59,8 +59,11 @@ class Minimap2Aligner(Aligner):
         total_len = cursor
 
         preset = str(params.extra.get("preset", "asm20"))
-        threads = str(max(1, params.threads))
         queries = [g for g in genomes if g != reference]
+        # The thread budget is shared between the concurrent mapping jobs; giving each
+        # job all of it started --threads processes of --threads threads each.
+        jobs, per_job = split_thread_budget(params.threads, len(queries))
+        threads = str(per_job)
 
         def map_genome(genome: Path) -> tuple[str, str]:
             sam = out_dir / f"{genome.stem}.sam"
@@ -74,7 +77,7 @@ class Minimap2Aligner(Aligner):
             )
             return genome.stem, project_sam_to_row(sam, offsets, total_len)
 
-        rows = parallel_map(map_genome, queries, params.threads, logger=logger)
+        rows = parallel_map(map_genome, queries, jobs, logger=logger)
 
         msa = out_dir / "msa.fasta"
         with open(msa, "w") as out:

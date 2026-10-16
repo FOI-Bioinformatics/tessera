@@ -24,6 +24,24 @@ _TRUTHY = frozenset({"1", "true", "yes", "on"})
 _FALSY = frozenset({"0", "false", "no", "off", ""})
 
 
+def split_thread_budget(
+    threads: int, tasks: int, job_limit: int | None = None
+) -> tuple[int, int]:
+    """Divide a ``--threads`` budget between concurrent tool runs.
+
+    Returns ``(jobs, threads_per_job)``: at most one job per task, never more jobs than
+    threads, and never fewer than one of either. ``job_limit`` caps the number of jobs
+    further (a memory bound, say). ``jobs * threads_per_job`` never exceeds the budget,
+    so ``--threads 16`` starts at most sixteen threads in all rather than sixteen
+    processes of sixteen threads each.
+    """
+    budget = max(1, threads)
+    jobs = max(1, min(budget, tasks))
+    if job_limit is not None:
+        jobs = max(1, min(jobs, job_limit))
+    return jobs, budget // jobs
+
+
 class OutputKind(Enum):
     MSA_FASTA = "msa_fasta"
 

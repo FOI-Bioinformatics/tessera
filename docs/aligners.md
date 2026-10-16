@@ -35,6 +35,9 @@ between the concurrent jobs rather than given to each. The estimate uses the hos
 physical memory; under a container or scheduler memory limit lower `--threads` or pass
 `sixmerpair=true`.
 
+Threads with `minimap2`: genomes are mapped concurrently, and `--threads` is shared
+between the concurrent `minimap2` processes rather than given to each, as with `mafft`.
+
 A multi-contig backbone is laid out as the concatenation of its contigs in the order of
 its FASTA file (`sibeliaz`, `mafft`, `minimap2`, `progressivemauve`); a contig that nothing
 aligns to keeps its columns, as gaps. The `cactus` backend lays contigs out in sorted-name

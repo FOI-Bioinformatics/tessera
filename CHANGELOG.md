@@ -42,6 +42,9 @@ alignment reaches the scan, not how the scan calls regions:
   written onto the first one's columns (or the backbone row lost a record) in an
   otherwise well-formed alignment. Such a file is now refused at staging, for every
   backend, naming the file, the ID and both lines.
+- **`minimap2` multiplied its thread budget.** `--threads N` started N concurrent
+  `minimap2` processes with N threads each. The budget is now shared between them, by the
+  same rule the `mafft` backend uses.
 
 Data safety and alignment:
 

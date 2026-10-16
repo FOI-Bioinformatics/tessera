@@ -477,3 +477,60 @@ def test_progressivemauve_rejects_a_projection_that_is_not_pairwise(
         pm_mod.ProgressiveMauveAligner().align(
             genomes, genomes[0], tmp_path / "out", AlignParams(threads=1), _LOG
         )
+
+
+# --- minimap2 shares its thread budget across concurrent jobs ----------------------
+def _minimap2_runs(monkeypatch, tmp_path: Path, *, threads: int, n_queries: int
+                   ) -> tuple[list[int], list[list[str]]]:
+    """Run the minimap2 adapter against a fake `minimap2`; return (pool sizes, commands)."""
+    commands: list[list[str]] = []
+    workers: list[int] = []
+    real_map = mm_mod.parallel_map
+
+    def spy_map(fn, items, n, **kw):
+        workers.append(n)
+        return real_map(fn, items, n, **kw)
+
+    def fake_run(caps, cmd, **kw):
+        commands.append([str(c) for c in cmd])
+        kw["stdout_path"].write_text(
+            "@SQ\tSN:ref\tLN:12\nq\t0\tref\t1\t60\t12M\t*\t0\t0\tACGTACGTACGT\t*\n"
+        )
+        return ""
+
+    monkeypatch.setattr(mm_mod, "parallel_map", spy_map)
+    monkeypatch.setattr(mm_mod, "run_tool", fake_run)
+    ref = tmp_path / "ref.fasta"
+    ref.write_text(">ref\nACGTACGTACGT\n")
+    genomes = [ref]
+    for i in range(n_queries):
+        qry = tmp_path / f"qry{i}.fasta"
+        qry.write_text(f">qry{i}\nACGTACGTACGT\n")
+        genomes.append(qry)
+    mm_mod.Minimap2Aligner().align(genomes, ref, tmp_path / "out",
+                                   AlignParams(threads=threads), _LOG)
+    return workers, commands
+
+
+def test_minimap2_splits_threads_across_concurrent_jobs(monkeypatch, tmp_path: Path) -> None:
+    """--threads 4 used to start four minimap2 processes of four threads each."""
+    workers, commands = _minimap2_runs(monkeypatch, tmp_path, threads=4, n_queries=5)
+    assert workers == [4]
+    assert len(commands) == 5
+    assert {cmd[cmd.index("-t") + 1] for cmd in commands} == {"1"}
+
+
+def test_minimap2_gives_a_single_job_all_threads(monkeypatch, tmp_path: Path) -> None:
+    workers, commands = _minimap2_runs(monkeypatch, tmp_path, threads=4, n_queries=1)
+    assert workers == [1]
+    assert commands[0][commands[0].index("-t") + 1] == "4"
+
+
+def test_minimap2_never_starts_more_threads_than_the_budget(monkeypatch, tmp_path: Path) -> None:
+    # A budget that does not divide evenly: five threads over two queries. Two jobs of
+    # two threads stay within it; two jobs of five, or of three, would not.
+    workers, commands = _minimap2_runs(monkeypatch, tmp_path, threads=5, n_queries=2)
+    per_job = {int(cmd[cmd.index("-t") + 1]) for cmd in commands}
+    assert workers == [2]
+    assert per_job == {2}
+    assert workers[0] * max(per_job) <= 5
