@@ -123,3 +123,34 @@ def test_arguments_are_not_shell_interpreted(tmp_path: Path) -> None:
     cmd = [*_python("import sys", "print(sys.argv[1])"), str(weird)]
     assert run_tool(CAPS, cmd, logger=LOG).strip() == str(weird)
     assert not (tmp_path / "pwned.txt").exists()
+
+
+# --- standard input -----------------------------------------------------------------
+
+@pytest.fixture
+def stdin_left_open():
+    """Make this process's standard input a pipe that never reaches end of file, as an
+    interactive terminal does. A child that inherits it and reads it waits forever."""
+    import os
+
+    read_end, write_end = os.pipe()
+    saved = os.dup(0)
+    os.dup2(read_end, 0)
+    try:
+        yield
+    finally:
+        os.dup2(saved, 0)
+        for fd in (saved, read_end, write_end):
+            os.close(fd)
+
+
+@pytest.mark.parametrize("to_file", [False, True])
+def test_a_tool_that_reads_stdin_gets_end_of_file(
+    stdin_left_open, tmp_path: Path, to_file: bool
+) -> None:
+    # Without stdin redirected the child inherits the terminal and waits on it; with no
+    # timeout on alignment, the run would hang rather than fail.
+    cmd = _python("import sys", "print(len(sys.stdin.read()))")
+    out = tmp_path / "out.txt"
+    output = run_tool(CAPS, cmd, logger=LOG, timeout=5, stdout_path=out if to_file else None)
+    assert (out.read_text() if to_file else output).strip() == "0"

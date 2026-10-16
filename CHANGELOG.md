@@ -65,6 +65,10 @@ alignment reaches the scan, not how the scan calls regions:
   marker was present, clearing the working collection failed with `NotADirectoryError`,
   an `OSError` for a symlink, or `FileExistsError` for a dangling one. Each is now a user
   error that names the path; a symlink is refused rather than followed.
+- **External tools inherited standard input.** A tool that read stdin or prompted would
+  have waited on the terminal, and alignment has no default timeout. Every external tool,
+  and every version probe, now runs with standard input closed. No current tool is known
+  to have done this. Reconfiguring logging also now closes the previous run log.
 
 Data safety and alignment:
 

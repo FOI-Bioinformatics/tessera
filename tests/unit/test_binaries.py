@@ -189,3 +189,23 @@ def test_sibeliaz_declares_no_version_probe() -> None:
 
     (spec,) = SibeliazAligner.capabilities.required_binaries
     assert spec.version_args is None
+
+
+def test_version_probe_does_not_inherit_stdin(monkeypatch, on_path) -> None:
+    # A tool that prompts on its version option would otherwise wait on the terminal
+    # for the full 30 s probe timeout.
+    import subprocess
+
+    from tessera.core import binaries
+
+    fake_binary(on_path, "prompty", "prompty 1.2.3")
+    seen: dict = {}
+    real_run = subprocess.run
+
+    def spy(*args, **kwargs):
+        seen.update(kwargs)
+        return real_run(*args, **kwargs)
+
+    monkeypatch.setattr(binaries.subprocess, "run", spy)
+    assert check_binaries((BinarySpec("prompty"),)) == {"prompty": "1.2.3"}
+    assert seen.get("stdin") is subprocess.DEVNULL
