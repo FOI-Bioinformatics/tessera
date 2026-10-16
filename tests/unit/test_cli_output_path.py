@@ -70,7 +70,7 @@ def test_command_rejects_an_output_path_that_is_a_file(
 def test_a_new_nested_output_directory_is_still_created(
     tmp_path: Path, no_pipeline, command: str
 ) -> None:
-    """Review focus 5, guard (passes before and after): the check must not stop a command
+    """Guard (passes before and after): the check must not stop a command
     from creating an output directory that does not exist yet (the run log goes there)."""
     out = tmp_path / "new" / "nested" / "out"
     runner.invoke(app, _args(command, tmp_path, out))

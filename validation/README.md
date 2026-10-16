@@ -112,7 +112,7 @@ practical setup is a dedicated env:
 
 ```
 conda create -n recomfi-aln -c bioconda -c conda-forge minimap2 sibeliaz mafft
-export PATH="$HOME/miniforge3/envs/recomfi-aln/bin:$PATH"
+export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"
 ```
 
 `fetch.py` additionally needs Entrez Direct: `conda install -c bioconda
@@ -234,7 +234,7 @@ higher confidence). The ensemble's union does not lower the documented PASS/FAIL
 it can only add 3SEQ-recovered regions the HMM alone would miss.
 
 ```
-export PATH="$HOME/miniforge3/envs/recomfi-aln/bin:$PATH"
+export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"
 python validation/run_hybrids.py            # all cases
 python validation/run_hybrids.py hiv1 dengue   # only named cases
 ```
@@ -255,7 +255,7 @@ the nearest-neighbour tier), calls `assign_lineages`, and checks that every geno
 typed via source `nextclade-nn` with a non-empty label.
 
 ```
-export PATH="$HOME/miniforge3/envs/recomfi-aln/bin:$PATH"   # skani on PATH
+export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"   # skani on PATH
 python validation/run_deep_typing.py
 ```
 

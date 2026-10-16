@@ -28,8 +28,7 @@ the aligners on `PATH` works.
 
 - `ruff check src tests validation` is clean.
 - `pytest -m "not requires_binary"` is green, and the test count has not gone down.
-- `mypy` does not add new errors. It is not yet blocking in CI — the codebase has an
-  existing backlog — but it should not grow.
+- `mypy` is clean. CI runs it as a blocking step over `src/tessera`.
 - New behaviour has a test that fails without the change. A test that passes either way
   documents intent but does not protect it.
 
@@ -39,7 +38,7 @@ the aligners on `PATH` works.
 real harness before it lands**, not only on the unit suite:
 
 ```
-export PATH="$HOME/miniforge3/envs/tessera/bin:$PATH"
+export PATH="$PATH:$HOME/miniforge3/envs/tessera/bin"   # append, never prepend
 python validation/run_hybrids.py
 ```
 
