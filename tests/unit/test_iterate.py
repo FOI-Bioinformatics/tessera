@@ -1211,3 +1211,36 @@ def test_no_curation_note_when_curation_was_not_requested(monkeypatch, tmp_path,
     fill_references(FillParams(query=query, collection=coll, output=out), logger)
 
     assert "Reference panel" not in dict(sections["extra_sections"])
+
+
+# --- audit 4: --fetch-limit is not part of the cache key (D8) ----------------------
+
+def test_fetch_limit_does_not_split_the_cache(monkeypatch, tmp_path, logger):
+    """--fetch-limit only sets when a notice is logged; the full set is downloaded either
+    way (docs/reference-panels.md, and the option's help). As a cache-key field it forced a
+    full re-download of an identical genome set whenever the value changed."""
+    from tessera.discover import pool as pool_mod
+
+    calls = {"fetch": 0}
+
+    def fake_fetch(taxon, d, *, refseq=True, complete_only=False, released_after=None,
+                   limit=None, logger):
+        calls["fetch"] += 1
+        written = []
+        for i in range(4):
+            p = d / f"G{i}.fasta"
+            p.write_text(">x\nA\n")
+            written.append(p)
+        return written
+
+    monkeypatch.setattr(pool_mod, "fetch_ncbi_virus", fake_fetch)
+    out = tmp_path / "o"
+    out.mkdir()
+    common = {"query": tmp_path / "q.fasta", "collection": None, "output": out,
+              "taxon": "SARS-CoV-2", "cache_dir": tmp_path / "cache"}
+
+    first = iterate._fetch_diverse(FillParams(fetch_limit=2000, **common), logger)
+    second = iterate._fetch_diverse(FillParams(fetch_limit=5, **common), logger)
+
+    assert calls["fetch"] == 1
+    assert [p.name for p in second] == [p.name for p in first]

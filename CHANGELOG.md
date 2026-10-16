@@ -249,6 +249,10 @@ Panel recruitment (fourth audit):
   (1.5-3 kb at the default) as a single window, which is whole-genome selection. Such a
   query is now cut into two halves, with the whole-genome ranking as a fallback if neither
   half matches. Longer queries are unaffected.
+- `--fetch-limit` was part of the NCBI Virus cache key although it does not change what
+  is fetched (it only sets when a notice is logged), so changing it re-downloaded an
+  identical genome set. It no longer is. A cache written by an earlier version is keyed
+  differently and is fetched once more on first use.
 
 ### Changed
 

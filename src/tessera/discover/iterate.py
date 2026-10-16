@@ -89,7 +89,7 @@ class FillParams:
     # by NCBI Virus taxonomy diversity instead, so the parental lineages are present.
     auto_diversify: bool = True
     negative_lineage: bool = True  # on saturation, re-BLAST excluding the query's lineage
-    fetch_limit: int = 2000  # cap a broad NCBI Virus fetch (complete genomes)
+    fetch_limit: int = 2000  # log a notice when a broad NCBI Virus fetch exceeds this
     derep_diverse_ani: float = 95.0  # aggressive one-per-lineage dereplication of a pool
     cache_dir: Path | None = None  # where to cache fetched NCBI Virus panels (None = default)
     window_size: int = 1000
@@ -822,7 +822,9 @@ def _fetch_diverse(params: FillParams, logger: logging.Logger) -> list[Path]:
     )
     # Keyed by what was asked for, not by what the fetch settled on: the RefSeq ->
     # complete broadening below is how a request is satisfied, not a separate request.
-    scope = {"source_refseq": params.source_refseq, "fetch_limit": params.fetch_limit}
+    # --fetch-limit is not part of the request: it only sets when a notice is logged, and
+    # the full set is downloaded whatever its value.
+    scope = {"source_refseq": params.source_refseq}
     cache = ncbi_virus_cache(taxon, scope=scope, override=params.cache_dir)
     existing = cached_genomes(cache, manifest_required=True)
     if existing:

@@ -64,7 +64,7 @@ def ncbi_virus_cache(
     """The cache directory for a taxon's recruited NCBI Virus panel.
 
     ``scope`` carries the request parameters that change which genomes come back
-    (RefSeq versus all complete genomes, any fetch cap). They belong in the key:
+    (RefSeq versus all complete genomes). They belong in the key:
     keyed on the taxon alone, a ``--source-refseq`` run and a default run share one
     slot, and whichever ran second would silently inherit the other's panel.
     """
