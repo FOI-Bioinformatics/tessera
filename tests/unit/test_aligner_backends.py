@@ -534,3 +534,72 @@ def test_minimap2_never_starts_more_threads_than_the_budget(monkeypatch, tmp_pat
     assert workers == [2]
     assert per_job == {2}
     assert workers[0] * max(per_job) <= 5
+
+
+# --- a genome the aligner did not place is named -----------------------------------
+# Not under the "tessera" logger: the CLI tests switch its propagation off, and caplog
+# only sees records that reach the root logger.
+_WARN_LOG = logging.getLogger("aligner_unplaced_test")
+
+
+def _ref_and_queries(tmp_path: Path) -> list[Path]:
+    paths = []
+    for name, seq in (("ref", "ACGTACGTACGT"), ("near", "ACGTACGTACGT"), ("far", "TTTTTTTTTTTT")):
+        path = tmp_path / f"{name}.fasta"
+        path.write_text(f">{name}\n{seq}\n")
+        paths.append(path)
+    return paths
+
+
+def test_minimap2_names_a_genome_it_could_not_map(monkeypatch, tmp_path: Path, caplog) -> None:
+    def fake_run(caps, cmd, **kw):
+        if "far" in str(cmd[-1]):
+            body = "far\t4\t*\t0\t0\t*\t*\t0\t0\tTTTTTTTTTTTT\t*\n"  # unmapped
+        else:
+            body = "near\t0\tref\t1\t60\t12M\t*\t0\t0\tACGTACGTACGT\t*\n"
+        kw["stdout_path"].write_text("@SQ\tSN:ref\tLN:12\n" + body)
+        return ""
+
+    monkeypatch.setattr(mm_mod, "run_tool", fake_run)
+    genomes = _ref_and_queries(tmp_path)
+    with caplog.at_level(logging.WARNING, logger=_WARN_LOG.name):
+        result = mm_mod.Minimap2Aligner().align(genomes, genomes[0], tmp_path / "out",
+                                                AlignParams(threads=1), _WARN_LOG)
+    assert _read_msa(result.msa_fasta)["far"] == "-" * 12
+    assert "1 genome(s)" in caplog.text
+    assert "far" in caplog.text and "near" not in caplog.text
+
+
+def test_mafft_names_a_genome_it_could_not_place(monkeypatch, tmp_path: Path, caplog) -> None:
+    def fake_run(caps, cmd, **kw):
+        row = "-" * 12 if "far" in str(cmd[cmd.index("--addfragments") + 1]) else "ACGTACGTACGT"
+        kw["stdout_path"].write_text(f">ref\nACGTACGTACGT\n>added\n{row}\n")
+        return ""
+
+    monkeypatch.setattr(mafft_mod, "run_tool", fake_run)
+    genomes = _ref_and_queries(tmp_path)
+    with caplog.at_level(logging.WARNING, logger=_WARN_LOG.name):
+        mafft_mod.MafftAligner().align(genomes, genomes[0], tmp_path / "out",
+                                       AlignParams(threads=1), _WARN_LOG)
+    assert "far" in caplog.text and "near" not in caplog.text
+
+
+def test_progressivemauve_names_a_genome_in_no_block(monkeypatch, tmp_path: Path, caplog) -> None:
+    def fake_run(caps, cmd, **kw):
+        cmd = [str(c) for c in cmd]
+        xmfa = Path(cmd[cmd.index("--output") + 1])
+        ref_path, query_path = cmd[-2], cmd[-1]
+        header = f"#Sequence1File\t{ref_path}\n#Sequence2File\t{query_path}\n"
+        if "far" in query_path:  # the reference aligned to nothing
+            xmfa.write_text(header + f"> 1:1-12 + {ref_path}\nACGTACGTACGT\n=\n")
+        else:
+            xmfa.write_text(header + f"> 1:1-12 + {ref_path}\nACGTACGTACGT\n"
+                            f"> 2:1-12 + {query_path}\nACGTACGTACGT\n=\n")
+        return ""
+
+    monkeypatch.setattr(pm_mod, "run_tool", fake_run)
+    genomes = _ref_and_queries(tmp_path)
+    with caplog.at_level(logging.WARNING, logger=_WARN_LOG.name):
+        pm_mod.ProgressiveMauveAligner().align(genomes, genomes[0], tmp_path / "out",
+                                               AlignParams(threads=1), _WARN_LOG)
+    assert "far" in caplog.text and "near" not in caplog.text

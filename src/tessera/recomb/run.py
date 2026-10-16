@@ -38,6 +38,7 @@ from .similarity import (
     compute_similarity_informative,
     informative_site_count,
     low_canonical_records,
+    unaligned_records,
 )
 from .typing import LINEAGES_TSV, LineageMap, lineage_of, load_lineage_map
 
@@ -192,6 +193,27 @@ def _select_windowing(bp_result, params: RecombParams, query_label: str, logger)
     )
 
 
+def _warn_unusable_rows(rows, logger: logging.Logger) -> None:
+    """Name the records that will contribute little or nothing to the scan.
+
+    Only canonical bases count toward a window, so such a record drops out in silence
+    unless it is named. An all-gap row and an unreadable alphabet have different
+    causes -- the aligner placed nothing of the genome, or the reader did not
+    understand its letters -- so they are reported separately.
+    """
+    for label in unaligned_records(rows):
+        logger.warning(
+            "Sequence '%s' has no aligned base (an all-gap row): the aligner did not "
+            "place it against the backbone, so it contributes nothing to the scan.",
+            label,
+        )
+    for label, fraction in low_canonical_records(rows):
+        logger.warning(
+            "Sequence '%s' is only %.0f%% A/C/G/T outside gaps; it will contribute "
+            "little to the scan. Check its alphabet.", label, 100.0 * fraction,
+        )
+
+
 def _discover_lineage_tsv(output: Path, msa: Path) -> Path | None:
     """Find a ``lineages.tsv`` written by panel building, beside the output or the MSA."""
     candidates = [
@@ -284,13 +306,7 @@ def run_recomb(
             "to switch between. Add references to the panel -- this scan could not "
             "report recombination even if it were present."
         )
-    # Only canonical bases count toward a window, so a record that is mostly something
-    # else contributes almost nothing. Say so rather than let it drop out in silence.
-    for label, fraction in low_canonical_records(bp_result.rows):
-        logger.warning(
-            "Sequence '%s' is only %.0f%% A/C/G/T outside gaps; it will contribute "
-            "little to the scan. Check its alphabet.", label, 100.0 * fraction,
-        )
+    _warn_unusable_rows(bp_result.rows, logger)
 
     # On a near-identical panel a base-pair window holds too few discriminating
     # sites for the HMM emission to separate the references; switch to windows that

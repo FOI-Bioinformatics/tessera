@@ -20,7 +20,13 @@ from ..core.executors import parallel_map
 from ..core.io import normalize_reference, read_fasta, write_fasta_record
 from ..core.plugins import ToolCapabilities
 from ..core.process import run_tool
-from .base import Aligner, AlignParams, AlignResult, split_thread_budget
+from .base import (
+    Aligner,
+    AlignParams,
+    AlignResult,
+    split_thread_budget,
+    warn_unplaced,
+)
 
 
 class Minimap2Aligner(Aligner):
@@ -79,6 +85,7 @@ class Minimap2Aligner(Aligner):
 
         rows = parallel_map(map_genome, queries, jobs, logger=logger)
 
+        warn_unplaced(rows, reference.stem, logger)
         msa = out_dir / "msa.fasta"
         with open(msa, "w") as out:
             write_fasta_record(out, reference.stem, ref_seq)

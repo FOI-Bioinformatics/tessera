@@ -45,6 +45,11 @@ alignment reaches the scan, not how the scan calls regions:
 - **`minimap2` multiplied its thread budget.** `--threads N` started N concurrent
   `minimap2` processes with N threads each. The budget is now shared between them, by the
   same rule the `mafft` backend uses.
+- **A genome the `minimap2`, `mafft` or `progressivemauve` backend could not place was
+  dropped in silence.** It became an all-gap row with no warning (only the MAF-based
+  backends named it), and the scan later reported it as an alphabet problem. These
+  backends now name such genomes, and the scan reports an all-gap row as unaligned,
+  separately from a record whose letters it could not read.
 
 Data safety and alignment:
 

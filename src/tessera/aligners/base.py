@@ -42,6 +42,26 @@ def split_thread_budget(
     return jobs, budget // jobs
 
 
+def warn_unplaced(
+    rows: Sequence[tuple[str, str]], backbone: str, logger: logging.Logger
+) -> None:
+    """Name every genome whose row holds no aligned base.
+
+    The pairwise backends write a genome they could not place against the backbone as
+    an all-gap row, so the alignment keeps one row per input genome. Such a row
+    contributes nothing to the scan; without a warning the panel is silently smaller
+    than the collection. The MAF-based backends say the same in their converter.
+    """
+    unplaced = sorted(label for label, row in rows if not row.strip("-"))
+    if unplaced:
+        logger.warning(
+            "%d genome(s) were not aligned to any part of the backbone '%s' and are "
+            "written as all-gap rows: %s. They contribute nothing to the scan; they "
+            "may be too divergent for this aligner.",
+            len(unplaced), backbone, ", ".join(unplaced),
+        )
+
+
 class OutputKind(Enum):
     MSA_FASTA = "msa_fasta"
 

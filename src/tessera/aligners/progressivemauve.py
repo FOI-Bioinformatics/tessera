@@ -22,7 +22,7 @@ from ..core.executors import parallel_map
 from ..core.io import normalize_reference, read_fasta, write_fasta_record
 from ..core.plugins import ToolCapabilities
 from ..core.process import run_tool
-from .base import Aligner, AlignParams, AlignResult
+from .base import Aligner, AlignParams, AlignResult, warn_unplaced
 
 
 class ProgressiveMauveAligner(Aligner):
@@ -87,14 +87,15 @@ class ProgressiveMauveAligner(Aligner):
         per_query = parallel_map(align_query, queries, workers, logger=logger)
 
         msa = out_dir / "msa.fasta"
-        _concatenate(per_query, reference.stem, ref_seq, msa)
+        rows = _concatenate(per_query, reference.stem, ref_seq, msa)
+        warn_unplaced(rows, reference.stem, logger)
         return AlignResult(msa_fasta=msa)
 
 
 def _concatenate(
     per_query: list[tuple[str, Path]], reference_label: str, reference_seq: str,
     out_path: Path,
-) -> None:
+) -> list[tuple[str, str]]:
     """Write the backbone row once, then one row per query, named by staged label.
 
     The backbone row is the reference's own sequence, not a projection. Each
@@ -107,8 +108,9 @@ def _concatenate(
     progressiveMauve echoed from its command line -- resolved symlink targets, which can
     carry an unrecognised extension, whitespace, or a basename shared with another
     genome -- so rows are identified by position and labelled from the staged file,
-    never from those names.
+    never from those names. Returns the query rows as ``(label, row)``.
     """
+    rows: list[tuple[str, str]] = []
     with open(out_path, "w") as out:
         write_fasta_record(out, reference_label, reference_seq)
         for label, fa in per_query:
@@ -128,3 +130,5 @@ def _concatenate(
                     "progressiveMauve reported coordinates beyond the backbone."
                 )
             write_fasta_record(out, label, row)
+            rows.append((label, row))
+    return rows

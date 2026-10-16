@@ -42,7 +42,8 @@ A multi-contig backbone is laid out as the concatenation of its contigs in the o
 its FASTA file (`sibeliaz`, `mafft`, `minimap2`, `progressivemauve`); a contig that nothing
 aligns to keeps its columns, as gaps. The `cactus` backend lays contigs out in sorted-name
 order. A genome the aligner cannot place against the backbone at all is kept as an all-gap
-row and named in a warning, so the alignment always has one row per input genome.
+row and named in a warning by every backend, so the alignment always has one row per
+input genome. The scan names such a row again, as unaligned, when it reads the alignment.
 
 Genomes are staged before alignment. A FASTA with whitespace inside its sequence lines
 (trailing spaces, tabs, Windows line endings) is aligned from a cleaned copy and reported

@@ -127,18 +127,27 @@ def low_canonical_records(
     or nothing to the scan. That is legitimate for a genuinely ambiguous sequence but
     is also the fingerprint of an alphabet the reader did not understand, which would
     otherwise fail silently. Gaps are excluded from the denominator -- they are
-    expected in an alignment and say nothing about the alphabet.
+    expected in an alignment and say nothing about the alphabet. An all-gap record
+    has no alphabet to judge; :func:`unaligned_records` reports it instead.
     """
     flagged: list[tuple[str, float]] = []
     for label, seq in rows.items():
         ungapped = int(np.count_nonzero(seq != GAP))
         if ungapped == 0:
-            flagged.append((label, 0.0))
             continue
         fraction = float(np.count_nonzero(_canonical_mask(seq)) / ungapped)
         if fraction < min_fraction:
             flagged.append((label, fraction))
     return sorted(flagged, key=lambda item: item[1])
+
+
+def unaligned_records(rows: dict[str, np.ndarray]) -> list[str]:
+    """Records with no aligned base at all (all-gap rows), sorted by label.
+
+    An aligner writes a genome it could not place against the backbone this way; the
+    record then contributes nothing to the scan.
+    """
+    return sorted(label for label, seq in rows.items() if not np.any(seq != GAP))
 
 
 def _read_alignment(msa_path: str) -> dict[str, np.ndarray]:

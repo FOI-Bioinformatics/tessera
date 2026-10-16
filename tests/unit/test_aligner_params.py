@@ -47,7 +47,7 @@ def test_progressivemauve_single_false_does_not_serialise(monkeypatch, tmp_path:
         return []  # skip the real alignment work
 
     monkeypatch.setattr(pm, "parallel_map", fake_parallel_map)
-    monkeypatch.setattr(pm, "_concatenate", lambda *a, **k: None)
+    monkeypatch.setattr(pm, "_concatenate", lambda *a, **k: [])  # no query rows
 
     aligner = pm.ProgressiveMauveAligner()
     params = AlignParams(threads=4, extra={"single": "false"})
