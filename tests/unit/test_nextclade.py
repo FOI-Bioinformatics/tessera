@@ -313,3 +313,51 @@ def test_build_pool_handles_deep_tree(monkeypatch, tmp_path, logger):
     )
     genomes = nc.build_pool(ds, cache_dir=tmp_path / "c", logger=logger)
     assert any(g.stem == "DEEP1" for g in genomes)
+
+
+# --- installing the pool into the cache ------------------------------------------
+def test_build_pool_installs_over_a_directory_of_stray_files(monkeypatch, tmp_path, logger):
+    # A cache directory holding only files the reader does not recognise reads as
+    # absent, so the pool is rebuilt -- and a bare rename onto that non-empty directory
+    # failed with an OSError on every run.
+    _patch_files(monkeypatch)
+    cache = tmp_path / "c"
+    cache.mkdir()
+    (cache / "notes.txt").write_text("not a genome\n")
+    genomes = nc.build_pool(_dataset(), cache_dir=cache, logger=logger)
+    assert {g.stem for g in genomes} >= {"ACC1", "ACC2", "EX1"}
+    assert all(g.parent == cache for g in genomes)
+
+
+def test_build_pool_keeps_a_pool_a_concurrent_run_installed_first(
+    monkeypatch, tmp_path, logger
+):
+    # Two runs on one dataset: the other run installs its pool while this one is still
+    # building. Its copy answers the same request, so this run uses it rather than fail.
+    _patch_files(monkeypatch)
+    cache = tmp_path / "c"
+    real_write = nc._write_genome
+    raced = {"done": False}
+
+    def write_then_race(out_dir, label, note, seq, floor):
+        if not raced["done"]:
+            raced["done"] = True
+            nc.build_pool(_dataset(), cache_dir=cache, logger=logger)  # the other run
+        return real_write(out_dir, label, note, seq, floor)
+
+    monkeypatch.setattr(nc, "_write_genome", write_then_race)
+    genomes = nc.build_pool(_dataset(), cache_dir=cache, logger=logger)
+    assert {g.stem for g in genomes} >= {"ACC1", "ACC2", "EX1"}
+    assert not [p for p in tmp_path.iterdir() if p.name != "c"]  # no staging dir left
+
+
+def test_build_pool_marks_the_installed_pool_complete(monkeypatch, tmp_path, logger):
+    from tessera.core.cache import read_cache_manifest
+
+    _patch_files(monkeypatch)
+    cache = tmp_path / "c"
+    nc.build_pool(_dataset(), cache_dir=cache, logger=logger)
+    manifest = read_cache_manifest(cache)
+    assert manifest is not None
+    assert manifest["dataset"] == "x/y" and manifest["tag"] == "t"
+    assert manifest["genomes"] == 3

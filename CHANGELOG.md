@@ -55,6 +55,12 @@ alignment reaches the scan, not how the scan calls regions:
   and a backbone contig whose length in the MAF differed from the staged FASTA had its
   blocks written onto the next contig's columns. Both now stop the run with a message
   naming the file.
+- **The Nextclade pool cache could not be installed over an existing directory.** Two runs
+  building the same pool at once, or a cache directory holding only unrecognised files,
+  made the install fail with "Unexpected error". The pool is now installed the way the
+  NCBI Virus panel is: a pool another run finished first is kept, a directory without a
+  completeness record is replaced, and the pool carries such a record. Pools cached by
+  earlier releases are still used.
 
 Data safety and alignment:
 

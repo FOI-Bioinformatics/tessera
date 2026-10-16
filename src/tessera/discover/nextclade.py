@@ -26,7 +26,7 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 from ..core.binaries import BinarySpec
-from ..core.cache import cached_genomes
+from ..core.cache import atomic_cache_dir, cached_genomes, write_cache_manifest
 from ..core.errors import UserInputError
 from ..core.io import write_fasta_record
 from ..core.plugins import ToolCapabilities
@@ -253,10 +253,7 @@ def build_pool(
     backbone/donor competition to a near-identical adjacent-clade genome at low
     divergence. Cached separately (a ``_consensus`` sibling directory).
     """
-    import os
-    import shutil as _shutil
-    import tempfile
-
+    from .. import __version__
     from ..recomb.consensus import consensus_sequence
 
     if per_clade_consensus:
@@ -273,9 +270,10 @@ def build_pool(
     floor = max(1, len(reference) // 2)
     tree = json.loads(_download_text(dataset, "treeJson", logger))["tree"]
 
-    cache_dir.parent.mkdir(parents=True, exist_ok=True)
-    build_dir = Path(tempfile.mkdtemp(dir=cache_dir.parent))
-    try:
+    # Staged and installed by atomic_cache_dir, which also settles a collision: a pool
+    # that a concurrent run installed first (it carries a manifest) is kept, and a
+    # directory without one -- stray files the reader does not recognise -- is replaced.
+    with atomic_cache_dir(cache_dir) as build_dir:
         written: list[Path] = []
         seen: set[str] = set()
         clade_tips: dict[str, list[str]] = {}  # consensus mode: clade -> reconstructed seqs
@@ -349,10 +347,11 @@ def build_pool(
             raise UserInputError(
                 f"Nextclade dataset '{dataset.path}' yielded no usable pool genomes."
             )
-        os.replace(build_dir, cache_dir)  # atomic on the same filesystem
-    except BaseException:
-        _shutil.rmtree(build_dir, ignore_errors=True)
-        raise
+        write_cache_manifest(
+            build_dir, dataset=dataset.path, tag=dataset.tag,
+            per_clade_consensus=per_clade_consensus, genomes=len(written),
+            tessera_version=__version__,
+        )
 
     genomes = cached_genomes(cache_dir)  # paths now under the final cache dir
     logger.info("Nextclade pool: %d genome(s) -> %s", len(genomes), cache_dir)
