@@ -26,7 +26,8 @@ stable `panel/panel.msa.fasta` alignment, and `panel/panel_lineages.tsv`. The ex
 this query (donors are its regional best matches), so it is not a reusable
 organism-wide reference set. Pass `--collection` to grow an existing collection
 instead of recruiting from scratch. `--keep-recombinant-lineages`, `--deep-typing` and
-`--pool-consensus` shape the panel as they do for `detect`. The full-featured `fill-references` command takes
+`--pool-consensus` shape the panel as they do for `detect`. The full-featured `fill-references`
+command takes
 `--no-report` for the same effect.
 
 ## Typed lineage names in the report
@@ -366,17 +367,23 @@ with one record per segment, each with a distinct name (the first header token; 
 name is rejected, since it would otherwise be a homolog rather than a separate segment). Each segment
 is typed independently against its own Nextclade dataset
 (auto-detected, or pinned with `--dataset SEGMENT=path`), and its nearest reference tips give a
-`(strain, clade, ANI)`. When several clades lie within `--margin` of the best tip the reported clade is the
+`(strain, clade, ANI)`. When several clades lie within `--margin` of the best tip the reported clade
+is the
 highest-ANI tip's, ties broken by tip name, and the log lists the clades in the window.
 
 Because Nextclade flu trees label tips by strain name, the same strain appears across segment
 datasets, so the per-segment nearest strains can be compared. The call is pairwise and
 coverage-aware: two segments are concordant when a strain is near-best (within `--margin` ANI
-percentage points, default 0.5; the accepted range is above 0 and at most 5, because a window wide enough to span the candidates' ANI spread makes every pair concordant and every query clonal, and a zero window turns a tie-break between two tips into different parents; the cap is a fixed sanity bound, not a calibrated optimum. `--ani-floor` is a percentage too; a value of 1 or below is rejected as a likely fraction) for both, discordant when a near-best parent of one is typed in the other's
-tree but not near-best there (different parents), and uninformative when neither's near-best parents
-appear in the other's tree. A query is `reassortant` when any pair is discordant and the discordant segments fall in different parent groups, `clonal` when the
-concordant pairs link every segment to one parent, and `undetermined` when cross-typing is too
-sparse to decide. Treating missing cross-typing as "cannot tell" rather than as disagreement is what
+percentage points, default 0.5) for both, discordant when a near-best parent of one is typed in the
+other's tree but not near-best there (different parents), and uninformative when neither's near-best
+parents appear in the other's tree. The accepted `--margin` range is above 0 and at most 5, because
+a window wide enough to span the candidates' ANI spread makes every pair concordant and every query
+clonal, and a zero window turns a tie-break between two tips into different parents; the cap is a
+fixed sanity bound, not a calibrated optimum. `--ani-floor` is a percentage too; a value above 0 and
+at most 1 is rejected as a likely fraction. A query is `reassortant` when any pair is discordant and
+the discordant segments fall in different parent groups, `clonal` when the concordant pairs link
+every segment to one parent, and `undetermined` when cross-typing is too sparse to decide. Treating
+missing cross-typing as "cannot tell" rather than as disagreement is what
 keeps a clonal whole-genome isolate from reading `reassortant` as segment count grows.
 
 Segments are grouped into parent constellations (written to `out/constellation.tsv`, one row per
@@ -393,7 +400,8 @@ note naming the pair, not `reassortant` beside a group with no parent strain; a 
 to `out/segment_pairs.tsv` (`segment_a`, `segment_b`, `relation`, `note`) and to the log,
 whatever the verdict.
 
-Segments below `--ani-floor` to every tip, or aligning over less than 50 % of their length, or with no resolvable
+Segments below `--ani-floor` to every tip, or aligning over less than 50 % of their length, or with
+no resolvable
 dataset, are reported `unassigned` and excluded from the call. Because there is no influenza taxon
 alias, flu auto-typing needs the `nextclade` CLI (for `nextclade sort`) or explicit `--dataset
 SEGMENT=path` overrides; without either, each flu segment resolves to nothing and is left
@@ -406,6 +414,7 @@ through the ordinary recombination scan, writing the full `run_recomb` output to
 a rollup to `out/segment_scan.tsv` (`segment`, `intragenic_recombination`, `n_regions`, `note`). This
 asks a different question from the reassortment verdict: not which parent each whole segment came
 from, but whether a single segment is itself a within-segment mosaic of two lineages. It needs an
-aligner (`--aligner`, default `mafft`) and aligns with `--threads` workers (default 1); a missing or unknown aligner is reported up front. A segment
+aligner (`--aligner`, default `mafft`) and aligns with `--threads` workers (default 1); a missing or
+unknown aligner is reported up front. A segment
 whose panel has fewer than two clades, or that is unassigned, is reported as not scanned rather than
 dropped.
