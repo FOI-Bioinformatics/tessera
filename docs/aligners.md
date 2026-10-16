@@ -43,7 +43,10 @@ row and named in a warning, so the alignment always has one row per input genome
 
 Genomes are staged before alignment. A FASTA with whitespace inside its sequence lines
 (trailing spaces, tabs, Windows line endings) is aligned from a cleaned copy and reported
-in a warning; the input file itself is not modified.
+in a warning; the input file itself is not modified. A genome file in which two records
+share a sequence ID (the first word of the header) is refused, naming the file and the
+ID: several backends place contigs by that ID, and the two records would be written onto
+each other's columns.
 
 Examples:
 

@@ -37,6 +37,11 @@ alignment reaches the scan, not how the scan calls regions:
   longer than BSD's 255-byte default; either left the MAF without rows, and the adapter
   reported this as spoa running out of memory. The patched wrapper now rewrites both.
   Reproduced and checked with SibeliaZ 1.2.7 on macOS; Linux is unaffected.
+- **Two records with one sequence ID in a genome were silently merged.** The `sibeliaz`,
+  `cactus` and `minimap2` layouts are keyed on the ID, so the second record's blocks were
+  written onto the first one's columns (or the backbone row lost a record) in an
+  otherwise well-formed alignment. Such a file is now refused at staging, for every
+  backend, naming the file, the ID and both lines.
 
 Data safety and alignment:
 

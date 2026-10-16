@@ -216,6 +216,34 @@ def _require_fasta(source: Path) -> None:
         )
 
 
+def _reject_repeated_sequence_ids(source: Path) -> None:
+    """Refuse a genome file in which two records share a sequence ID.
+
+    The ID is the header's first token, which is how the sibeliaz, cactus and minimap2
+    backends identify a contig. They lay a genome's contigs out in tables keyed on it,
+    so two records with one ID collapse to a single entry: a block aligned to one
+    record is written onto the other's columns, or the backbone row loses one record
+    entirely. The result is a full-width alignment with nothing to show it is wrong.
+    """
+    seen: dict[str, int] = {}
+    opener = gzip.open if source.name.endswith(".gz") else open
+    with opener(source, "rb") as fo:
+        for lineno, line in enumerate(fo, start=1):
+            if not line.startswith(b">"):
+                continue
+            tokens = line[1:].split()
+            if not tokens:
+                continue  # an unnamed record; the backends that need a name say so
+            seqid = tokens[0].decode("utf-8", errors="replace")
+            if seqid in seen:
+                raise UserInputError(
+                    f"{source} has two records with the sequence ID '{seqid}' (lines "
+                    f"{seen[seqid]} and {lineno}). Contigs are placed in the alignment by "
+                    "sequence ID, so the two cannot be told apart -- rename one."
+                )
+            seen[seqid] = lineno
+
+
 _WHITESPACE = re.compile(rb"\s")
 
 
@@ -297,6 +325,7 @@ def stage_genomes(
         raise UserInputError(f"Collection directory is empty: {collection_dir}")
     for source in [*collection_files, query]:
         _require_fasta(source)
+        _reject_repeated_sequence_ids(source)
 
     _reject_colliding_labels(collection_files, query)
 
