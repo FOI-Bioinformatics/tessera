@@ -358,13 +358,17 @@ def _method_comparison_html(
             f'<td class="num">{"&check;" if m in b["per_method_support"] else "&middot;"}</td>'
             for m in methods_run
         )
+        donor = (
+            "<em>missing</em> (donor absent)" if b.get("donor_absent")
+            else html.escape(typed(b["minor_parent"], lineage_map))
+        )
         phi = (
             "not run" if phi_not_run
             else "&check;" if b["parent_free_support"] else "&middot;"
         )
         rows += (
             "<tr>"
-            f'<td class="lbl">{html.escape(typed(b["minor_parent"], lineage_map))}</td>'
+            f'<td class="lbl">{donor}</td>'
             f'<td class="num">{_fmt_int(b["query_start"])}&ndash;{_fmt_int(b["query_end"])}</td>'
             f'{cells}<td class="num">{phi}</td>'
             "</tr>"

@@ -27,7 +27,7 @@ from .diagnostics import MIN_INFORMATIVE, corroborating_intervals, recombination
 from .ensemble import consensus_regions, filter_by_agreement, reconcile_major
 from .hmm import DEFAULT_JUMP_RATE
 from .reattribute import reattribute_donors
-from .regions import DEFAULT_METHODS, RegionParams, call_regions
+from .regions import DEFAULT_METHODS, Region, RegionParams, call_regions
 from .report import (
     PHI,
     ReportContext,
@@ -248,6 +248,23 @@ def _msa_provenance_lines(record: dict | None) -> dict[str, str]:
     if record.get("backbone"):
         lines["backbone"] = str(record["backbone"])
     return lines
+
+
+def _absent_breakdown_row(region: Region) -> dict:
+    """The method-table row of a donor-absent region: no caller called it.
+
+    A donor-absent region comes from the coverage diagnostic, not from a caller, so every
+    caller that ran reads ``no`` for it (and one that could not run, ``not run``).
+    """
+    return {
+        "minor_parent": region.minor_parent,
+        "query_start": region.query_start,
+        "query_end": region.query_end,
+        "methods": (),
+        "per_method_support": {},
+        "parent_free_support": region.parent_free_support,
+        "donor_absent": True,
+    }
 
 
 def _write_run_provenance(
@@ -540,7 +557,15 @@ def run_recomb(
     absent = reconcile_gaps(
         regions, gaps_as_regions(coverage_gaps, bp_result, major_parent)
     )
-    regions = sorted(regions + absent, key=lambda r: r.msa_start)
+    # One method-table row per region, donor-absent ones included, sorted together so
+    # recombination_methods.tsv stays row-for-row with recombination_regions.tsv.
+    paired = sorted(
+        zip(regions + absent, method_breakdown + [_absent_breakdown_row(r) for r in absent],
+            strict=True),
+        key=lambda pair: pair[0].msa_start,
+    )
+    regions = [region for region, _ in paired]
+    method_breakdown = [row for _, row in paired]
     if absent:
         logger.info("Added %d donor-absent region(s) (likely a missing reference).",
                     len(absent))
