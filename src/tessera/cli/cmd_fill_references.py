@@ -42,7 +42,8 @@ def fill_references(
     ),
     candidate_pool: Path | None = typer.Option(
         None, "--candidate-pool",
-        help="Genome pool directory for --seed-source local (regional selection picks parents).",
+        help="Genome pool directory for --seed-source local (regional selection picks parents). "
+        "Refused with any other --seed-source.",
     ),
     taxon: str | None = typer.Option(
         None, "--taxon",
@@ -163,7 +164,8 @@ def fill_references(
     pool_consensus: bool = typer.Option(
         False, "--pool-consensus/--no-pool-consensus",
         help="With a Nextclade pool (--seed-source nextclade), use one denoised consensus "
-        "genome per clade (a stable per-lineage reference) instead of every tree tip.",
+        "genome per clade (a stable per-lineage reference) instead of every tree tip. "
+        "Refused outside --seed-source nextclade.",
     ),
     organism: str | None = typer.Option(
         None, "--organism",

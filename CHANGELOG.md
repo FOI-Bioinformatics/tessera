@@ -220,7 +220,9 @@ Callers:
   the callers disagreed on the backbone, and could report one donor lineage as two
   overlapping regions on a typed panel.
 
-Panel recruitment (fourth audit):
+Panel recruitment, from the fourth audit
+(`docs/superpowers/specs/2026-10-12-audit-swot-gap.md`, section 1.4). These change which
+references are recruited, not how the scan calls regions:
 
 - `fill-references` stopped after round 2 whenever there were more coverage gaps than
   `--top-gaps`: the stop test watched the worst gap, while the search reached only the
@@ -263,15 +265,23 @@ Panel recruitment (fourth audit):
 
 ### Changed
 
-- **Seed options that cannot act are refused.** `detect` and `build-panel` used
+- **Some seed options that cannot act are refused.** `detect` and `build-panel` used
   `--candidate-pool` and ignored `--nextclade`/`--nextclade-dataset` when both were given;
   `--pool-consensus` did nothing without a Nextclade pool; and `fill-references` ignored
-  `--candidate-pool` without `--seed-source local`. Each is now a usage error.
+  `--candidate-pool` without `--seed-source local`. Each of these three combinations is now
+  a usage error. Seed options are still inert when `--collection` is given, because
+  seeding then does not run; they are not refused in that case.
+- **A candidate pool directory must hold only FASTA files.** A samtools `.fai` index, a
+  README or a checksum file in the pool directory used to be skipped because the reader
+  filtered by extension; it now stops the run with an error naming the file. Move such a
+  file out of the pool directory.
 - **One new reference is downloaded per coverage gap**, as documented. Every sub-interval
   search contributed all of its hits, so at the defaults one round could add up to 20
   genomes for a 1000 bp gap and 145 for a 6 kb gap, all of which went into the next
   alignment. The best candidate is the one with the highest identity over the searched
-  sub-interval; `candidate_references.tsv` still lists them all. This applies to
+  sub-interval. `find-references` writes the full candidate list to
+  `candidate_references.tsv`; the fill loop (`fill-references`, `detect` and `build-panel`)
+  does not record the candidates it did not take. This applies to
   `find-references --download`, `fill-references`, `detect` and `build-panel`. With
   `--curate`, a gap whose best candidate is a sibling of the query gets its next
   candidate in the following round rather than in the same one; `find-references`, which

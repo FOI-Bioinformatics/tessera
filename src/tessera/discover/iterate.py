@@ -1,7 +1,7 @@
 """`tessera fill-references`: iteratively add missing references until coverage stops improving.
 
 Each round rebuilds the MSA from the (growing) collection, scans it for coverage
-gaps, BLASTs the worst gaps against NCBI, and downloads the best new reference per
+gaps, BLASTs the longest gaps against NCBI, and downloads the best new reference per
 gap into the collection. The loop stops when the gaps close, when no new reference
 can be found, when coverage stops improving (a stubborn residual is reported, not
 chased forever), or at ``max_rounds``. If the last round downloaded references, one
@@ -597,7 +597,8 @@ def _type_panel(
     """Type the recruited references and the query, and persist ``lineages.tsv``.
 
     Mine a genotype from each genome's header (NCBI lineage note or GenBank
-    title), overlaid by a user-supplied ``--lineage-map``, so the report and a
+    title) and from the NCBI datasets sidecar, overlaid by a user-supplied
+    ``--lineage-map``, so the report and a
     later standalone recomb can name parents by lineage instead of bare
     accession. Returns the resolved lineage map and the query's own lineage.
     """
@@ -643,12 +644,13 @@ def _type_panel(
 
 
 CURATION_NOT_RUN = (
-    "Curation (--curate) was requested but did not run on this panel. A freshly seeded "
-    "collection is not curated before the first build (seeding applies its own sibling "
-    "filter), and curation then runs only on references a round downloads; this run "
-    "downloaded none that reached it, or found no whole-genome backbone to anchor the "
-    "sibling test. Close relatives of the query that seeding kept may still be in the "
-    "panel, and no panel_lineages.tsv was written."
+    "Curation (--curate) was requested but did not run on this panel. It runs on a "
+    "supplied collection before the first build and on references a round downloads, but "
+    "needs a whole-genome backbone to anchor the sibling test; none was found, or, for a "
+    "collection seeded by this run (which applies its own sibling filter and is not "
+    "curated before the first build), no round downloaded a reference. Close relatives of "
+    "the query that were seeded or supplied may still be in the panel, and no "
+    "panel_lineages.tsv was written."
 )
 
 
@@ -1126,7 +1128,7 @@ def _progress_section(trace: list[RoundResult], final_size: int) -> str:
     )
     cap = (
         '<p class="cap">Each round rebuilt the alignment from the growing collection, '
-        'searched the worst gaps on NCBI, and added the best new reference per gap &mdash; '
+        'searched the longest gaps on NCBI, and added the best new reference per gap &mdash; '
         f'ending with {final_size} references. The run stops when the gaps close, no new '
         'reference is found, or a round no longer reduces the coverage shortfall (the '
         'under-covered length weighted by how far each gap falls below the '

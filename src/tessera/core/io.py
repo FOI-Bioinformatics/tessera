@@ -219,7 +219,7 @@ def _require_fasta(source: Path) -> None:
     if not head.lstrip().startswith(b">"):
         raise UserInputError(
             f"{source} does not look like a FASTA file (it does not start with '>'). "
-            "Every file in the collection directory is treated as a genome; move "
+            "Every file in the directory is treated as a genome; move "
             "other files out of it."
         )
 

@@ -89,7 +89,7 @@ otherwise diluted by the gap's high-matching flanks: one whole-gap BLAST returns
 flanks' donor and hides the tract's. (On a norovirus capsid gap this is the difference
 between finding only the flank reference and also finding the divergent core's distinct
 donor. Both are listed as candidates; one reference is downloaded per gap per run, and
-`fill-references` can take another in a later round, when what remains of the gap is
+`fill-references` may take another in a later round, when what remains of the gap is
 searched again.) Resolution has two levers: `--window-size` controls whether a short
 region is *detected* as a gap at all (a wide window averages it away), and `--subtile`
 controls whether its donor is *found* once detected. Set `--subtile 0` to disable;
@@ -326,7 +326,7 @@ have dropped them. Both need skani (and skDER for dereplication):
 Because one reference is downloaded per gap, a gap whose best candidate is a sibling of
 the query is left without a new reference once curation removes it; its other
 candidates are in `candidate_references.tsv`. Inside `fill-references --curate` (and
-`detect`, which curates) a genome curation removes is excluded from later searches,
+`detect` and `build-panel`, which curate) a genome curation removes is excluded from later searches,
 and the next round takes the gap's next candidate.
 
 ## Make a collection lineage-ready (`type-lineages`)
