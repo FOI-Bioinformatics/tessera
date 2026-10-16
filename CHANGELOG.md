@@ -253,6 +253,8 @@ Panel recruitment (fourth audit):
   is fetched (it only sets when a notice is logged), so changing it re-downloaded an
   identical genome set. It no longer is. A cache written by an earlier version is keyed
   differently and is fetched once more on first use.
+- Nearest-reference typing took a Nextclade tip labelled `?` for a clade named `?`; it
+  now uses the shared set of "no clade" markers.
 
 ### Changed
 

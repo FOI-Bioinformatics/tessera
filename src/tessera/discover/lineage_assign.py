@@ -18,7 +18,7 @@ from ..recomb.typing import (
     first_header,
     titles_from_collection,
 )
-from .nextclade import build_pool, resolve_dataset
+from .nextclade import NON_CLADE_MARKERS, build_pool, resolve_dataset
 from .panel import skani_query_ani
 
 DEFAULT_REF_ANI_FLOOR = 90.0   # a genome joins a reference clade only above this ANI
@@ -118,7 +118,7 @@ def _reference_tips(
         header = first_header(tip)
         parts = header.split(None, 1)
         clade = parts[1].strip() if len(parts) > 1 else ""
-        if clade and clade not in ("NA", "example"):
+        if clade not in NON_CLADE_MARKERS:
             clade_of[tip] = clade
     # One representative tip per clade (a plain per-clade pick; dependency-free) so the
     # nearest-neighbour vote is not dominated by a clade with many tips.
