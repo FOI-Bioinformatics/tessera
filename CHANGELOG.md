@@ -231,6 +231,9 @@ Panel recruitment (fourth audit):
   had been filtered out (the query's own record, or `--exclude` accessions), and then ran
   the negative-lineage search and the NCBI Virus download on that false explanation. It
   now needs a kept hit, as whole-query seeding already did.
+- A taxon with no RefSeq genome stopped the run with "NCBI Virus returned no genomes"
+  instead of broadening to complete genomes, which it did for a taxon with one or two
+  RefSeq genomes. It now broadens; the error remains for a taxon with no genome at all.
 
 ### Changed
 

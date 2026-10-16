@@ -147,6 +147,10 @@ def fetch_ncbi_virus(
     ``datasets`` CLI cannot count-limit a virus-genome download), bounding the
     downstream split/align work; a heavily sequenced taxon still downloads in full,
     so a curated ``--candidate-pool`` is preferable there.
+
+    Returns an empty list when the package holds no genomes for this scope. Whether that
+    is an error is the caller's decision: an empty RefSeq set is the case for broadening
+    to complete genomes, not for stopping the run.
     """
     if not datasets_available():
         raise UserInputError(
@@ -169,9 +173,8 @@ def fetch_ncbi_virus(
         data_dir = Path(tmp) / "ncbi_dataset" / "data"
         fna = data_dir / "genomic.fna"
         if not fna.exists():
-            raise UserInputError(
-                f"NCBI Virus returned no genomes for '{taxon}'. Try --taxon or a broader scope."
-            )
+            logger.info("NCBI Virus holds no %s genomes for '%s'.", scope, taxon)
+            return []
         labels = _lineage_labels(data_dir / "data_report.jsonl")
         write_ncbi_lineages(dest, labels)
         written = _split_fasta(fna, dest, labels, limit=limit)

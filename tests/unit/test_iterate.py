@@ -1059,3 +1059,60 @@ def test_windowed_seeding_is_saturated_when_every_kept_hit_is_a_sibling(
     _, saturated = iterate._seed_windowed("A" * 300, params, set(), logger, drop_siblings=True)
 
     assert saturated is True
+
+
+# --- audit 4: zero RefSeq genomes broaden (D5) -------------------------------------
+
+def _fake_datasets(monkeypatch, *, refseq: int, complete: int) -> list[list[str]]:
+    """Stand in for the datasets CLI: write a package holding ``refseq`` or ``complete``
+    genomes. A package with none carries no genomic.fna, as datasets writes it."""
+    import zipfile
+
+    from tessera.discover import pool as pool_mod
+
+    commands: list[list[str]] = []
+
+    def fake_run_tool(tool, command, **kwargs):
+        commands.append(command)
+        n = refseq if "--refseq" in command else complete
+        with zipfile.ZipFile(command[command.index("--filename") + 1], "w") as zf:
+            zf.writestr("ncbi_dataset/data/data_report.jsonl", "")
+            if n:
+                zf.writestr("ncbi_dataset/data/genomic.fna",
+                            "".join(f">G{i}.1 some virus\nACGT\n" for i in range(n)))
+
+    monkeypatch.setattr(pool_mod, "datasets_available", lambda: True)
+    monkeypatch.setattr(pool_mod, "run_tool", fake_run_tool)
+    monkeypatch.setattr(pool_mod.eutils_throttle, "wait", lambda logger: None)
+    return commands
+
+
+def test_a_taxon_with_no_refseq_genome_broadens_to_complete_genomes(
+    monkeypatch, tmp_path, logger
+):
+    commands = _fake_datasets(monkeypatch, refseq=0, complete=50)
+    out = tmp_path / "o"
+    out.mkdir()
+    params = FillParams(query=tmp_path / "q.fasta", collection=None, output=out,
+                        taxon="Some virus", cache_dir=tmp_path / "cache")
+
+    genomes = iterate._fetch_diverse(params, logger)
+
+    assert len(genomes) == 50
+    assert ["--refseq" in c for c in commands] == [True, False]
+
+
+def test_a_taxon_with_no_genome_at_all_is_a_clear_error_and_caches_nothing(
+    monkeypatch, tmp_path, logger
+):
+    _fake_datasets(monkeypatch, refseq=0, complete=0)
+    out = tmp_path / "o"
+    out.mkdir()
+    params = FillParams(query=tmp_path / "q.fasta", collection=None, output=out,
+                        taxon="Some virus", cache_dir=tmp_path / "cache")
+
+    with pytest.raises(UserInputError, match="NCBI Virus returned no genomes"):
+        iterate._fetch_diverse(params, logger)
+
+    cache_root = tmp_path / "cache" / "ncbi_virus"
+    assert not cache_root.exists() or not any(p.is_dir() for p in cache_root.iterdir())

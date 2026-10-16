@@ -835,6 +835,12 @@ def _fetch_diverse(params: FillParams, logger: logging.Logger) -> list[Path]:
             fetched = fetch_ncbi_virus(
                 taxon, staging, refseq=False, complete_only=True, logger=logger
             )
+        if not fetched:
+            # Raised inside the staging context, so no empty panel is cached.
+            raise UserInputError(
+                f"NCBI Virus returned no genomes for '{taxon}'. Try --taxon or a broader "
+                "scope."
+            )
         if len(fetched) > params.fetch_limit:
             logger.info(
                 "Fetched %d '%s' complete genomes (a heavily sequenced taxon); "
