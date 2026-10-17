@@ -85,7 +85,7 @@ magnitude on real panels.
 
 ## Regimes the other harnesses do not sample
 
-`run_regimes.py` simulates two situations that fall outside `run_specificity.py`, whose
+`run_regimes.py` simulates situations that fall outside `run_specificity.py`, whose
 clades are about 16 % apart and so always run under base-pair windowing:
 
 | regime | what it asks |
@@ -93,6 +93,8 @@ clades are about 16 % apart and so always run under base-pair windowing:
 | `near_identical` with a tract | references about 0.2 % apart (the mpox / VZV regime, analysed under informative-site windowing): is the tract found, and is the HMM among the callers? |
 | `near_identical` clonal | the same panel with nothing recombined: every region is a false positive |
 | `sibling_tract` | the panel holds a sibling recombinant whose tract runs 600 bp past the query's; downstream of those 600 bp the donor and the backbone are identical, so nothing marks where the region ends |
+| `redundant_backbone` | the backbone lineage is three near-duplicates (~0.4 % apart) and a 1 kb tract comes from a single donor genome: is the HMM still among the callers? (audit 4, item A1) |
+| `redundant_donor` | the donor lineage is three near-duplicates and the tract is 3 kb: is the event one row, and are the HMM and Bootscan among its callers? (audit 4, item A2) |
 
 It defaults to `--min-methods 1`, the CLI default, so it reports what a user gets; pass
 `--min-methods 2` for the agreement gate and `--no-cluster-lineages` to switch lineage
