@@ -91,3 +91,99 @@ def test_maxchi_floor_is_the_same_batched_or_not() -> None:
     short = rng.choice([1, -1], size=200).astype(np.int64)
     assert short.size * _PERMUTATIONS <= _MAX_PERM_CELLS  # single pass
     assert maxchi_pvalue(short, observed=1e9) == 1.0 / (_PERMUTATIONS + 1)
+
+
+# --- PHI, Hudson-Kaplan and GENECONV: peak memory -------------------------
+
+def _random_gametes(z: int, n: int, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(seed)
+    allele1 = (rng.random((z, n)) < 0.4).astype(np.float64)
+    return allele1, 1.0 - allele1
+
+
+def _peak_mb(fn, *args):
+    import tracemalloc
+
+    tracemalloc.start()
+    try:
+        out = fn(*args)
+        return out, tracemalloc.get_traced_memory()[1] / 1e6
+    finally:
+        tracemalloc.stop()
+
+
+def test_incompatibility_matrix_does_not_hold_four_float64_matrices() -> None:
+    # z = 2000: one float64 z*z matrix is 32 MB. Four live together peaked at 136 MB;
+    # one float32 matrix at a time stays near 25 MB.
+    from tessera.recomb.diagnostics import incompatibility_matrix
+
+    a1, a0 = _random_gametes(2000, 40)
+    matrix, peak = _peak_mb(incompatibility_matrix, a1, a0)
+    assert matrix.dtype == bool and matrix.shape == (2000, 2000)
+    assert peak < 60
+
+
+def _rmin_by_sorted_pairs(incompatible: np.ndarray, positions: np.ndarray):
+    """The textbook greedy: every incompatible pair, sorted by right endpoint."""
+    pairs = [(int(i), int(j)) for i, j in zip(*np.where(np.triu(incompatible, 1)), strict=True)]
+    pairs.sort(key=lambda p: (p[1], p[0]))
+    intervals, last = [], -1
+    for i, j in pairs:
+        if i >= last:
+            intervals.append((int(positions[i]), int(positions[j])))
+            last = j
+    return len(intervals), intervals
+
+
+def test_hudson_kaplan_matches_the_sorted_pair_greedy() -> None:
+    from tessera.recomb.diagnostics import hudson_kaplan_rmin
+
+    rng = np.random.default_rng(1)
+    for density in (0.0, 0.02, 0.3, 1.0):
+        upper = np.triu(rng.random((60, 60)) < density, 1)
+        matrix = upper | upper.T
+        positions = np.arange(60) * 7
+        assert hudson_kaplan_rmin(matrix, positions) == _rmin_by_sorted_pairs(matrix, positions)
+
+
+def test_hudson_kaplan_does_not_materialise_the_pairs() -> None:
+    # A dense 2000 x 2000 matrix holds ~2 million incompatible pairs; as Python tuples
+    # they cost ~380 MB. The column-wise greedy needs almost nothing beyond the matrix.
+    from tessera.recomb.diagnostics import hudson_kaplan_rmin
+
+    matrix = np.ones((2000, 2000), dtype=bool)
+    np.fill_diagonal(matrix, False)
+    (rmin, intervals), peak = _peak_mb(hudson_kaplan_rmin, matrix, np.arange(2000))
+    assert rmin == len(intervals) == 1999  # every adjacent pair is its own interval
+    assert peak < 20
+
+
+def test_geneconv_permutations_are_batched() -> None:
+    # 10 000 discriminating sites: 4000 permutations, 40 million cells. Unbatched, the
+    # random draw, the argsort and the mask peaked at about 680 MB per candidate donor.
+    from tessera.recomb import geneconv
+
+    steps = np.random.default_rng(2).choice([1, -1], size=10_000).astype(np.int64)
+    p, peak = _peak_mb(geneconv.run_pvalue_perm, steps, 12)
+    assert 0.0 < p <= 1.0
+    assert peak < 300
+
+
+def test_geneconv_batching_does_not_change_the_p_value(monkeypatch) -> None:
+    # The batches draw the same random stream in the same order as one full draw, so
+    # the p-value is identical. Shrink the batch so a small input takes several.
+    from tessera.recomb import geneconv
+
+    steps = np.random.default_rng(3).choice([1, -1], size=200).astype(np.int64)
+    perms = geneconv._PERMUTATIONS
+    order = np.argsort(np.random.default_rng(0).random((perms, steps.size)), axis=1)
+    is_minor = steps[order] == -1
+    longest = np.zeros(perms, dtype=np.int32)
+    cur = np.zeros(perms, dtype=np.int32)
+    for j in range(steps.size):
+        cur = np.where(is_minor[:, j], cur + 1, 0)
+        longest = np.maximum(longest, cur)
+    unbatched = float((np.count_nonzero(longest >= 6) + 1) / (perms + 1))
+
+    monkeypatch.setattr(geneconv, "_BATCH_CELLS", 50_000, raising=False)
+    assert geneconv.run_pvalue_perm(steps, 6) == unbatched
