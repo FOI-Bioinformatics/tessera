@@ -77,15 +77,30 @@ def _exceedances(steps: np.ndarray, observed: float, k: int, rng) -> int:
     rows = np.arange(k)
     in_major = cum_major[rows, trough] - cum_major[rows, peak]
     in_minor = cum_minor[rows, trough] - cum_minor[rows, peak]
-    tot_major, tot_minor = cum_major[:, -1], cum_minor[:, -1]
-    out_major, out_minor = tot_major - in_major, tot_minor - in_minor
-    n = length
-    r1 = in_major + in_minor
-    r2 = out_major + out_minor
-    det = in_major.astype(np.float64) * out_minor - in_minor.astype(np.float64) * out_major
-    denom = r1 * r2 * tot_major * tot_minor
-    chi2 = np.where(denom > 0, n * det**2 / np.where(denom > 0, denom, 1), 0.0)
+    chi2 = _chi2_batch(in_major, in_minor, cum_major[:, -1], cum_minor[:, -1])
     return int(np.count_nonzero(chi2 >= observed))
+
+
+def _chi2_batch(
+    in_major: np.ndarray, in_minor: np.ndarray, tot_major: np.ndarray, tot_minor: np.ndarray
+) -> np.ndarray:
+    """Vectorised :func:`_chi2_2x2` for tract-versus-rest tables.
+
+    Every factor is converted to float64 before it is multiplied. The denominator is a
+    product of four counts; in int64 it wraps above about 110 000 discriminating sites
+    with balanced counts, and the positivity guard below then set that permutation's
+    statistic to zero (or the wrapped value was positive and wrong) -- while the observed
+    statistic, computed with Python integers, did not wrap. float64 holds the product
+    without wrapping at any size a genome alignment reaches.
+    """
+    a = in_major.astype(np.float64)
+    b = in_minor.astype(np.float64)
+    c = tot_major.astype(np.float64) - a
+    d = tot_minor.astype(np.float64) - b
+    denom = (a + b) * (c + d) * (a + c) * (b + d)
+    det = a * d - b * c
+    n = a + b + c + d
+    return np.where(denom > 0, n * det**2 / np.where(denom > 0, denom, 1.0), 0.0)
 
 
 def maxchi_pvalue(steps: np.ndarray, observed: float, *, seed: int = 0) -> float:

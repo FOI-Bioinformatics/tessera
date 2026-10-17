@@ -98,3 +98,37 @@ def test_permutation_null_uses_the_same_tract_rule_as_the_observed_walk() -> Non
     expected = sum(s >= observed for s in stats)
     assert 0 < expected < k  # the threshold splits the permutations
     assert _exceedances(steps, observed, k, np.random.default_rng(seed)) == expected
+
+
+def test_vectorised_chi_square_does_not_wrap_at_bacterial_scale() -> None:
+    # 120 000 discriminating sites, balanced: the product of the four margins is about
+    # 1.3e19, above the int64 maximum. Computed in int64 it wrapped negative and the
+    # permutation's statistic was forced to zero.
+    from tessera.recomb.maxchi import _chi2_batch
+
+    in_major = np.array([40_000, 30_000], dtype=np.int64)
+    in_minor = np.array([20_000, 30_000], dtype=np.int64)
+    tot = np.array([60_000, 60_000], dtype=np.int64)
+    got = _chi2_batch(in_major, in_minor, tot, tot)
+    want = [_chi2_2x2(40_000, 20_000, 20_000, 40_000), _chi2_2x2(30_000, 30_000, 30_000, 30_000)]
+    assert np.allclose(got, want, rtol=1e-12)
+    assert got[0] > 0.0
+
+
+def test_vectorised_chi_square_matches_scalar_at_ordinary_sizes() -> None:
+    # Guard: below the overflow the batch form must agree with the scalar form, including
+    # the zero-margin cases, so no MaxChi p-value moves at viral-scale input.
+    from tessera.recomb.maxchi import _chi2_batch
+
+    rng = np.random.default_rng(7)
+    for size in (10, 100, 1_000, 10_000):
+        tot_major = rng.integers(0, size, 200)
+        tot_minor = rng.integers(0, size, 200)
+        in_major = (rng.random(200) * (tot_major + 1)).astype(np.int64)
+        in_minor = (rng.random(200) * (tot_minor + 1)).astype(np.int64)
+        got = _chi2_batch(in_major, in_minor, tot_major, tot_minor)
+        want = [
+            _chi2_2x2(int(a), int(b), int(m - a), int(n - b))
+            for a, b, m, n in zip(in_major, in_minor, tot_major, tot_minor, strict=True)
+        ]
+        assert np.allclose(got, want, rtol=1e-10, atol=0.0)
