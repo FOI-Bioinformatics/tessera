@@ -90,9 +90,10 @@ searched to the end of the alignment, so a tract reaching a genome end is report
 that end. The sign test, its p-value and `support` are computed on the whole segment, so
 this step changes where a region is drawn and never whether it is called.
 `mean_sim_minor` / `mean_sim_major` are identity over the reported columns.
-`n_windows` and `posterior` describe the segment too, not the reported span: a trimmed
-region can list more windows than its length holds, and its posterior is the mean over
-the whole segment.
+`n_windows` and `posterior_support` are restated over the reported span as well: the
+segment's windows that overlap it, and their mean posterior for the donor state. A
+segment's ends are padded by the median spacing between windows, which under
+informative-site windowing is not the spacing of the first two windows.
 
 ```
 Recombination regions (major parent: cowpox_KC813504):

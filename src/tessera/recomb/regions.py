@@ -27,7 +27,7 @@ from statistics import mean
 
 from ..core.errors import UserInputError
 from .analyze import AnalysisResult, rank_datasets
-from .clusters import all_singletons, cluster_references, clustered_view
+from .clusters import _window_bounds, all_singletons, cluster_references, clustered_view
 from .hmm import DEFAULT_JUMP_RATE, Segment, segment_query
 from .siblings import SiblingEvidence, sibling_aware_states
 from .similarity import WindowSimilarity, discordant_counts, region_identity
@@ -347,15 +347,18 @@ def _call_regions_hmm(
         # informative-site windowing are identity at polymorphic columns only).
         mean_minor = region_identity(work.rows, work.query, seg.state, lo, hi)
         mean_major = region_identity(work.rows, work.query, major, lo, hi)
+        # The window count and the posterior describe the reported span too, not the
+        # segment it was trimmed from: the segment's windows that overlap the span.
+        n_windows, posterior = _span_windows(work, window_size, seg, lo, hi)
         regions.append(
             Region(
                 minor_parent=seg.state, major_parent=major,
                 msa_start=lo, msa_end=hi,
                 query_start=work.column_to_query(lo), query_end=work.column_to_query(hi),
-                n_windows=seg.n_windows,
+                n_windows=n_windows,
                 mean_sim_minor=round(mean_minor, 4), mean_sim_major=round(mean_major, 4),
                 margin=round(mean_minor - mean_major, 4),
-                posterior_support=seg.mean_posterior,
+                posterior_support=posterior,
                 breakpoint_lo=seg.breakpoint_lo, breakpoint_hi=seg.breakpoint_hi,
                 support=round(support, 3),
                 pvalue=pvalue, qvalue=q,
@@ -366,6 +369,25 @@ def _call_regions_hmm(
             )
         )
     return regions, major, dropped
+
+
+def _span_windows(
+    work: WindowSimilarity, window_size: int, seg: Segment, lo: int, hi: int
+) -> tuple[int, float]:
+    """``(n_windows, mean posterior)`` over the segment's windows overlapping ``[lo, hi)``.
+
+    Falls back to the whole segment when no window of it overlaps the span (a span
+    can only lie outside its segment's windows at an alignment end).
+    """
+    bounds = _window_bounds(work, window_size)
+    idx = [
+        i for i in range(seg.start_window, seg.end_window + 1)
+        if bounds[i][0] < hi and bounds[i][1] > lo
+    ]
+    if not idx or not seg.window_posteriors:
+        return seg.n_windows, seg.mean_posterior
+    post = [seg.window_posteriors[i - seg.start_window] for i in idx]
+    return len(idx), round(float(sum(post) / len(post)), 4)
 
 
 def _tract_span(work: WindowSimilarity, seg: Segment, major: str) -> tuple[int, int]:

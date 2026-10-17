@@ -139,3 +139,47 @@ def test_hmm_calls_the_tract_on_a_near_identical_panel(tmp_path) -> None:
     donors = [r for r in regions if r.minor_parent == "R1"]
     assert len(donors) == 1
     assert donors[0].msa_start < hi and donors[0].msa_end > lo
+
+
+def test_hmm_window_count_and_posterior_describe_the_trimmed_span(tmp_path) -> None:
+    # The sibling tract's segment runs ~11 kb; the reported span is ~600 bp. n_windows
+    # counted the segment's windows (over 100) beside a 600 bp region.
+    # Window 1000, step 100 (overlapping windows).
+    seqs, (lo, hi) = rg.simulate_sibling_tract(5000)
+    msa = write_fasta(tmp_path / "sib.fasta", seqs)
+    result = compute_similarity(str(msa), rg.QUERY, WINDOW, STEP)
+    regions, _ = _hmm_regions(result)
+    region = regions[0]
+    # windows overlapping a span of L columns: at most (L + window) / step + 1
+    assert region.n_windows <= (region.length_msa + WINDOW) // STEP + 1
+    assert 0.0 <= region.posterior_support <= 1.0
+
+
+def _terminal_tract_regions(tmp_path, at_end: bool):
+    # Window 300, step 30 (overlapping). A 800-column donor tract at one genome end.
+    rng = np.random.default_rng(1)
+    root = rng.integers(0, 4, size=3000)
+    parent_a, parent_b, other = (rg._evolve(root, 0.05, rng) for _ in range(3))
+    query = parent_a.copy()
+    if at_end:
+        query[-800:] = parent_b[-800:]
+    else:
+        query[:800] = parent_b[:800]
+    seqs = rg._as_text({rg.QUERY: query, "parent_A": parent_a, "parent_B": parent_b,
+                        "other": other})
+    msa = write_fasta(tmp_path / "term.fasta", seqs)
+    result = compute_similarity(str(msa), rg.QUERY, 300, 30)
+    regions, _ = _hmm_regions(result, window=300)
+    return regions
+
+
+def test_hmm_terminal_tracts_report_a_window_count_for_the_span(tmp_path) -> None:
+    # True tract: columns [0, 800) or [2200, 3000). Window 300 / step 30: a span of L
+    # columns overlaps at most (L + 300) / 30 + 1 windows.
+    for at_end, (tlo, thi) in ((False, (0, 800)), (True, (2200, 3000))):
+        regions = _terminal_tract_regions(tmp_path, at_end)
+        assert [r.minor_parent for r in regions] == ["parent_B"]
+        r = regions[0]
+        assert abs(r.msa_start - tlo) <= 30 and abs(r.msa_end - thi) <= 30
+        assert 1 <= r.n_windows <= (r.length_msa + 300) // 30 + 1
+        assert 0.0 <= r.posterior_support <= 1.0
