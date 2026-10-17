@@ -197,17 +197,27 @@ def _call(path: Path, method: str):
 
 
 def test_descent_pvalue_switches_to_permutation_above_the_cell_cap(monkeypatch) -> None:
-    # Guard: which branch answered is reported in the `test` column, and the two agree.
+    """Guard: which branch answered is reported, and the two branches agree numerically.
+
+    The drawdown is deliberately shallow. A deep one has an exact p-value far below the
+    permutation estimator's resolution of ``1 / (_PERMUTATIONS + 1)``, so the two cannot
+    be compared at all and any tolerance wide enough to pass is wide enough to hide a
+    broken fallback. Here the exact p-value is about 0.048, where 20 000 permutations
+    have a standard error of about 0.0015, so the tolerance below is four standard
+    errors: close agreement, not a formality.
+    """
     from tessera.recomb import threeseq
 
-    steps = np.array([1] * 60 + [-1] * 12 + [1] * 60, dtype=np.int64)
+    steps = np.array([1] * 5 + [-1] * 2 + [1] * 35, dtype=np.int64)
     d = max_descent(steps)
     exact, kind = descent_pvalue(steps, d)
     assert kind == "exact"
+    assert 0.01 < exact < 0.25, exact  # within the permutation estimator's resolution
     monkeypatch.setattr(threeseq, "_MAX_EXACT_CELLS", d.m * d.n * d.depth - 1)
     perm, kind = descent_pvalue(steps, d)
     assert kind == "permutation"
-    assert perm == pytest.approx(exact, abs=3 / threeseq._PERMUTATIONS + exact * 0.2)
+    standard_error = (exact * (1 - exact) / threeseq._PERMUTATIONS) ** 0.5
+    assert perm == pytest.approx(exact, abs=4 * standard_error)
 
 
 def test_a_tract_at_the_first_site_has_a_breakpoint_interval_from_the_start(tmp_path) -> None:
