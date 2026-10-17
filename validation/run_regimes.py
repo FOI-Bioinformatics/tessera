@@ -209,6 +209,13 @@ def score_lineage_tract(rows: list[dict], tract: tuple[int, int], *, lineage: st
 
     ``rows`` counts the reported regions overlapping the tract (one event should be one
     row); ``donor_ok`` is true when every such row names a genome of the lineage.
+
+    Three limits to read the result with. ``hmm`` and ``bootscan`` are taken over every
+    overlapping row whatever its donor, so a row naming the wrong lineage still sets
+    them: read them together with ``donor_ok``, never alone. "Overlapping" accepts a
+    single base of overlap, so ``rows == 1`` means one row touches the tract, not that
+    its extent is right. The lineage test is a label prefix, which holds only while the
+    simulated labels are ``A*``, ``D*``, ``E`` and ``F``.
     """
     lo, hi = tract
     overlapping = [
