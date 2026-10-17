@@ -99,3 +99,47 @@ def test_bootscan_does_not_call_a_clonal_panel(tmp_path: Path) -> None:
         result, analyze(result), 500, RegionParams.with_defaults(500, method="bootscan")
     )
     assert regions == []
+
+
+# --- the run-length null and lineage clusters --------------------------------
+
+def test_block_permutation_keeps_every_win_when_the_last_block_is_partial() -> None:
+    # 11 windows, block 10: the second block is one window long. Every window is a win,
+    # so every arrangement has a run of 11 and p must be 1. Cutting the shuffled vector
+    # back to 11 cells dropped ten wins whenever the short block came first.
+    from tessera.recomb.bootscan import run_pvalue
+
+    assert run_pvalue(np.ones(11, dtype=bool), 11, block=10) == 1.0
+
+
+def test_block_permutations_hold_the_win_count_and_length() -> None:
+    from tessera.recomb.bootscan import _block_permutations
+
+    wins = np.zeros(103, dtype=bool)
+    wins[[0, 1, 2, 50, 51, 100, 101, 102]] = True
+    perms = _block_permutations(wins, 10, 400, np.random.default_rng(0))
+    assert perms.shape == (400, 103)
+    assert set(perms.sum(axis=1)) == {8}
+
+
+def test_block_permutations_with_fewer_windows_than_one_block() -> None:
+    from tessera.recomb.bootscan import _block_permutations, run_pvalue
+
+    wins = np.array([1, 0, 1, 1, 0], dtype=bool)
+    perms = _block_permutations(wins, 5, 50, np.random.default_rng(0))
+    assert perms.shape == (50, 5)
+    assert (perms == wins).all()  # one block: the only arrangement is the observed one
+    assert run_pvalue(wins, 2, block=50) == 1.0  # block is clamped to n_win
+
+
+def test_block_permutations_unchanged_when_windows_are_a_multiple_of_the_block() -> None:
+    from tessera.recomb.bootscan import _block_permutations
+
+    wins = np.zeros(30, dtype=bool)
+    wins[[3, 4, 5, 20]] = True
+    rng = np.random.default_rng(7)
+    got = _block_permutations(wins, 10, 20, rng)
+    ref_rng = np.random.default_rng(7)
+    order = np.argsort(ref_rng.random((20, 3)), axis=1)
+    expected = wins.reshape(3, 10)[order].reshape(20, 30)
+    assert (got == expected).all()

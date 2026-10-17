@@ -60,17 +60,11 @@ def run_pvalue(wins: np.ndarray, run_len: int, *, block: int = 1, seed: int = 0)
     if run_len <= 0 or k == 0 or run_len > k:
         return 1.0
     block = max(1, min(block, n_win))
-    n_blocks = int(np.ceil(n_win / block))
     perms = _PERMUTATIONS
     if n_win * perms > _MAX_PERM_CELLS:
         perms = max(_MIN_PERMUTATIONS, _MAX_PERM_CELLS // max(1, n_win))
 
-    rng = np.random.default_rng(seed)
-    padded = np.zeros(n_blocks * block, dtype=bool)
-    padded[:n_win] = wins
-    blocks = padded.reshape(n_blocks, block)
-    order = np.argsort(rng.random((perms, n_blocks)), axis=1)
-    shuffled = blocks[order].reshape(perms, n_blocks * block)[:, :n_win]
+    shuffled = _block_permutations(wins, block, perms, np.random.default_rng(seed))
 
     longest = np.zeros(perms, dtype=np.int32)
     cur = np.zeros(perms, dtype=np.int32)
@@ -78,6 +72,28 @@ def run_pvalue(wins: np.ndarray, run_len: int, *, block: int = 1, seed: int = 0)
         cur = np.where(shuffled[:, j], cur + 1, 0)
         longest = np.maximum(longest, cur)
     return float((np.count_nonzero(longest >= run_len) + 1) / (perms + 1))
+
+
+def _block_permutations(wins: np.ndarray, block: int, perms: int, rng) -> np.ndarray:
+    """``(perms, n_win)`` block permutations of ``wins``, every row holding its wins.
+
+    The vector is padded to whole blocks, the blocks are shuffled, and the padding cells
+    are then removed wherever they landed. Cutting the shuffled row back to ``n_win``
+    instead (the earlier approach) dropped any wins that a shuffle moved past the end
+    whenever ``n_win`` was not a multiple of ``block``, so the null had fewer wins than
+    the observed vector and its runs were shorter than they should be.
+    """
+    n_win = int(wins.size)
+    n_blocks = int(np.ceil(n_win / block))
+    padded = np.zeros(n_blocks * block, dtype=bool)
+    padded[:n_win] = wins
+    real = np.zeros(n_blocks * block, dtype=bool)
+    real[:n_win] = True
+    order = np.argsort(rng.random((perms, n_blocks)), axis=1)
+    values = padded.reshape(n_blocks, block)[order].reshape(perms, -1)
+    keep = real.reshape(n_blocks, block)[order].reshape(perms, -1)
+    # Every row has exactly n_win real cells, so the boolean selection reshapes cleanly.
+    return values[keep].reshape(perms, n_win)
 
 
 def bootstrap_support(
