@@ -94,6 +94,9 @@ this step changes where a region is drawn and never whether it is called.
 segment's windows that overlap it, and their mean posterior for the donor state. A
 segment's ends are padded by the median spacing between windows, which under
 informative-site windowing is not the spacing of the first two windows.
+In the final table every row passes through the ensemble merge, which restates both
+`mean_sim_*` and `n_windows` over the row's own (for a merged row, the union) span, with
+`n_windows` counted in base-pair scan windows; `posterior_support` stays the best member's.
 
 ```
 Recombination regions (major parent: cowpox_KC813504):
@@ -356,7 +359,7 @@ The practical readings:
 | File | Contents |
 |---|---|
 | `report.html` | Self-contained report: run provenance, the region table, the per-dataset stats, and an embedded interactive plot |
-| `recombination_regions.tsv` | Called regions: minor/major parent, start/end in **both MSA columns and query bases**, `length_bp` / `length_msa`, `n_windows` and `posterior` (for an HMM region both describe the HMM segment, not the trimmed span), `support`, `pvalue` / `qvalue` with the `test` and `statistic` that produced them, mean similarities, the calling `methods`, and `parent_free_support` (`not run` when the PHI test gave no result) |
+| `recombination_regions.tsv` | Called regions: minor/major parent, start/end in **both MSA columns and query bases**, `length_bp` / `length_msa`, `posterior`, `support`, `pvalue` / `qvalue` with the `test` and `statistic` that produced them, `n_windows` (base-pair scan windows overlapping the region, the same unit for every caller), mean similarities (identity over the region's own span, for a merged row the whole merged span), the calling `methods`, and `parent_free_support` (`not run` when the PHI test gave no result) |
 | `recombination_methods.tsv` | Ensemble breakdown (only when several methods run): one row per row of `recombination_regions.tsv`, in the same order (a donor-absent region reads `no` for every caller that ran), with `yes` / `no` per method (`not run` for a selected caller that could not run) and the parent-free flag; the parent-free flag is `not run` likewise |
 | `recombination_profile.tsv` | Parent-free signal: header with the PHI p-value (`NA` when not testable) and Rmin, then per-informative-site local incompatibility (the PHI profile) |
 | `similarity_windows.tsv` | Full per-window matrix: `msa_position`, `query_position`, `winner`, and one similarity column per dataset. Always base-pair windows (identity over all comparable columns) |

@@ -209,3 +209,91 @@ def test_same_lineage_regions_merge_transitively_across_labels() -> None:
     assert (merged[0].query_start, merged[0].query_end) == (0, 30)
     assert merged[0].methods == ("hmm", "3seq")
     assert len(breakdown) == 1
+
+
+def _scan_result():
+    """A 100-column alignment: B matches the query on [10, 40), A on [40, 100). Five
+    20-column base-pair windows centred at 10, 30, 50, 70, 90."""
+    import numpy as np
+
+    from tessera.recomb.similarity import WindowSimilarity
+
+    width = 100
+    query = np.frombuffer(b"A" * width, dtype=np.uint8)
+    minor = np.frombuffer(b"C" * 10 + b"A" * 30 + b"C" * 60, dtype=np.uint8)
+    major = np.frombuffer(b"A" * 10 + b"C" * 30 + b"A" * 60, dtype=np.uint8)
+    positions = [10, 30, 50, 70, 90]
+    return WindowSimilarity(
+        positions=positions, query_positions=positions,
+        similarities={"A": [1.0] * 5, "B": [1.0] * 5}, query="q", width=width,
+        query_cumulative=np.arange(width + 1),
+        rows={"q": query, "A": major, "B": minor},
+    )
+
+
+def test_merged_identity_is_measured_over_the_merged_span() -> None:
+    # The HMM member covers [10, 40) where B is identical to the query; the 3SEQ member
+    # covers [30, 80). The merged row spans [10, 80) and must not report the HMM
+    # member's 1.0 over a span of which it describes less than half.
+    hmm = mk("B", 10, 40, "hmm", qvalue=1e-9)
+    hmm.mean_sim_minor, hmm.mean_sim_major = 1.0, 0.0
+    seq = mk("B", 30, 80, "3seq", qvalue=1e-3)
+    merged, _ = consensus_regions({"hmm": [hmm], "3seq": [seq]}, major="A",
+                                  scan=(_scan_result(), 20))
+    assert len(merged) == 1
+    region = merged[0]
+    assert (region.msa_start, region.msa_end) == (10, 80)
+    assert region.mean_sim_minor == round(30 / 70, 4)
+    assert region.mean_sim_major == round(40 / 70, 4)
+    assert region.margin == round(30 / 70 - 40 / 70, 4)
+
+
+def test_merged_identity_is_column_weighted_when_parts_differ_tenfold() -> None:
+    # A 100-column alignment, B identical to the query on [0, 10) and different on
+    # [10, 100). A 10-column member and a 90-column member merge to [0, 100); the
+    # identity is 10/100, not the mean of the parts' own figures (1.0 and 0.0 -> 0.5)
+    # and not the longer part's.
+    import numpy as np
+
+    from tessera.recomb.similarity import WindowSimilarity
+
+    width = 100
+    query = np.frombuffer(b"A" * width, dtype=np.uint8)
+    minor = np.frombuffer(b"A" * 10 + b"C" * 90, dtype=np.uint8)
+    major = np.frombuffer(b"A" * width, dtype=np.uint8)
+    positions = [10, 30, 50, 70, 90]
+    scan = WindowSimilarity(
+        positions=positions, query_positions=positions,
+        similarities={"A": [1.0] * 5, "B": [1.0] * 5}, query="q", width=width,
+        query_cumulative=np.arange(width + 1),
+        rows={"q": query, "A": major, "B": minor},
+    )
+    short = mk("B", 0, 10, "hmm", qvalue=1e-9)
+    short.mean_sim_minor, short.mean_sim_major = 1.0, 1.0
+    long = mk("B", 5, 100, "3seq", qvalue=1e-3)
+    long.mean_sim_minor, long.mean_sim_major = 0.0, 1.0
+    merged, _ = consensus_regions({"hmm": [short], "3seq": [long]}, major="A",
+                                  scan=(scan, 20))
+    assert (merged[0].msa_start, merged[0].msa_end) == (0, 100)
+    assert merged[0].mean_sim_minor == 0.1
+    assert merged[0].mean_sim_major == 1.0
+
+
+def test_merged_window_count_is_in_one_unit() -> None:
+    # 3SEQ counts discriminating sites in n_windows, the HMM counts windows; the merged
+    # row restates it as base-pair windows overlapping the merged span.
+    hmm = mk("B", 10, 40, "hmm", qvalue=1e-9)
+    seq = mk("B", 30, 80, "3seq", qvalue=1e-3)
+    seq.n_windows = 37  # discriminating sites, not windows
+    merged, _ = consensus_regions({"hmm": [hmm], "3seq": [seq]}, major="A",
+                                  scan=(_scan_result(), 20))
+    # windows [0,20) [20,40) [40,60) [60,80) [80,100): four overlap [10, 80)
+    assert merged[0].n_windows == 4
+
+
+def test_merge_without_a_scan_keeps_the_best_members_values() -> None:
+    # Guard: callers that do not pass the scan (tests, the API) get the old behaviour.
+    hmm = mk("B", 10, 40, "hmm", qvalue=1e-9)
+    seq = mk("B", 30, 80, "3seq", qvalue=1e-3)
+    merged, _ = consensus_regions({"hmm": [hmm], "3seq": [seq]}, major="A")
+    assert merged[0].mean_sim_minor == hmm.mean_sim_minor

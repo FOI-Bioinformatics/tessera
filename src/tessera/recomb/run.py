@@ -454,6 +454,7 @@ def run_recomb(
         per_method, major=major_parent,
         rmin_intervals=corroborating_intervals(signal, alpha=params.alpha),
         lineage_map=lineage_map,
+        scan=(bp_result, params.window_size),
     )
     # Agreement gate: a region resting on a single caller is the weakest thing the
     # ensemble can report, so require corroboration when enough callers ran to give
