@@ -62,7 +62,8 @@ def run_pvalue_perm(steps: np.ndarray, run_len: int, *, seed: int = 0) -> float:
         perms = max(_MIN_PERMUTATIONS, _MAX_PERM_CELLS // max(1, n_steps))
     rng = np.random.default_rng(seed)
     # Batched, as in MaxChi: the full (perms, n_steps) draw is up to 40 million cells,
-    # about 730 MB across its random, order and mask arrays, per candidate donor. The
+    # about 680 MB across its random, order and mask arrays (320 MB float64 + 320 MB
+    # int64 argsort + 40 MB bool), per candidate donor. The
     # batches draw the same random stream in the same order, so the p-value is identical
     # to the unbatched one; only the peak memory changes.
     batch = max(1, min(perms, _BATCH_CELLS // max(1, n_steps)))
