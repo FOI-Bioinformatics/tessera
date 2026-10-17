@@ -7,6 +7,7 @@ import math
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from tessera.recomb.analyze import analyze
 from tessera.recomb.regions import RegionParams, call_regions
@@ -187,3 +188,44 @@ def test_3seq_reports_the_more_significant_donor_among_tiny_exact_pvalues(
     )
     assert major == "A"
     assert [r.minor_parent for r in regions] == ["D2"]
+
+
+def _call(path: Path, method: str):
+    result = compute_similarity(str(path), "query", window_size=500, window_step=50)
+    return call_regions(result, analyze(result), 500,
+                        RegionParams.with_defaults(500, method=method))
+
+
+def test_descent_pvalue_switches_to_permutation_above_the_cell_cap(monkeypatch) -> None:
+    # Guard: which branch answered is reported in the `test` column, and the two agree.
+    from tessera.recomb import threeseq
+
+    steps = np.array([1] * 60 + [-1] * 12 + [1] * 60, dtype=np.int64)
+    d = max_descent(steps)
+    exact, kind = descent_pvalue(steps, d)
+    assert kind == "exact"
+    monkeypatch.setattr(threeseq, "_MAX_EXACT_CELLS", d.m * d.n * d.depth - 1)
+    perm, kind = descent_pvalue(steps, d)
+    assert kind == "permutation"
+    assert perm == pytest.approx(exact, abs=3 / threeseq._PERMUTATIONS + exact * 0.2)
+
+
+def test_a_tract_at_the_first_site_has_a_breakpoint_interval_from_the_start(tmp_path) -> None:
+    # The tract starts at the first discriminating site, so there is no site before it;
+    # the interval ran from that site to itself (zero width) instead of from column 0.
+    import random
+
+    from ..factories import _mutate
+
+    rng = random.Random(5)
+    a = "".join(rng.choice("ACGT") for _ in range(6000))
+    b, other = _mutate(a, 0.05, rng), _mutate(a, 0.15, rng)
+    query = b[:1500] + a[1500:]
+    path = write_fasta(tmp_path / "terminal.fasta",
+                       {"query": query, "A": a, "B": b, "other": other})
+    for method in ("3seq", "maxchi", "geneconv"):
+        regions, _, _ = _call(path, method)
+        terminal = [r for r in regions if r.minor_parent == "B"]
+        assert len(terminal) == 1, method
+        assert terminal[0].breakpoint_lo == 0, method
+        assert terminal[0].breakpoint_hi > 0, method

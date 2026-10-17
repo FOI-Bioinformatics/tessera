@@ -132,7 +132,10 @@ def call_regions_geneconv(result: WindowSimilarity, analysis, params):
             continue  # keep the most significant donor for each fragment
         sim_minor = _region_similarity(result.rows, result.query, minor, msa_start, msa_end)
         sim_major = _region_similarity(result.rows, result.query, major, msa_start, msa_end)
-        bp_lo = result.column_to_query(int(cols[max(0, start - 1)]))
+        # The breakpoint lies between the last site before the tract and its first
+        # site. A tract starting at the first discriminating site has no site before
+        # it, so the interval runs from the alignment start, not zero-width.
+        bp_lo = result.column_to_query(int(cols[start - 1])) if start > 0 else 0
         bp_hi = result.column_to_query(int(cols[start]))
         regions.append(Region(
             minor_parent=minor, major_parent=major,

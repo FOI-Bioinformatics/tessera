@@ -182,7 +182,10 @@ def call_regions_maxchi(result: WindowSimilarity, analysis, params):
         support = float(np.count_nonzero(tract == -1) / tract.size) if tract.size else 0.0
         sim_minor = _region_similarity(result.rows, result.query, minor, msa_start, msa_end)
         sim_major = _region_similarity(result.rows, result.query, major, msa_start, msa_end)
-        bp_lo = result.column_to_query(int(cols[max(0, peak - 1)]))
+        # The breakpoint lies between the last site before the tract and its first
+        # site. A tract starting at the first discriminating site has no site before
+        # it, so the interval runs from the alignment start, not zero-width.
+        bp_lo = result.column_to_query(int(cols[peak - 1])) if peak > 0 else 0
         bp_hi = result.column_to_query(int(cols[peak]))
         regions.append(Region(
             minor_parent=minor, major_parent=major,
