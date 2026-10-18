@@ -12,11 +12,10 @@ The callers are complementary: 3SEQ recovers short low-divergence tracts the HMM
 segmentation dilutes (the `cryptic_insert` example), while the HMM localizes breakpoints
 better on divergent parents (the `divergent` example); MaxChi and Bootscan add two more
 votes, though not independent ones (see the MaxChi section). By default Tessera runs
-**four** of them
-(`--method hmm,3seq,maxchi,bootscan`) and merges their regions into one consensus,
-sharing the single similarity scan so the extra callers are cheap. On the synthetic
-harness this leaves the verdict set unchanged but corroborates the donor in 17 of 18
-cases (vs 12 with hmm,3seq alone), raising confidence without over-calling.
+**four** of them (`--method hmm,3seq,maxchi,bootscan`) and merges their regions into one
+consensus, sharing the single similarity scan so the extra callers are cheap. On the
+synthetic harness this leaves the verdict set unchanged but corroborates the donor in 17
+of 18 cases (vs 12 with hmm,3seq alone), raising confidence without over-calling.
 
 The merge is transparent -- no combined score is invented. Two regions are the same
 event when they overlap in query coordinates and name the same donor -- the same
