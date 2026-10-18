@@ -191,10 +191,12 @@ drawdown (a dynamic program over the walk depth, no dependency; a vectorised
 permutation falls back for very large inputs), Benjamini-Hochberg-corrected across
 the donors tested. Every donor with at least 20 discriminating sites is tested and
 counted in that family, however shallow its descent: three consecutive donor matches
-among 189 sites are significant (p = 1.7e-4). Because it is purely informative-site based it keeps full power on
-near-identical panels -- it detects the mpox clade-I/II recombination where base-pair
-windowing finds nothing -- and because the null accounts for scanning every
-breakpoint it does not over-call.
+among 189 sites are significant (p = 1.7e-4). Counting every donor tested keeps the
+correction honest, and makes it stricter than a family of survivors only: a region
+v1.2.0 reported may be absent because its q rose. Because it is purely
+informative-site based it keeps full power on near-identical panels -- it detects the
+mpox clade-I/II recombination where base-pair windowing finds nothing -- and because
+the null accounts for scanning every breakpoint it does not over-call.
 
 ## MaxChi caller (`--method maxchi`, chi-square triplet test)
 
@@ -206,9 +208,13 @@ permutation null. Drawdown and proportion are sensitive to different mosaics (a
 shallow-but-wide tract is weak under one and strong under the other), so MaxChi and 3SEQ
 are genuinely independent votes; a region significant under both is corroborated by two
 tests, exactly as RDP treats them as separate methods.
+
 A donor whose descent is shallower than four sites is counted in MaxChi's
-Benjamini-Hochberg family with p = 1 rather than permuted; 3SEQ tests those short
-tracts exactly.
+Benjamini-Hochberg family with p = 1 rather than permuted, so MaxChi does not call
+tracts that short even when its own null would find them significant (on a three-site
+tract among 189 discriminating sites its permutation p is 1.5e-4). 3SEQ tests those
+tracts exactly and cheaply, and does call them, which is why MaxChi does not spend
+20 000 permutations per donor on them.
 
 ## Bootscan caller (`--method bootscan`, distance + bootstrap)
 
