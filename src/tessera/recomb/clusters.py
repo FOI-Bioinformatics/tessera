@@ -56,14 +56,15 @@ def median_window_step(result) -> int:
     """Typical column distance between consecutive windows, as a positive int.
 
     Converting a base-pair threshold like ``--min-region`` into a window count needs
-    the spacing between windows. Under base-pair windowing every gap equals
-    ``window_step``, so any one of them will do. Under **informative-site windowing**
-    -- automatic below ~8 % divergence, which is exactly where the low-divergence
-    pathogens (mpox, VZV, ebola, within-Omicron) are analysed -- ``positions`` are the
-    midpoints of informative-site windows, and their spacing tracks how densely
-    polymorphic sites happen to fall. Reading one sampled gap and applying it
-    genome-wide then over- or under-states the threshold wherever site density differs
-    from that sample; the median is the honest central estimate.
+    the spacing between windows. Under base-pair windowing the gaps equal
+    ``window_step`` except the last, which is shorter when a final window is placed
+    flush with the alignment end; the median is unmoved by that one gap. Under
+    **informative-site windowing** -- automatic below ~8 % divergence, which is
+    exactly where the low-divergence pathogens (mpox, VZV, ebola, within-Omicron) are
+    analysed -- ``positions`` are the midpoints of informative-site windows, and their
+    spacing tracks how densely polymorphic sites happen to fall. Reading one sampled gap
+    and applying it genome-wide then over- or under-states the threshold wherever site
+    density differs from that sample; the median is the honest central estimate.
     """
     positions = result.positions
     if len(positions) < 2:
