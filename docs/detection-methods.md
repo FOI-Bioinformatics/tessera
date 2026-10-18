@@ -113,8 +113,10 @@ pools them (`--cluster-lineages`, on by default; hmm only). Two references are p
 when their identity stays at or above 98.5 % in every window, with no region-sized run
 below it. The pooled lineage competes as one state under the label of its best-covering
 member, and a region names that member. Its evidence in each window is the mean over
-its members, not the sum: a lineage of five genomes weighs as one genome in the
-emission, so adding copies of a reference cannot outweigh a single-genome donor.
+its members, not the sum: where the members are similarly covered, a lineage of five
+genomes weighs as one genome in the emission, so adding copies of a reference cannot
+outweigh a single-genome donor. A member with little data in a window lowers that
+window's mean, so a lineage holding a poorly covered genome weighs as less than one.
 Clustering is skipped for panels of fewer than 4 or more than 200 references.
 
 One limitation follows from the absolute threshold when identity is taken over all

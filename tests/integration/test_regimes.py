@@ -198,5 +198,7 @@ def test_redundant_backbone_does_not_silence_the_hmm(tmp_path) -> None:
     assert major.startswith("A")
     donors = [r for r in regions if r.minor_parent == "D0"]
     assert len(donors) == 1
-    assert donors[0].msa_start < hi and donors[0].msa_end > lo
+    # Both ends, not mere overlap: the overlap form accepts a single base, and the
+    # summed emission's whole-genome D0 span would have satisfied it.
+    assert abs(donors[0].msa_start - lo) <= 30 and abs(donors[0].msa_end - hi) <= 30
 
