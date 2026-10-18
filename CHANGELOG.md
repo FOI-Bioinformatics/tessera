@@ -333,7 +333,11 @@ effects on the offline harnesses are listed after the bullets.
   rather than by the gap between the first two windows, which is not typical under
   informative-site windowing. That padding moves the segment, and so can change whether
   the HMM's sign test over it reaches significance -- it changes which HMM regions are
-  called, not only the values reported for them. (B4, A10)
+  called, not only the values reported for them. Whether a segment widens or narrows
+  depends on which of the two gaps is larger, so neither direction is systematic. The
+  padded width is also what `--min-region` is compared against, so a segment near that
+  floor can cross it either way; on the curated datasets the shift was 1460 columns
+  against a default floor of 500, and no segment crossed. (B4, A10)
 - **Bootscan's permutation null dropped wins** when the window count was not a multiple of
   the block, giving anti-conservative p-values. (A5)
 - **The last `(width - window) % step` columns were in no window**, so a tract or a
