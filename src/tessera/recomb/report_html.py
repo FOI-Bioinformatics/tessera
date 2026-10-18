@@ -131,8 +131,9 @@ def _confidence(present: list[Region], absent: list[Region]) -> str | None:
     min_q = min(qs) if qs else 1.0
     max_sup = max(sups) if sups else 0.0
     undercovered = any(r.donor_undercovered for r in present)
-    # Agreement is a first-class confidence signal: a region independently called by
-    # more than one method is high-confidence even if no single method is overwhelming.
+    # Agreement is a first-class confidence signal: a region called by more than one
+    # method is high-confidence even if no single method is overwhelming. It is a weaker
+    # signal when the two are 3SEQ and MaxChi, which score the same tract (A12).
     agreement = any(len(r.methods) >= 2 for r in present)
     if not undercovered and (agreement or (min_q <= 1e-5 and max_sup >= 0.70)):
         return "high"
@@ -340,8 +341,9 @@ def _method_comparison_html(
         for m in methods_run
     )
     intro = (
-        f'<p class="cap">Each caller ran independently on the same alignment; a region '
-        f'found by more than one is more trustworthy (and raises the confidence above). '
+        f'<p class="cap">Each caller ran on the same alignment; a region found by more '
+        f'than one is more trustworthy (and raises the confidence above), though 3SEQ '
+        f'and MaxChi score the same tract, so that pair alone adds little. '
         f'Backbone per method &mdash; {majors}.</p>{not_run_note}'
     )
     if not breakdown:
