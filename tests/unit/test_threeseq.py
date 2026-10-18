@@ -284,3 +284,36 @@ def test_the_bh_family_counts_every_tested_donor(tmp_path) -> None:
         donors = [r for r in regions if r.minor_parent == "Q"]
         assert len(donors) == 1, method
         assert math.isclose(donors[0].qvalue, 2 * donors[0].pvalue, rel_tol=1e-9), method
+
+
+def test_descent_pvalue_exact_agrees_with_the_permutation_null_on_a_long_shallow_walk() -> None:
+    """The anti-diagonal DP against the module's independent permutation estimator.
+
+    ``test_descent_pvalue_exact_matches_brute_force`` pins the DP against enumeration for
+    ``m, n <= 6``, which exercises every boundary row of the vectorised fill but only at
+    small ``t``. The rewrite exists for the opposite regime -- ``m`` in the thousands with
+    a shallow descent -- where an off-by-one in a boundary row would change the magnitude
+    and no enumeration can check it. The permutation estimator is a separate
+    implementation, so the two agreeing there is a real cross-check; the tolerance is four
+    standard errors of its 20 000 draws.
+    """
+    from tessera.recomb import threeseq
+
+    for m, n, depth in ((1217, 74, 3), (1795, 116, 3), (600, 40, 2)):
+        exact = descent_pvalue_exact(m, n, depth)
+        steps = np.array([1] * m + [-1] * n, dtype=np.int64)
+        perm = threeseq._descent_pvalue_perm(steps, depth)
+        standard_error = (perm * (1 - perm) / threeseq._PERMUTATIONS) ** 0.5
+        assert exact == pytest.approx(perm, abs=4 * standard_error), (m, n, depth, exact, perm)
+
+
+def test_descent_pvalue_exact_closed_forms_at_the_boundaries() -> None:
+    # Cases with an answer that can be written down, at a scale enumeration cannot reach.
+    assert descent_pvalue_exact(5000, 300, 1) == 1.0    # any down-step is a drawdown of 1
+    assert descent_pvalue_exact(5000, 0, 1) == 0.0      # no down-step, no drawdown
+    assert descent_pvalue_exact(0, 300, 300) == 1.0     # all down-steps: the drawdown is n
+    assert descent_pvalue_exact(0, 300, 301) == 0.0     # ... and cannot exceed n
+    assert descent_pvalue_exact(5000, 40, 41) == 0.0    # depth > n is unreachable
+    # depth == n at a scale the closed-form test above does not cover.
+    assert math.isclose(descent_pvalue_exact(3000, 4, 4), 3001 / math.comb(3004, 4),
+                        rel_tol=1e-9)
