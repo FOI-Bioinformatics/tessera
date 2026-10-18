@@ -367,6 +367,20 @@ What this measurably changed, on the simulated and curated harnesses (10 replica
   heuristic caller keeps its own, and the site callers are not bounded, because finding
   tracts shorter than a window is what they are for. The help text said otherwise.
   (B2, A4)
+- **An HMM left a single state by lineage clustering no longer counts toward
+  `--min-methods`**, as an unrunnable barcode caller does not. When clustering pools every
+  reference into one lineage the HMM has no second state and cannot call a region whatever
+  the data, so a gate it could not help meet only suppressed what the other callers found:
+  `--method hmm,3seq --min-methods 2` on five references 0.25 % apart with a real 6 kb
+  tract reported nothing and read as a negative. The clamp, its warning and the provenance
+  line now treat it as the barcode caller is treated. With the default four callers and
+  `--min-methods 2` nothing changes. The record also says "could test" rather than "ran",
+  since a one-state HMM runs and cannot test. (B7)
+- **`--merge-gap` now also sets how far apart two coverage gaps may be and still be
+  merged**, and so shapes the donor-absent regions built from them. It was read only by
+  the heuristic caller, and the coverage diagnostic always merged within one window size
+  whatever the option said. The default is unchanged, so only a run that sets it is
+  affected. (B6)
 - **Some seed options that cannot act are refused.** `detect` and `build-panel` used
   `--candidate-pool` and ignored `--nextclade`/`--nextclade-dataset` when both were given;
   `--pool-consensus` did nothing without a Nextclade pool; and `fill-references` ignored
