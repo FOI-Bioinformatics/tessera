@@ -155,6 +155,10 @@ class Region:
     breakpoint_hi: int | None = None
     # Share of distinguishing (discordant) sites that favour the donor, and the
     # sign-test p-value with its Benjamini-Hochberg q-value (FDR across segments).
+    # What `support` counts differs by caller -- `statistic` names it per row. One case
+    # needs saying here: Bootscan's value is the support of the donor's lineage cluster,
+    # pooled over its members, where the donor is one of a cluster of near-duplicates,
+    # and the support of the single genome otherwise.
     support: float | None = None
     pvalue: float | None = None
     qvalue: float | None = None

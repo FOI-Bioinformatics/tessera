@@ -124,14 +124,18 @@ covered genome weighs as less than one. Clustering is skipped for panels of fewe
 than 4 or more than 200 references.
 
 One limitation follows from the absolute threshold when identity is taken over all
-columns. On a panel in which *every* pair of references is at least 98.5 % identical in
-every window -- mpox, VZV and other sets below roughly 1.5 % divergence -- all references
-would pool into a single lineage and leave the HMM nothing to compete. Such panels are
-scanned under informative-site windowing (next section), and there the references are
-compared on the informative columns only, so distinct lineages stay apart. The limitation
-remains when base-pair windowing is forced on such a panel (`--no-informative-sites`):
-run with `--no-cluster-lineages` to keep the HMM's vote. The site-based callers (3SEQ,
-MaxChi) are unaffected either way. `run_provenance.json` records whether clustering was on.
+columns. On a panel in which *every* pair of references is at least 98.5 % identical
+in every window -- mpox, VZV and other sets below roughly 1.5 % divergence -- all
+references would pool into a single lineage and leave the HMM nothing to compete.
+Such a whole-panel cluster is the one case that is not shared: it reaches the HMM
+alone, so Bootscan and the merge go on competing and comparing individual genomes
+there -- a cluster holding every reference says nothing about which of them is the
+donor. Such panels are scanned under informative-site windowing (next section), and
+there the references are compared on the informative columns only, so distinct
+lineages stay apart. The limitation remains when base-pair windowing is forced on
+such a panel (`--no-informative-sites`): run with `--no-cluster-lineages` to keep the
+HMM's vote. The site-based callers (3SEQ, MaxChi) are unaffected either way.
+`run_provenance.json` records whether clustering was on.
 When clustering does leave the HMM a single state, the run says so: the HMM is reported
 as `not run` with this reason in the report header, the method comparison and
 `run_provenance.json` (`callers not run`), not as a caller that found nothing. It still

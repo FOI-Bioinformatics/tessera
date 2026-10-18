@@ -402,6 +402,16 @@ def run_recomb(
     # shared: the HMM pools them, Bootscan counts their support together, and the merge
     # treats two members of one cluster as the same donor.
     reference_clusters = lineage_clusters(result, params.window_size, _region_params("hmm"))
+    # One exception, the case documented in docs/detection-methods.md: on a panel where
+    # every pair of references clears the pooling floor the whole panel becomes one
+    # cluster. The HMM must still see it -- that is the one-state case it reports as "not
+    # run" -- but the other callers go on competing genomes, and for them a cluster
+    # holding the entire panel says nothing. Shared, it would leave Bootscan no group
+    # able to beat the backbone's, and it would make the merge treat every pair of
+    # references as one donor, so two callers naming different donors would be reported
+    # as one row listing both: agreement read off a disagreement.
+    n_refs = len(result.similarities)
+    shared_clusters = [c for c in reference_clusters if len(c) < n_refs]
 
     # Run each selected caller (sharing the one similarity scan + analysis), then merge
     # their regions into a single consensus that records per-region method agreement.
@@ -410,8 +420,9 @@ def run_recomb(
     excluded_siblings: list = []
     for method in params.methods:
         res, ana = (result, analysis) if method == "hmm" else (bp_result, analysis_bp)
+        clusters = reference_clusters if method == "hmm" else shared_clusters
         regs, major_m, sibs = call_regions(
-            res, ana, params.window_size, _region_params(method, reference_clusters),
+            res, ana, params.window_size, _region_params(method, clusters),
             not_run=not_run,
         )
         per_method[method] = regs
@@ -463,7 +474,7 @@ def run_recomb(
         rmin_intervals=corroborating_intervals(signal, alpha=params.alpha),
         lineage_map=lineage_map,
         scan=(bp_result, params.window_size),
-        clusters=reference_clusters,
+        clusters=shared_clusters,
     )
     # Agreement gate: a region resting on a single caller is the weakest thing the
     # ensemble can report, so require corroboration when enough callers ran to give
