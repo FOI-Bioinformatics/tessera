@@ -366,9 +366,18 @@ What this measurably changed, on the simulated and curated harnesses (10 replica
 - One curated region (`sarscov2_xbb`) loses its HMM vote and 406 bp of extent. The cause
   is the segment padding above, not the restated statistics: reverting only the
   median-step pad restores the HMM to the row's callers (`3seq,maxchi` becomes
-  `hmm,3seq,maxchi`) and
-  the extent with it, because the padded segment's sign test falls from p 0.03 to p 0.23.
-  The region is still called by three callers and the dataset still passes.
+  `hmm,3seq,maxchi`) and the extent with it. The lost vote is a correction rather than a
+  regression. Over the segment's own window union (22000-29734) the sign test gives 9
+  against 7 discordant sites, p = 0.40, under either pad; the old pad reached p = 0.03
+  only by clipping five major-favouring sites out of that union, so the call it granted
+  was not supported by the segment's own evidence. The region is still called by three
+  callers and the dataset still passes.
+- The padding affects informative-site windowing only. Under base-pair windowing the
+  first inter-window gap, the median and the step are the same number, so all three of
+  its paths are no-ops: measured on this panel, 291 windows with a first gap of 100 and a
+  median of 100, against 12 windows with a first gap of 1577 and a median of 847 under
+  informative-site windowing, which is the 1460-column shift above. This is why the
+  simulated panels are byte-identical and only curated informative-site datasets moved.
 - No curated verdict changes, and `hcv_clonal_1b` fails before and after (a pre-existing
   12 bp MaxChi region on a clonal control).
 
