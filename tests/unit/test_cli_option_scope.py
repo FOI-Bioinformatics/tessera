@@ -31,4 +31,3 @@ def test_min_region_names_its_callers_and_what_it_bounds() -> None:
 def test_margin_and_merge_gap_are_marked_heuristic_only() -> None:
     assert "(heuristic only;" in _help("recomb", "--margin")
     assert "a fraction, 0-1" in _help("recomb", "--margin")
-    assert "(heuristic only;" in _help("recomb", "--merge-gap")

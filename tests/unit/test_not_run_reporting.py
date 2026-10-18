@@ -144,8 +144,8 @@ def test_single_state_hmm_is_not_run_in_the_method_table(tmp_path: Path, logger)
 
 
 def test_barcode_and_one_state_hmm_are_both_reported_not_run(tmp_path: Path, logger) -> None:
-    """Review focus 2: two callers not run in one run, each with its own reason. Only
-    the barcode lowers the agreement gate (a one-state HMM still counts; see plan G)."""
+    """Review focus 2: two callers not run in one run, each with its own reason.
+    Neither counts toward the agreement gate."""
     out = tmp_path / "out"
     run_recomb(
         RecombParams(msa=_one_lineage_panel(tmp_path), output=out, query="query",
@@ -156,4 +156,4 @@ def test_barcode_and_one_state_hmm_are_both_reported_not_run(tmp_path: Path, log
     run = json.loads((out / "run_provenance.json").read_text())["run"]
     assert run["callers not run"].startswith("hmm (lineage clustering")
     assert "; barcode (it needs typed references" in run["callers not run"]
-    assert run["min methods (agreement gate)"] == "2"
+    assert run["min methods (agreement gate)"] == "1 (requested 2; 1 caller ran)"

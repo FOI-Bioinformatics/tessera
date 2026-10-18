@@ -39,10 +39,12 @@ The reason is that the callers have different applicability domains. At mpox's 0
 divergence only the HMM has power at all, so requiring two of them is structurally
 impossible in exactly the regime where detection is hardest. Raise `--min-methods` when
 your panel carries near-duplicate references and you want precision; leave it at 1 for a
-curated panel. The threshold is clamped to the number of callers actually run, and any
-suppressed count is logged rather than silently dropped. Two of the default callers,
-3SEQ and MaxChi, score the same tract (see the MaxChi section), so a region found by
-those two alone meets a gate of two without independent corroboration.
+curated panel. The threshold is clamped to the number of callers that could test -- a
+barcode caller without typed references and an HMM left a single state by lineage
+clustering do not count -- and any suppressed count is logged rather than silently
+dropped. Two of the default callers, 3SEQ and MaxChi, score the same tract (see the
+MaxChi section), so a region found by those two alone meets a gate of two without
+independent corroboration.
 
 The default ensemble's two further callers are **MaxChi** (a chi-square triplet test
 on the same tract as 3SEQ) and **Bootscan** (a distance + bootstrap method that yields a
@@ -75,10 +77,10 @@ dropped. The legacy `--method heuristic` (margin / merge-gap / min-region) is ke
 for comparison.
 
 **Which options apply to which caller.** `--min-region` is described in its own paragraph
-below. `--margin` (a similarity fraction, 0-1) and `--merge-gap` are read by the
-heuristic caller only; the coverage diagnostic merges gaps within one window size
-whatever `--merge-gap` says. The `--help` text of each scoped option names the callers
-that read it.
+below. `--margin` (a similarity fraction, 0-1) is read by the heuristic caller only;
+`--merge-gap` is read by the heuristic caller and also sets how far apart two coverage
+gaps may be and still be merged (default: one window size). The `--help` text of each
+scoped option names the callers that read it.
 
 **The reported span is not the segment.** A segment is where the HMM path sat in the
 donor state. Once there, the path has no reason to leave while donor and major are
@@ -171,8 +173,8 @@ HMM's vote. The site-based callers (3SEQ, MaxChi) are unaffected either way.
 `run_provenance.json` records whether clustering was on.
 When clustering does leave the HMM a single state, the run says so: the HMM is reported
 as `not run` with this reason in the report header, the method comparison and
-`run_provenance.json` (`callers not run`), not as a caller that found nothing. It still
-counts toward `--min-methods`.
+`run_provenance.json` (`callers not run`), not as a caller that found nothing. It does
+not count toward `--min-methods`, as an unrunnable barcode caller does not.
 
 ### Low-divergence panels (intra-species sets, DNA viruses)
 
@@ -437,7 +439,7 @@ The practical readings:
 | `informative_site_windows.tsv` | Only under informative-site windowing: the windows the HMM segmented -- `msa_position`, `query_position`, the window's `msa_start` / `msa_end` (end-exclusive), `winner`, and per dataset the query's identity **at polymorphic columns only**. Not comparable with similarity or ANI |
 | `similarity_stats.tsv` | Per-dataset similarity statistics (median, windows above identity thresholds) |
 | `window_winners.tsv` | Per-dataset count of windows won (ties included) |
-| `coverage_gaps.tsv` | Stretches where even the closest reference is below the best-similarity threshold, with a `kind`: `divergent` (the query is far from every reference -- a possible missing reference), `low_information` (too few comparable bases to judge -- shown in the report as its own note, not as a possible missing reference), or `breakpoint` (windows straddling a called breakpoint: each under-threshold window is matched, to the threshold, by a single switch between the region's two parents; not a missing reference, and it does not caveat the region) |
+| `coverage_gaps.tsv` | Stretches where even the closest reference is below the best-similarity threshold, with a `kind`: gaps closer than `--merge-gap` (default one window size) are merged; `divergent` (the query is far from every reference -- a possible missing reference), `low_information` (too few comparable bases to judge -- shown in the report as its own note, not as a possible missing reference), or `breakpoint` (windows straddling a called breakpoint: each under-threshold window is matched, to the threshold, by a single switch between the region's two parents; not a missing reference, and it does not caveat the region) |
 | `similarity_top{N}.{fmt}` | Static plot of the nearest `--top-n` datasets, called regions shaded |
 | `informative_sites_top{N}.{fmt}` | Only under informative-site windowing: the same plot for identity at informative sites |
 | `similarity_pair.{fmt}` | Static plot of the major parent against the donor of the longest called region, regions shaded (the two leading window winners when no donor was called) |

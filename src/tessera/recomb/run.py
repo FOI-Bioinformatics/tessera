@@ -103,8 +103,7 @@ class RecombParams:
     # donor-absent row an unbounded one did not); when None, the HMM and the heuristic
     # caller use the window size and the site callers are not bounded.
     min_region: int | None = None
-    # Heuristic-only thresholds. merge_gap is not passed to the coverage diagnostic,
-    # which merges gaps within one window size.
+    # Heuristic-only thresholds. merge_gap also merges coverage gaps.
     margin: float = 0.0
     merge_gap: int | None = None
     # Reference-coverage diagnostic.
@@ -467,10 +466,15 @@ def run_recomb(
             "The hmm caller could not test (%s); it is reported as 'not run', not as a "
             "negative.", not_run["hmm"],
         )
-    # Only the barcode caller lowers the agreement gate. A one-state HMM is reported as
-    # not run but still counted here: lowering the gate for it would change which
-    # regions are reported, which this reporting change does not do.
     n_ran = len(params.methods) - len(callers_not_run)
+    # A one-state HMM: lineage clustering pooled every reference into one lineage, so the
+    # HMM had no second state and could not call a region whatever the data (it is
+    # reported as "not run" above). Like an unrunnable barcode caller it does not count
+    # toward the agreement gate: a gate it cannot help meet would only suppress what the
+    # callers that did test found.
+    hmm_one_state = "hmm" in not_run
+    if hmm_one_state:
+        n_ran -= 1
 
     major_parent, per_major = reconcile_major(majors, window_wins=analysis_bp.winners_with_ties)
     # Parent-free corroboration needs both halves of the diagnostic: PHI to establish
@@ -504,7 +508,7 @@ def run_recomb(
     # The clamp is silent when the user simply selected fewer callers than --min-methods.
     # It is not when a selected caller could not run: the user asked for corroboration
     # the run cannot give, and the regions reported are then weaker than requested.
-    gate_lowered = bool(callers_not_run) and min_agree < params.min_methods
+    gate_lowered = (bool(callers_not_run) or hmm_one_state) and min_agree < params.min_methods
     if gate_lowered:
         logger.warning(
             "--min-methods %d cannot be met: %d caller(s) ran. The agreement gate used "
@@ -553,6 +557,8 @@ def run_recomb(
         params.window_size,
         floor=params.coverage_floor,
         rel_drop=params.coverage_rel_drop,
+        # --merge-gap merges coverage gaps too (None -> the window size, as before).
+        merge_gap=params.merge_gap,
     )
     coverage_gaps, coverage_threshold = call_coverage_gaps(
         bp_result, params.window_size, coverage_params
