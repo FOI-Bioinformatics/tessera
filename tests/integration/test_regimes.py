@@ -253,18 +253,38 @@ def test_min_region_bounds_every_callers_reported_length(tmp_path) -> None:
 
 
 def test_min_region_is_applied_to_the_merged_span_before_the_agreement_gate(tmp_path) -> None:
-    # Review focus: --min-region with --min-methods 2. The filter is on merged regions,
-    # so a 3 kb event called by several callers survives a 2 kb floor even when one
-    # caller's own tract is shorter than the floor.
+    """Review focus: ``--min-region`` with ``--min-methods 2``, on the merged span.
+
+    The floor is 3000, which on this panel only the HMM's own tract clears: 3seq and
+    maxchi call 2981 bp, bootscan 2901 and geneconv 944. So a per-caller filter would
+    leave an HMM-only row, which ``--min-methods 2`` would then suppress, and the run
+    would report nothing. The merged span is 3034 bp and survives with its method list
+    intact. The floor is checked against the callers' own tracts here rather than
+    assumed, so the test still bites if a future change shifts them.
+    """
     from tessera.recomb.run import RecombParams, run_recomb
 
     seqs, (lo, hi) = rg.simulate_redundant(6001, tract=rg.RED_DONOR_TRACT)
     msa = write_fasta(tmp_path / "mm.fasta", seqs)
+    floor = 3000
+
+    result = compute_similarity(str(msa), rg.QUERY, window_size=WINDOW, window_step=STEP)
+    analysis = analyze(result)
+    own: dict[str, int] = {}
+    for method in ("3seq", "maxchi", "bootscan", "geneconv"):
+        regions, _, _ = call_regions(result, analysis, WINDOW,
+                                     RegionParams.with_defaults(WINDOW, method=method))
+        spans = [r.length_bp for r in regions if r.query_start < hi and r.query_end > lo]
+        own[method] = max(spans) if spans else 0
+    assert own and max(own.values()) < floor, own  # no site caller clears the floor alone
+
     out = tmp_path / "out"
     run_recomb(RecombParams(msa=msa, output=out, query=rg.QUERY, plot_format="png",
-                            min_region=2000, min_methods=2), _LOG)
+                            min_region=floor, min_methods=2), _LOG)
     rows = [r for r in rg._read_regions(out / "recombination_regions.tsv")
             if r.get("donor_absent") != "yes"]
-    assert len(rows) == 1
+    assert len(rows) == 1, rows
     assert int(rows[0]["query_start"]) < hi and int(rows[0]["query_end"]) > lo
-    assert len(rows[0]["methods"].split(",")) >= 2
+    methods = rows[0]["methods"].split(",")
+    assert len(methods) >= 2, methods
+    assert any(m in methods for m in own), methods  # a site caller is still named
