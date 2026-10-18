@@ -31,12 +31,20 @@ def _overlap(a: Region, b: Region) -> bool:
     return a.query_start < b.query_end and b.query_start < a.query_end
 
 
-def _same_donor(a: Region, b: Region, lineage_map: LineageMap | None) -> bool:
-    """Do two regions name the same donor? Equal genome labels, or -- when references
-    are typed -- the same lineage, so two callers that pick different representative
-    genomes of one lineage still count as the same event (and as agreement)."""
+def _same_donor(
+    a: Region, b: Region, lineage_map: LineageMap | None,
+    cluster_of: dict[str, int] | None = None,
+) -> bool:
+    """Do two regions name the same donor? Equal genome labels; or members of one
+    lineage cluster (near-duplicates the HMM pools; see ``clusters.lineage_clusters``);
+    or -- when references are typed -- the same lineage. Two callers that pick different
+    genomes of one lineage then still count as the same event (and as agreement)."""
     if a.minor_parent == b.minor_parent:
         return True
+    if cluster_of:
+        ca = cluster_of.get(a.minor_parent)
+        if ca is not None and ca == cluster_of.get(b.minor_parent):
+            return True
     if lineage_map:
         la = lineage_of(a.minor_parent, lineage_map)
         return la is not None and la == lineage_of(b.minor_parent, lineage_map)
@@ -161,14 +169,17 @@ def _merge_group(
     )
 
 
-def _group(regions: list[Region], lineage_map: LineageMap | None) -> list[list[Region]]:
-    """Group regions that overlap (transitively) and name the same donor (genome or,
-    when typed, lineage)."""
+def _group(
+    regions: list[Region], lineage_map: LineageMap | None,
+    cluster_of: dict[str, int] | None = None,
+) -> list[list[Region]]:
+    """Group regions that overlap (transitively) and name the same donor (genome,
+    lineage cluster or, when typed, lineage)."""
     groups: list[list[Region]] = []
     for region in sorted(regions, key=lambda r: (r.minor_parent, r.query_start)):
         hits = [
             group for group in groups
-            if _same_donor(group[0], region, lineage_map)
+            if _same_donor(group[0], region, lineage_map, cluster_of)
             and any(_overlap(region, member) for member in group)
         ]
         if not hits:
@@ -215,6 +226,7 @@ def consensus_regions(
     rmin_intervals: list[tuple[int, int]] | None = None,
     lineage_map: LineageMap | None = None,
     scan: tuple[WindowSimilarity, int] | None = None,
+    clusters: list[list[str]] | None = None,
 ) -> tuple[list[Region], list[dict]]:
     """Merge per-method regions into one consensus list plus a per-region breakdown.
 
@@ -229,12 +241,18 @@ def consensus_regions(
     ``scan`` is ``(base-pair result, window size)``. When given, each merged row's
     ``mean_sim_minor`` / ``mean_sim_major`` / ``margin`` are identity over the merged span
     and ``n_windows`` counts the base-pair windows overlapping it.
+
+    ``clusters`` are the run's lineage clusters (``clusters.lineage_clusters``). Regions
+    naming two members of one cluster are the same event: the HMM reports a cluster under
+    its representative, while 3SEQ and MaxChi rank individual genomes and may name
+    another member.
     """
     all_regions = [r for regions in per_method.values() for r in regions]
     intervals = rmin_intervals or []
     consensus: list[Region] = []
     breakdown: list[dict] = []
-    for group in _group(all_regions, lineage_map):
+    cluster_of = {label: i for i, members in enumerate(clusters or []) for label in members}
+    for group in _group(all_regions, lineage_map, cluster_of):
         region = _merge_group(group, major, scan)
         region.parent_free_support = any(
             region.query_start < hi and lo < region.query_end for lo, hi in intervals

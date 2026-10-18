@@ -297,3 +297,19 @@ def test_merge_without_a_scan_keeps_the_best_members_values() -> None:
     seq = mk("B", 30, 80, "3seq", qvalue=1e-3)
     merged, _ = consensus_regions({"hmm": [hmm], "3seq": [seq]}, major="A")
     assert merged[0].mean_sim_minor == hmm.mean_sim_minor
+
+
+def test_regions_naming_two_members_of_one_cluster_are_one_event() -> None:
+    # The HMM reports a pooled lineage under its representative (D1); 3SEQ ranks single
+    # genomes and names D0. Without the cluster membership they were two rows.
+    hmm = mk("D1", 100, 200, "hmm", qvalue=1e-6)
+    seq = mk("D0", 110, 190, "3seq", qvalue=1e-9)
+    split, _ = consensus_regions({"hmm": [hmm], "3seq": [seq]}, major="A")
+    assert len(split) == 2
+    merged, breakdown = consensus_regions(
+        {"hmm": [hmm], "3seq": [seq]}, major="A", clusters=[["D0", "D1"]]
+    )
+    assert len(merged) == 1
+    assert merged[0].methods == ("hmm", "3seq")
+    assert merged[0].minor_parent == "D0"  # the most significant member names the donor
+    assert len(breakdown) == 1

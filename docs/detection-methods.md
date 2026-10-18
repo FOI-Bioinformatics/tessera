@@ -18,12 +18,13 @@ harness this leaves the verdict set unchanged but corroborates the donor in 17 o
 cases (vs 12 with hmm,3seq alone), raising confidence without over-calling.
 
 The merge is transparent -- no combined score is invented. Two regions are the same
-event when they overlap in query coordinates and name the same donor -- the same minor
-parent genome, or, when the references are typed (a lineage map), the same **lineage**,
-so two callers that pick different representative genomes of one lineage still count as
-the same event and as agreement. The consensus region records exactly **which** callers
-found it (the report's *Method(s)* column and a *Method comparison* table) and whether
-the parent-free Hudson-Kaplan Rmin signal corroborates it.
+event when they overlap in query coordinates and name the same donor -- the same
+minor parent genome, two members of one lineage cluster (near-duplicates pooled for
+the HMM, below), or, when the references are typed (a lineage map), the same
+**lineage**, so two callers that pick different representative genomes of one lineage
+still count as the same event and as agreement. The consensus region records exactly
+**which** callers found it (the report's *Method(s)* column and a *Method comparison*
+table) and whether the parent-free Hudson-Kaplan Rmin signal corroborates it.
 
 Agreement can also be used as a **gate** (`--min-methods`), the control RDP5 exposes as
 "list events detected by more than N methods". It is **not on by default**, and the
@@ -108,16 +109,19 @@ Recombination regions (major parent: cowpox_KC813504):
 ### Near-duplicate references (lineage clustering)
 
 A recruited panel often holds several near-identical genomes of one lineage. Competed
-individually they tie in every window and fragment the call, so the HMM caller first
-pools them (`--cluster-lineages`, on by default; hmm only). Two references are pooled
-when their identity stays at or above 98.5 % in every window, with no region-sized run
-below it. The pooled lineage competes as one state under the label of its best-covering
-member, and a region names that member. Its evidence in each window is the mean over
-its members, not the sum: where the members are similarly covered, a lineage of five
-genomes weighs as one genome in the emission, so adding copies of a reference cannot
-outweigh a single-genome donor. A member with little data in a window lowers that
-window's mean, so a lineage holding a poorly covered genome weighs as less than one.
-Clustering is skipped for panels of fewer than 4 or more than 200 references.
+individually they tie in every window and fragment the call, so they are first
+grouped into lineage clusters (`--cluster-lineages`, on by default). The clusters are
+computed once and shared: the HMM pools them, Bootscan counts their bootstrap support
+together, and the merge treats two members of one cluster as one donor. Two
+references are pooled when their identity stays at or above 98.5 % in every window,
+with no region-sized run below it. The pooled lineage competes as one state under the
+label of its best-covering member, and a region names that member. Its evidence in
+each window is the mean over its members, not the sum: where the members are
+similarly covered, a lineage of five genomes weighs as one genome in the emission, so
+adding copies of a reference cannot outweigh a single-genome donor. A member with
+little data in a window lowers that window's mean, so a lineage holding a poorly
+covered genome weighs as less than one. Clustering is skipped for panels of fewer
+than 4 or more than 200 references.
 
 One limitation follows from the absolute threshold when identity is taken over all
 columns. On a panel in which *every* pair of references is at least 98.5 % identical in
@@ -205,7 +209,9 @@ candidate parent, then resamples the window's alignment columns with replacement
 **bootstrap support** of a parent is the fraction of resamples in which it is the query's
 closest match. A run of windows where a non-major parent's support clears 70 % and beats
 the backbone is a candidate region, carrying that support as a confidence the other
-callers express only as a p-value.
+callers express only as a p-value. Support is counted per lineage cluster: two
+near-duplicates of the donor each win about half the resamples, and neither alone
+would reach 70 %.
 
 Support alone is not evidence of recombination, though: it answers *which reference is
 closest here*, not *whether the query recombined*. Each candidate run is therefore also

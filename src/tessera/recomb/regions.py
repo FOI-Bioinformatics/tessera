@@ -27,7 +27,7 @@ from statistics import mean
 
 from ..core.errors import UserInputError
 from .analyze import AnalysisResult, rank_datasets
-from .clusters import _window_bounds, all_singletons, cluster_references, clustered_view
+from .clusters import _window_bounds, clustered_view, lineage_clusters
 from .hmm import DEFAULT_JUMP_RATE, Segment, segment_query
 from .siblings import SiblingEvidence, sibling_aware_states
 from .similarity import WindowSimilarity, discordant_counts, region_identity
@@ -100,6 +100,10 @@ class RegionParams:
     # ONLY by that caller, never the genome competition, so it cannot reproduce the reverted
     # competition-layer pooling regression.
     lineage_map: dict[str, str] | None = None
+    # Lineage clusters computed once for the run (clusters.lineage_clusters): multi-member
+    # clusters only, ``[]`` for none. ``None`` means "not computed": the HMM caller then
+    # computes them itself, as it did before they were shared.
+    reference_clusters: list[list[str]] | None = None
 
     @classmethod
     def with_defaults(
@@ -115,6 +119,7 @@ class RegionParams:
         exclude_siblings: bool = True,
         cluster_lineages: bool = True,
         lineage_map: dict[str, str] | None = None,
+        reference_clusters: list[list[str]] | None = None,
     ) -> RegionParams:
         return cls(
             min_region=window_size if min_region is None else min_region,
@@ -127,6 +132,7 @@ class RegionParams:
             exclude_siblings=exclude_siblings,
             cluster_lineages=cluster_lineages,
             lineage_map=lineage_map,
+            reference_clusters=reference_clusters,
         )
 
 
@@ -289,11 +295,11 @@ def _call_regions_hmm(
     # pooled lineages. A no-op for a curated panel (few refs, or all singletons).
     work = result
     cluster_size: dict[str, int] = {}
-    n_refs = len(result.similarities)
-    if params.cluster_lineages and params.cluster_min_refs <= n_refs <= params.cluster_max_refs:
-        clusters = cluster_references(result, window_size, params)
-        if not all_singletons(clusters):
-            work, cluster_size = clustered_view(result, clusters)
+    pooled = params.reference_clusters
+    if pooled is None:
+        pooled = lineage_clusters(result, window_size, params)
+    if pooled:
+        work, cluster_size = clustered_view(result, _with_singletons(result, pooled))
     if len(work.similarities) < 2 and not_run is not None:
         # One state cannot switch, so the decode below cannot call a region whatever
         # the data. The run continues unchanged; the caller is reported as not run.
@@ -369,6 +375,23 @@ def _call_regions_hmm(
             )
         )
     return regions, major, dropped
+
+
+def _with_singletons(result: WindowSimilarity, pooled: list[list[str]]) -> list[list[str]]:
+    """Every reference in one cluster: the multi-member ``pooled`` clusters plus each
+    remaining label alone, in the order the labels first appear in ``result`` (the
+    order ``cluster_references`` returns, so the HMM's state order is unchanged)."""
+    index = {label: i for i, members in enumerate(pooled) for label in members}
+    out: list[list[str]] = []
+    seen: set[int] = set()
+    for label in result.similarities:
+        i = index.get(label)
+        if i is None:
+            out.append([label])
+        elif i not in seen:
+            seen.add(i)
+            out.append(pooled[i])
+    return out
 
 
 def _span_windows(

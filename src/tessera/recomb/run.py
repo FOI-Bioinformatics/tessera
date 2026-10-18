@@ -13,6 +13,7 @@ from ..core.errors import UserInputError
 from ..core.io import strip_sequence_extension
 from ..msa.build import read_provenance
 from .analyze import analyze, winners_per_window
+from .clusters import lineage_clusters
 from .coverage import (
     DIVERGENT_KIND,
     LOW_INFORMATION_KIND,
@@ -382,7 +383,7 @@ def run_recomb(
     # (possibly informative-site) result. Reuse the same analysis when they coincide.
     analysis_bp = analysis if result is bp_result else analyze(bp_result)
 
-    def _region_params(method: str) -> RegionParams:
+    def _region_params(method: str, clusters: list[list[str]] | None = None) -> RegionParams:
         return RegionParams.with_defaults(
             params.window_size,
             min_region=params.min_region,
@@ -394,7 +395,13 @@ def run_recomb(
             exclude_siblings=params.exclude_siblings,
             cluster_lineages=params.cluster_lineages,
             lineage_map=lineage_map,
+            reference_clusters=clusters,
         )
+
+    # Lineage clusters (near-duplicate references), computed once on the HMM's scan and
+    # shared: the HMM pools them, Bootscan counts their support together, and the merge
+    # treats two members of one cluster as the same donor.
+    reference_clusters = lineage_clusters(result, params.window_size, _region_params("hmm"))
 
     # Run each selected caller (sharing the one similarity scan + analysis), then merge
     # their regions into a single consensus that records per-region method agreement.
@@ -404,7 +411,8 @@ def run_recomb(
     for method in params.methods:
         res, ana = (result, analysis) if method == "hmm" else (bp_result, analysis_bp)
         regs, major_m, sibs = call_regions(
-            res, ana, params.window_size, _region_params(method), not_run=not_run
+            res, ana, params.window_size, _region_params(method, reference_clusters),
+            not_run=not_run,
         )
         per_method[method] = regs
         majors[method] = major_m
@@ -455,6 +463,7 @@ def run_recomb(
         rmin_intervals=corroborating_intervals(signal, alpha=params.alpha),
         lineage_map=lineage_map,
         scan=(bp_result, params.window_size),
+        clusters=reference_clusters,
     )
     # Agreement gate: a region resting on a single caller is the weakest thing the
     # ensemble can report, so require corroboration when enough callers ran to give

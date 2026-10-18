@@ -143,3 +143,37 @@ def test_block_permutations_unchanged_when_windows_are_a_multiple_of_the_block()
     order = np.argsort(ref_rng.random((20, 3)), axis=1)
     expected = wins.reshape(3, 10)[order].reshape(20, 30)
     assert (got == expected).all()
+
+
+def _redundant_donor_msa(tmp_path: Path) -> Path:
+    """recombinant_msa with the donor lineage B represented by two genomes ~0.4 % apart,
+    each 0.2 % from the B sequence the query carries (neither is closer by design)."""
+    from tessera.core.io import read_fasta
+
+    from ..factories import _mutate
+
+    rng = random.Random(3)
+    records = dict(read_fasta(recombinant_msa(tmp_path, recombinant=True)))
+    original_b = records["B"]
+    records["B"] = _mutate(original_b, 0.002, rng)
+    records["B2"] = _mutate(original_b, 0.002, rng)
+    return write_fasta(tmp_path / "redundant.fasta", records)
+
+
+def test_bootscan_counts_support_per_lineage_cluster(tmp_path: Path) -> None:
+    # Two near-identical genomes of the donor lineage split the bootstrap support between
+    # them, so neither reaches 70 % and the tract is lost. Counted per cluster, it is not.
+    result = compute_similarity(str(_redundant_donor_msa(tmp_path)), "query",
+                                window_size=500, window_step=50)
+    split, _, _ = call_regions(
+        result, analyze(result), 500, RegionParams.with_defaults(500, method="bootscan")
+    )
+    assert split == []
+    pooled, major, _ = call_regions(
+        result, analyze(result), 500,
+        RegionParams.with_defaults(500, method="bootscan", reference_clusters=[["B", "B2"]]),
+    )
+    assert major == "A"
+    assert len(pooled) == 1
+    assert pooled[0].minor_parent in {"B", "B2"}
+    assert pooled[0].query_start < 2300 and pooled[0].query_end > 3700

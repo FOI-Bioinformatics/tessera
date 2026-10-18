@@ -156,6 +156,22 @@ def all_singletons(clusters: list[list[str]]) -> bool:
     return all(len(c) == 1 for c in clusters)
 
 
+def lineage_clusters(result: WindowSimilarity, window_size: int, params) -> list[list[str]]:
+    """The panel's lineage clusters with more than one member; ``[]`` when none apply.
+
+    Applies the same gate as the HMM caller (``cluster_lineages`` on, and between
+    ``cluster_min_refs`` and ``cluster_max_refs`` references). Computed once per run and
+    shared, so that every caller and the ensemble merge see the same lineages: the HMM
+    pools them, Bootscan sums their bootstrap support, and the merge treats two members
+    of one cluster as the same donor.
+    """
+    n_refs = len(result.similarities)
+    in_range = params.cluster_min_refs <= n_refs <= params.cluster_max_refs
+    if not (params.cluster_lineages and in_range):
+        return []
+    return [c for c in cluster_references(result, window_size, params) if len(c) > 1]
+
+
 def _representative(result: WindowSimilarity, members: list[str]) -> str:
     """The cluster's most-covering, best-matching member (deterministic tie-break)."""
     return min(

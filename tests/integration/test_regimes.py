@@ -202,3 +202,34 @@ def test_redundant_backbone_does_not_silence_the_hmm(tmp_path) -> None:
     # summed emission's whole-genome D0 span would have satisfied it.
     assert abs(donors[0].msa_start - lo) <= 30 and abs(donors[0].msa_end - hi) <= 30
 
+
+
+def test_redundant_donor_is_one_region_with_every_caller(tmp_path) -> None:
+    seqs, tract = rg.simulate_redundant(6001, donor_copies=3, tract=rg.RED_DONOR_TRACT)
+    got = rg.score_lineage_tract(rg.scan(seqs, _LOG), tract, lineage="D")
+    assert got == {"detected": True, "rows": 1, "donor_ok": True, "hmm": True,
+                   "bootscan": True}
+
+
+def test_no_backbone_duplicate_is_reported_as_a_donor(tmp_path) -> None:
+    # Review focus: with the backbone lineage redundant, a near-duplicate of the
+    # backbone must not win Bootscan windows, or any caller's, as a "donor".
+    seqs, _ = rg.simulate_redundant(6002, backbone_copies=3)
+    rows = [r for r in rg.scan(seqs, _LOG) if r.get("donor_absent") != "yes"]
+    assert rows
+    assert not [r for r in rows if r["minor_parent"].startswith("A")]
+
+
+def test_duplicate_donor_on_a_near_identical_panel_is_one_row(tmp_path) -> None:
+    # Review focus: the shared clusters are computed on the informative-site scan the
+    # HMM uses, while Bootscan and the merge work on base-pair windows. An exact copy of
+    # the donor is pooled there, and the event must still be one row. (A copy differing
+    # at a few informative sites is not pooled under informative-site windowing; see the
+    # plan's self-review notes.)
+    seqs, (lo, hi) = rg.simulate_near_identical(3, recombinant=True, **NEAR)
+    seqs["R1_copy"] = seqs["R1"]
+    rows = [r for r in rg.scan(seqs, _LOG) if r.get("donor_absent") != "yes"]
+    hits = [r for r in rows if int(r["query_start"]) < hi and int(r["query_end"]) > lo]
+    assert len(hits) == 1
+    assert hits[0]["minor_parent"] in {"R1", "R1_copy"}
+    assert "hmm" in hits[0]["methods"].split(",")
