@@ -566,9 +566,10 @@ So the miss was **candidate selection, not windowing dilution or statistical pow
 these tracts because its all-vs-all scan tests every pair, so the donor is always a candidate.
 
 The fix (`src/tessera/recomb/{threeseq,maxchi,geneconv}.py`): draw candidates from `rank_datasets`
-(window winners first, then the remaining references), so a zero-win donor is still tested. The
-pre-Benjamini-Hochberg floors (`_MIN_DISCRIMINATING` / `_MIN_DESCENT` / min run) drop candidates
-without a real signal, so the extra donors cost little power. Re-measured:
+(window winners first, then the remaining references), so a zero-win donor is still tested.
+Candidates with fewer than 20 discriminating sites (`_MIN_DISCRIMINATING`) are not tested; since
+audit 4, 3SEQ tests every other donor and MaxChi counts shallow ones in its family with p = 1, so
+the extra donors enlarge the Benjamini-Hochberg family rather than escape it. Re-measured:
 
 | tract (x window) | dataset | before fix | after fix (default ensemble) |
 |---|---|---|---|

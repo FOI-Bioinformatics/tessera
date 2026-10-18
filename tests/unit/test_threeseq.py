@@ -239,3 +239,48 @@ def test_a_tract_at_the_first_site_has_a_breakpoint_interval_from_the_start(tmp_
         assert len(terminal) == 1, method
         assert terminal[0].breakpoint_lo == 0, method
         assert terminal[0].breakpoint_hi > 0, method
+
+
+# --- pre-test floors, the BH family, the exact/permutation switch ------------
+
+def _three_site_alignment(tmp_path: Path, *, decoy: bool = False, sites: int = 3) -> Path:
+    """Major P and minor Q differ at 189 columns; the query is P except at ``sites``
+    consecutive ones, where it carries Q. With ``decoy`` a third reference R differs from
+    P at 30 other columns, where the query matches P (a donor with no descent at all)."""
+    rng = np.random.default_rng(0)
+    width = 4000
+    p = rng.integers(0, 4, size=width)
+    q = p.copy()
+    q_cols = np.sort(rng.choice(np.arange(0, width, 2), size=189, replace=False))
+    q[q_cols] = (p[q_cols] + 1) % 4
+    query = p.copy()
+    query[q_cols[100:100 + sites]] = q[q_cols[100:100 + sites]]
+    seqs = {"query": query, "P": p, "Q": q}
+    if decoy:
+        r = p.copy()
+        r_cols = rng.choice(np.arange(1, width, 2), size=30, replace=False)  # not Q's
+        r[r_cols] = (p[r_cols] + 2) % 4
+        seqs["R"] = r
+    bases = np.frombuffer(b"ACGT", dtype=np.uint8)
+    text = {k: bases[v].tobytes().decode() for k, v in seqs.items()}
+    return write_fasta(tmp_path / "three.fasta", text)
+
+
+def test_a_three_site_tract_is_tested_not_discarded_before_the_p_value(tmp_path) -> None:
+    # Three consecutive donor matches among 189 sites: exact p = 187 / C(189, 3) = 1.7e-4.
+    # The depth floor of 4 discarded the triplet before any p-value was computed.
+    regions, major, _ = _call(_three_site_alignment(tmp_path), "3seq")
+    assert major == "P"
+    assert [r.minor_parent for r in regions] == ["Q"]
+    assert math.isclose(regions[0].pvalue, 187 / math.comb(189, 3), rel_tol=1e-9)
+
+
+def test_the_bh_family_counts_every_tested_donor(tmp_path) -> None:
+    # R has 30 discriminating sites and no descent (p = 1). It was pruned by the depth
+    # floor before Benjamini-Hochberg, so the family had one member and q equalled p.
+    path = _three_site_alignment(tmp_path, decoy=True, sites=8)
+    for method in ("3seq", "maxchi"):
+        regions, _, _ = _call(path, method)
+        donors = [r for r in regions if r.minor_parent == "Q"]
+        assert len(donors) == 1, method
+        assert math.isclose(donors[0].qvalue, 2 * donors[0].pvalue, rel_tol=1e-9), method

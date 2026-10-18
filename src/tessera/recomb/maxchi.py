@@ -23,7 +23,6 @@ import numpy as np
 from .similarity import WindowSimilarity
 from .stats import benjamini_hochberg
 from .threeseq import (
-    _MIN_DESCENT,
     _MIN_DISCRIMINATING,
     _region_similarity,
     max_descent,
@@ -36,6 +35,9 @@ _PERMUTATIONS = 20_000  # permutation null resolution (~1/_PERMUTATIONS floor)
 # allocated hundreds of megabytes per array -- per candidate donor, once per reference.
 # This bounds the batch, not the permutation count: see maxchi_pvalue.
 _MAX_PERM_CELLS = 20_000_000
+# Below this descent depth a donor enters the BH family with p = 1 instead of being
+# permuted; see call_regions_maxchi.
+_MIN_PERMUTED_DEPTH = 4
 
 
 
@@ -143,7 +145,7 @@ def call_regions_maxchi(result: WindowSimilarity, analysis, params):
     if len(labels) < 2:
         return [], (labels[0] if labels else None), []
     # Keep non-winning references as candidate donors: a sub-window tract's donor may win no
-    # window yet carry a strong discriminating-site signal (the pre-BH floors drop the rest).
+    # window yet carry a strong discriminating-site signal.
     ranked = rank_datasets(analysis, len(labels)) or labels
     major = ranked[0]
     candidates = []
@@ -154,10 +156,14 @@ def call_regions_maxchi(result: WindowSimilarity, analysis, params):
         if steps.size < _MIN_DISCRIMINATING:
             continue
         descent = max_descent(steps)
-        if descent.depth < _MIN_DESCENT:
-            continue
         chi2 = maxchi_statistic(steps, descent.start_site, descent.end_site)
-        p = maxchi_pvalue(steps, chi2)
+        # A donor with a shallow descent is still a member of the Benjamini-Hochberg
+        # family: it is counted, with p = 1, rather than dropped before the correction,
+        # which shrank the family to the survivors and inflated their significance. Its
+        # permutation null is not run: 20 000 permutations of a long walk per such donor
+        # made a 16-genome scan ten times slower, and 3SEQ, which scores the same tract
+        # exactly and cheaply, tests these shallow tracts (see threeseq).
+        p = maxchi_pvalue(steps, chi2) if descent.depth >= _MIN_PERMUTED_DEPTH else 1.0
         candidates.append((minor, steps, cols, descent, chi2, p))
     if not candidates:
         return [], major, []

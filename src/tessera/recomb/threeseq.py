@@ -90,43 +90,54 @@ def descent_pvalue_exact(m: int, n: int, depth: int) -> float:
     """Exact ``P(max drawdown >= depth)`` over the uniform arrangements of ``m`` +1 and
     ``n`` -1 steps.
 
-    Dynamic program over the walk's current drawdown ``delta`` in ``[0, depth)``: an
-    up-step moves ``delta -> max(0, delta - 1)``, a down-step ``delta -> delta + 1``.
-    ``g[delta]`` is the probability that the drawdown *reaches* ``depth`` from that
-    state; a down-step from ``delta == depth - 1`` reaches it with probability 1.
+    Dynamic program over the walk's current drawdown ``delta`` in ``[0, depth)``: with
+    ``i`` up-steps and ``j`` down-steps still to come, an up-step moves
+    ``delta -> max(0, delta - 1)`` with probability ``i / (i + j)`` and a down-step
+    ``delta -> delta + 1`` with probability ``j / (i + j)``; a down-step from
+    ``delta == depth - 1`` reaches the depth. ``g(i, j, delta)`` is the probability of
+    reaching it, and the answer is ``g(m, n, 0)``.
 
     The reaching probability is propagated directly rather than as one minus the
     probability of never reaching it: every term is a sum of non-negative products, so
-    a very small p-value keeps its magnitude instead of cancelling to exactly ``0.0``
-    below about 1e-16. Probabilities (not path counts) are propagated, so there is no
-    big-integer overflow.
+    a very small p-value keeps its magnitude instead of cancelling to exactly ``0.0``.
+    Probabilities (not path counts) are propagated, so there is no big-integer overflow.
+
+    The table is filled one anti-diagonal ``i + j = t`` at a time: every cell on it
+    depends only on the previous diagonal, so each diagonal is one vectorised step. The
+    values are those of the cell-by-cell recursion; only the order of evaluation
+    changed, which made a long walk with a shallow descent (``m`` in the thousands) ten
+    to forty times faster.
     """
     if depth <= 0:
         return 1.0
     if n < depth:  # need at least ``depth`` consecutive down-steps to reach it
         return 0.0
-
-    def after_down(row_below: np.ndarray) -> np.ndarray:
-        down = np.empty(depth)
-        down[: depth - 1] = row_below[1:depth]  # delta -> delta + 1
-        down[depth - 1] = 1.0  # ... and from depth-1 the walk reaches ``depth``
-        return down
-
-    # prev[j] is the length-``depth`` vector g(i-1, j, .). Build row i from row i-1.
-    # i == 0 row: only down-steps remain, a single forced order; nothing left -> 0.
-    prev = [np.zeros(depth)]
-    for j in range(1, n + 1):
-        prev.append(after_down(prev[j - 1]))
-    for i in range(1, m + 1):
-        cur: list[np.ndarray] = [np.zeros(depth)]  # j == 0: only up-steps remain
-        for j in range(1, n + 1):
-            total = i + j
-            up = np.empty(depth)
-            up[0] = prev[j][0]
-            up[1:] = prev[j][: depth - 1]  # delta -> max(0, delta - 1)
-            cur.append((i / total) * up + (j / total) * after_down(cur[j - 1]))
-        prev = cur
-    return float(prev[n][0])
+    prev = np.zeros((m + 1, depth))  # diagonal t-1, indexed by i (ups remaining)
+    cur = np.zeros((m + 1, depth))
+    for t in range(1, m + n + 1):
+        lo, hi = max(0, t - n), min(m, t)
+        i = np.arange(lo, hi + 1, dtype=np.float64)
+        j = t - i
+        block = np.zeros((hi - lo + 1, depth))
+        # an up-step: (i, j, d) -> (i - 1, j, max(0, d - 1)), from row i - 1 of diagonal t-1
+        a = 1 if lo == 0 else 0  # row i = 0 has no up-step
+        if hi >= lo + a:
+            src = prev[lo + a - 1 : hi]
+            up = np.empty_like(src)
+            up[:, 0] = src[:, 0]
+            up[:, 1:] = src[:, :-1]
+            block[a:] += (i[a:] / t)[:, None] * up
+        # a down-step: (i, j, d) -> (i, j - 1, d + 1), or the depth is reached
+        b = 1 if hi == t else 0  # row j = 0 has no down-step
+        if hi - b >= lo:
+            src = prev[lo : hi - b + 1]
+            down = np.empty_like(src)
+            down[:, :-1] = src[:, 1:]
+            down[:, -1] = 1.0
+            block[: hi - lo + 1 - b] += (j[: hi - lo + 1 - b] / t)[:, None] * down
+        cur[lo : hi + 1] = block
+        prev, cur = cur, prev
+    return float(prev[m][0])
 
 
 def _descent_pvalue_perm(steps: np.ndarray, depth: int, *, seed: int = 0) -> float:
@@ -151,10 +162,11 @@ def descent_pvalue(steps: np.ndarray, descent: Descent, *, seed: int = 0) -> tup
     return _descent_pvalue_perm(steps, descent.depth, seed=seed), "permutation"
 
 
-# The triplet test needs enough discriminating sites to be meaningful, and a drawdown
-# deeper than trivial noise; the p-value gate does the real work above these floors.
+# The triplet test needs enough discriminating sites to be meaningful. There is no floor
+# on the descent depth: a shallow descent can still be significant when the donor
+# matches are few (three consecutive ones among 189 sites give p = 1.7e-4), so the
+# p-value decides, and every donor tested counts towards the Benjamini-Hochberg family.
 _MIN_DISCRIMINATING = 20
-_MIN_DESCENT = 4
 
 
 def call_regions_3seq(result: WindowSimilarity, analysis, params):
@@ -174,8 +186,8 @@ def call_regions_3seq(result: WindowSimilarity, analysis, params):
         return [], (labels[0] if labels else None), []
     # Rank by window wins but keep non-winning references as candidate donors too: a
     # sub-window recombinant tract is diluted in the windowed vote, so its true donor may
-    # win no window yet still carry a strong discriminating-site signal. The pre-BH floors
-    # below drop candidates without a real drawdown, so the extra donors cost little power.
+    # win no window yet still carry a strong discriminating-site signal. Each donor tested
+    # is one member of the Benjamini-Hochberg family below, whatever its p-value.
     ranked = rank_datasets(analysis, len(labels)) or labels
     major = ranked[0]
     candidates = []
@@ -186,8 +198,6 @@ def call_regions_3seq(result: WindowSimilarity, analysis, params):
         if steps.size < _MIN_DISCRIMINATING:
             continue
         descent = max_descent(steps)
-        if descent.depth < _MIN_DESCENT:
-            continue
         # `kind` is "exact" or "permutation": which one answered matters to a reader,
         # so it is carried through to the region's `test` column rather than discarded.
         p, kind = descent_pvalue(steps, descent)

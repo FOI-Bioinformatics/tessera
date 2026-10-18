@@ -189,7 +189,9 @@ sustained run of donor matches inside the backbone, i.e. a mosaic. Its p-value i
 *exact* probability that a random arrangement of the same matches reaches that
 drawdown (a dynamic program over the walk depth, no dependency; a vectorised
 permutation falls back for very large inputs), Benjamini-Hochberg-corrected across
-the donors tested. Because it is purely informative-site based it keeps full power on
+the donors tested. Every donor with at least 20 discriminating sites is tested and
+counted in that family, however shallow its descent: three consecutive donor matches
+among 189 sites are significant (p = 1.7e-4). Because it is purely informative-site based it keeps full power on
 near-identical panels -- it detects the mpox clade-I/II recombination where base-pair
 windowing finds nothing -- and because the null accounts for scanning every
 breakpoint it does not over-call.
@@ -204,6 +206,9 @@ permutation null. Drawdown and proportion are sensitive to different mosaics (a
 shallow-but-wide tract is weak under one and strong under the other), so MaxChi and 3SEQ
 are genuinely independent votes; a region significant under both is corroborated by two
 tests, exactly as RDP treats them as separate methods.
+A donor whose descent is shallower than four sites is counted in MaxChi's
+Benjamini-Hochberg family with p = 1 rather than permuted; 3SEQ tests those short
+tracts exactly.
 
 ## Bootscan caller (`--method bootscan`, distance + bootstrap)
 
