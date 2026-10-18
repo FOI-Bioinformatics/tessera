@@ -159,7 +159,7 @@ def fill_references(
     ),
     min_methods: int = typer.Option(
         1, "--min-methods",
-        help="Callers that must independently find a region before it is reported "
+        help="Callers that must each find a region before it is reported "
         "(default 1: report the union). Raise to 2 to require corroboration -- a large win "
         "on a redundant panel with several near-equidistant relatives of the "
         "query, but it costs true detections on a curated panel, and at very low "

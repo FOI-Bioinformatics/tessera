@@ -478,7 +478,7 @@ callers on the left of the `|` divider and OpenRDP's methods on the right, both 
 Columns left of the `|` are Tessera's callers; right of it are OpenRDP's methods (`maxchi`/`bootscan`
 appear on both sides -- the same algorithm family in each tool).
 
-On these well-characterised real recombinants Tessera's four callers each fire independently, so no
+On these well-characterised real recombinants Tessera's four callers each fire, so no
 single method carries the ensemble here; the ensemble earns its keep on the harder cases -- short
 tracts, low divergence, multi-breakpoint mosaics -- where the callers disagree (see the synthetic
 hybrid harness `--compare` table below). OpenRDP concurs on the recombination in every case -- at

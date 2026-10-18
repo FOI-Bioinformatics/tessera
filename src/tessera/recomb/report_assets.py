@@ -139,7 +139,9 @@ _GLOSSARY = [
     ("Method(s) / ensemble",
      "By default several callers run and their regions are merged into one consensus. "
      "A region called by more than one method (agree) is more trustworthy and raises "
-     "the confidence; PHI marks regions corroborated by the parent-free Rmin signal."),
+     "the confidence, though 3SEQ and MaxChi score the same tract and corroborate "
+     "each other only weakly; PHI marks regions corroborated by the parent-free "
+     "Rmin signal."),
 ]
 
 

@@ -85,8 +85,8 @@ def recomb(
     ),
     merge_gap: int | None = typer.Option(
         None, "--merge-gap",
-        help="Merge same-parent regions (heuristic caller) and coverage gaps separated by "
-        "at most this many bp. Default: the window size.",
+        help="Merge same-parent regions (heuristic caller) and coverage gaps separated "
+        "by at most this many alignment columns. Default: the window size.",
     ),
     coverage_floor: float | None = typer.Option(
         None, "--coverage-floor",

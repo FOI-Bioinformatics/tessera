@@ -51,7 +51,7 @@ class CoverageParams:
     floor: float | None  # absolute best-similarity floor; None -> adaptive baseline
     rel_drop: float  # adaptive: flag below (90th percentile of best_sim - rel_drop)
     min_gap: int  # drop gaps shorter than this many bp
-    merge_gap: int  # merge gaps separated by at most this many bp
+    merge_gap: int  # merge gaps separated by at most this many alignment columns
 
     @classmethod
     def with_defaults(
