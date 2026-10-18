@@ -69,11 +69,11 @@ def recomb(
     ),
     min_region: int | None = typer.Option(
         None, "--min-region",
-        help="Minimum length in alignment columns of an HMM segment before its reported "
-        "span is trimmed to the sites that support the donor, and of a heuristic region "
-        "(hmm, heuristic; also the run length used by lineage clustering and sibling "
-        "exclusion). A reported HMM region can be shorter; 3seq, maxchi, bootscan, "
-        "geneconv and barcode do not apply it. Default: the window size.",
+        help="Minimum length, in query bp, of every reported region, whichever caller "
+        "found it. When unset, only the HMM applies a floor: it drops segments shorter "
+        "than the window size before testing them, and the other callers report "
+        "regions of any length. A donor-absent coverage row is not a caller's region "
+        "and is not bounded by this option.",
     ),
     margin: float = typer.Option(
         0.0, "--margin",

@@ -72,14 +72,11 @@ recombination between near-identical lineages) is flagged as marginal rather tha
 dropped. The legacy `--method heuristic` (margin / merge-gap / min-region) is kept
 for comparison.
 
-**Which options apply to which caller.** `--min-region` (default: the window size) is
-read by the HMM and the heuristic caller, and as the run length of lineage clustering and
-sibling exclusion. For the HMM it bounds the length of the segment before the reported
-span is trimmed (next paragraph), so a reported HMM region can be shorter than
-`--min-region`. 3SEQ, MaxChi, Bootscan, GENECONV and barcode do not apply it. `--margin`
-(a similarity fraction, 0-1) and `--merge-gap` are read by the heuristic caller only; the
-coverage diagnostic merges gaps within one window size whatever `--merge-gap` says. The
-`--help` text of each scoped option names the callers that read it.
+**Which options apply to which caller.** `--min-region` is described in its own paragraph
+below. `--margin` (a similarity fraction, 0-1) and `--merge-gap` are read by the
+heuristic caller only; the coverage diagnostic merges gaps within one window size
+whatever `--merge-gap` says. The `--help` text of each scoped option names the callers
+that read it.
 
 **The reported span is not the segment.** A segment is where the HMM path sat in the
 donor state. Once there, the path has no reason to leave while donor and major are
@@ -98,6 +95,16 @@ informative-site windowing is not the spacing of the first two windows.
 In the final table every row passes through the ensemble merge, which restates both
 `mean_sim_*` and `n_windows` over the row's own (for a merged row, the union) span, with
 `n_windows` counted in base-pair scan windows; `posterior_support` stays the best member's.
+
+**`--min-region`.** When given, it bounds every reported region: a region shorter than
+it, in query bases, is removed after the callers' regions are merged and before the
+agreement gate, whichever caller found it. A donor-absent coverage row is a statement
+about reference coverage rather than a region a caller called, is added afterwards, and
+is not bounded by it. When `--min-region` is not given, only the HMM applies a length
+floor, and only to its segments before they are trimmed (the window size): a trimmed HMM
+region can be shorter than a window, and 3SEQ, MaxChi, Bootscan and GENECONV report
+regions of any length -- finding tracts shorter than a window is what the site-based
+callers are for. Lineage clustering and sibling exclusion also read it, as a run length.
 
 ```
 Recombination regions (major parent: cowpox_KC813504):

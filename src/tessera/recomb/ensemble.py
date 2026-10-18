@@ -219,6 +219,22 @@ def filter_by_agreement(
     return [r for r, _ in kept], [b for _, b in kept], len(regions) - len(kept)
 
 
+def filter_by_length(
+    regions: list[Region], breakdown: list[dict], min_length: int
+) -> tuple[list[Region], list[dict], int]:
+    """Keep only regions at least ``min_length`` query bases long (``--min-region``).
+
+    Applied to the merged regions, so it bounds what is reported whichever caller found
+    a region; ``regions`` and ``breakdown`` are parallel and filtered together. Returns
+    the kept regions, their breakdown rows and how many were removed.
+    """
+    kept = [
+        (region, row) for region, row in zip(regions, breakdown, strict=True)
+        if region.length_bp >= min_length
+    ]
+    return [r for r, _ in kept], [b for _, b in kept], len(regions) - len(kept)
+
+
 def consensus_regions(
     per_method: dict[str, list[Region]],
     *,

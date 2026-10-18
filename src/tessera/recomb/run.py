@@ -25,7 +25,12 @@ from .coverage import (
     reconcile_gaps,
 )
 from .diagnostics import MIN_INFORMATIVE, corroborating_intervals, recombination_signal
-from .ensemble import consensus_regions, filter_by_agreement, reconcile_major
+from .ensemble import (
+    consensus_regions,
+    filter_by_agreement,
+    filter_by_length,
+    reconcile_major,
+)
 from .hmm import DEFAULT_JUMP_RATE
 from .reattribute import reattribute_donors
 from .regions import DEFAULT_METHODS, Region, RegionParams, call_regions
@@ -92,9 +97,10 @@ class RecombParams:
     # base-pair window dilutes the few discriminating sites). 8% sits below the
     # genotype-level panels that work in base-pair mode (measles ~10%, HIV ~37%).
     informative_max_fraction: float = 0.08
-    # Region-length floor (None -> the window size). Read by the HMM, on the segment
-    # before its span is trimmed, by its lineage clustering and sibling exclusion, and by
-    # the heuristic caller; the site callers do not apply it.
+    # Region-length floor. When given, every merged region shorter than it is removed
+    # (donor_absent coverage rows are not callers' regions and are not bounded); when
+    # None, the HMM drops segments shorter than the window size and the site callers are
+    # not bounded.
     min_region: int | None = None
     # Heuristic-only thresholds. merge_gap is not passed to the coverage diagnostic,
     # which merges gaps within one window size.
@@ -476,6 +482,18 @@ def run_recomb(
         scan=(bp_result, params.window_size),
         clusters=shared_clusters,
     )
+    # --min-region, when given, bounds the length of every reported region. Left unset,
+    # only the HMM applies a floor (to its segments, before trimming); the site callers
+    # exist to find tracts shorter than a window and are not bounded by default.
+    if params.min_region is not None:
+        regions, method_breakdown, too_short = filter_by_length(
+            regions, method_breakdown, params.min_region
+        )
+        if too_short:
+            logger.info(
+                "Removed %d region(s) shorter than --min-region %d bp.",
+                too_short, params.min_region,
+            )
     # Agreement gate: a region resting on a single caller is the weakest thing the
     # ensemble can report, so require corroboration when enough callers ran to give
     # it (clamped, so selecting one caller is not silently self-suppressing). This runs

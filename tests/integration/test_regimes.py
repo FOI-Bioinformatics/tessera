@@ -233,3 +233,38 @@ def test_duplicate_donor_on_a_near_identical_panel_is_one_row(tmp_path) -> None:
     assert len(hits) == 1
     assert hits[0]["minor_parent"] in {"R1", "R1_copy"}
     assert "hmm" in hits[0]["methods"].split(",")
+
+
+def test_min_region_bounds_every_callers_reported_length(tmp_path) -> None:
+    from tessera.recomb.run import RecombParams, run_recomb
+
+    seqs, (lo, hi) = rg.simulate_redundant(6001)  # a 1 kb tract, called by 3SEQ/MaxChi
+    msa = write_fasta(tmp_path / "mr.fasta", seqs)
+    lengths = {}
+    for label, min_region in (("default", None), ("bounded", 5000)):
+        out = tmp_path / label
+        run_recomb(RecombParams(msa=msa, output=out, query=rg.QUERY, plot_format="png",
+                                min_region=min_region), _LOG)
+        rows = rg._read_regions(out / "recombination_regions.tsv")
+        lengths[label] = [int(r["query_end"]) - int(r["query_start"]) for r in rows
+                          if r.get("donor_absent") != "yes"]
+    assert lengths["default"] and min(lengths["default"]) < 5000  # short tracts reported
+    assert all(n >= 5000 for n in lengths["bounded"])
+
+
+def test_min_region_is_applied_to_the_merged_span_before_the_agreement_gate(tmp_path) -> None:
+    # Review focus: --min-region with --min-methods 2. The filter is on merged regions,
+    # so a 3 kb event called by several callers survives a 2 kb floor even when one
+    # caller's own tract is shorter than the floor.
+    from tessera.recomb.run import RecombParams, run_recomb
+
+    seqs, (lo, hi) = rg.simulate_redundant(6001, tract=rg.RED_DONOR_TRACT)
+    msa = write_fasta(tmp_path / "mm.fasta", seqs)
+    out = tmp_path / "out"
+    run_recomb(RecombParams(msa=msa, output=out, query=rg.QUERY, plot_format="png",
+                            min_region=2000, min_methods=2), _LOG)
+    rows = [r for r in rg._read_regions(out / "recombination_regions.tsv")
+            if r.get("donor_absent") != "yes"]
+    assert len(rows) == 1
+    assert int(rows[0]["query_start"]) < hi and int(rows[0]["query_end"]) > lo
+    assert len(rows[0]["methods"].split(",")) >= 2
