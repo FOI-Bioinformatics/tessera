@@ -183,3 +183,20 @@ def test_hmm_terminal_tracts_report_a_window_count_for_the_span(tmp_path) -> Non
         assert abs(r.msa_start - tlo) <= 30 and abs(r.msa_end - thi) <= 30
         assert 1 <= r.n_windows <= (r.length_msa + 300) // 30 + 1
         assert 0.0 <= r.posterior_support <= 1.0
+
+
+# --- redundant lineages (near-duplicates on a divergent panel) ---------------
+
+def test_redundant_backbone_does_not_silence_the_hmm(tmp_path) -> None:
+    # Three near-duplicates of the backbone pooled into one lineage carried three times
+    # the evidence of the single donor genome D0, and the HMM lost a 1 kb tract it finds
+    # when the backbone is one genome.
+    seqs, (lo, hi) = rg.simulate_redundant(6001, backbone_copies=3)
+    result = compute_similarity(str(write_fasta(tmp_path / "rb.fasta", seqs)), rg.QUERY,
+                                WINDOW, STEP)
+    regions, major = _hmm_regions(result)
+    assert major.startswith("A")
+    donors = [r for r in regions if r.minor_parent == "D0"]
+    assert len(donors) == 1
+    assert donors[0].msa_start < hi and donors[0].msa_end > lo
+

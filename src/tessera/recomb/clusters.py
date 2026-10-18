@@ -4,9 +4,10 @@ Cold-start recruits many near-duplicate references per lineage. The HMM competes
 individual genomes, so duplicates tie every window -- defeating the sibling test and
 fragmenting the call. This module clusters the references into lineages and builds a
 pooled "view" of the similarity result whose labels are one representative per
-lineage, with each cluster's per-window evidence summed. The existing HMM and region
-caller consume that view verbatim, so the change is a front-end transform: with one
-genome per cluster the pooled view equals the input and behaviour is unchanged.
+lineage, with each cluster's per-window evidence averaged over its members (so a pooled
+lineage weighs as one genome). The existing HMM and region caller consume that view
+verbatim, so the change is a front-end transform: with one genome per cluster the pooled
+view equals the input and behaviour is unchanged.
 
 **Clustering is conservative: it merges only clearly near-identical duplicates.**
 Two references join the same lineage iff their per-window agreement (from the aligned
@@ -169,10 +170,18 @@ def clustered_view(
     """A representative-labelled view of ``result`` with per-cluster pooled evidence.
 
     Each cluster becomes one label (its representative) whose per-window
-    ``numerators``/``denominators`` are the element-wise sum over the cluster's
-    members; ``rows`` is left untouched (all member genomes remain), so the
-    downstream discordant-site test stays at genome level. Returns ``(view,
-    cluster_size)`` mapping each representative to its member count.
+    ``numerators``/``denominators`` are the element-wise **mean** over the cluster's
+    members, rounded to whole sites, so a pooled lineage carries one genome's worth of
+    evidence. The similarity is the ratio of the unrounded means, which equals the
+    pooled ratio of the sums. ``rows`` is left untouched (all member
+    genomes remain), so the downstream discordant-site test stays at genome level.
+    Returns ``(view, cluster_size)`` mapping each representative to its member count.
+
+    The mean, not the sum: the HMM emission is a log-likelihood over these counts and
+    pads every state to the largest count in the window. Summed counts gave a cluster of
+    k genomes k times the evidence of a single genome, and charged every singleton state
+    a padding penalty for the difference; three near-duplicates of the backbone were
+    enough to stop the HMM calling a 1 kb tract from a singleton donor.
     """
     n_win = len(result.positions)
     pooled_num: dict[str, list[int]] = {}
@@ -182,12 +191,14 @@ def clustered_view(
     for members in clusters:
         rep = _representative(result, members)
         cluster_size[rep] = len(members)
-        num = np.sum([result.numerators[m] for m in members], axis=0)
-        den = np.sum([result.denominators[m] for m in members], axis=0)
-        pooled_num[rep] = [int(x) for x in num]
-        pooled_den[rep] = [int(x) for x in den]
+        num = np.mean([result.numerators[m] for m in members], axis=0)
+        den = np.mean([result.denominators[m] for m in members], axis=0)
+        # Rounding moves a count by at most half a site per window, well inside the
+        # binomial noise of the window, and keeps the counts integers for every consumer.
+        pooled_num[rep] = [int(round(float(x))) for x in num]
+        pooled_den[rep] = [int(round(float(x))) for x in den]
         pooled_sim[rep] = [
-            (int(num[i]) / int(den[i])) if den[i] > 0 else float("nan") for i in range(n_win)
+            float(num[i] / den[i]) if den[i] > 0 else float("nan") for i in range(n_win)
         ]
     best_sim, best_label = _best_per_window(pooled_sim, n_win)
     view = replace(

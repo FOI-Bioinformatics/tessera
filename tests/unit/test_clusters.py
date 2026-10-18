@@ -5,6 +5,8 @@ from __future__ import annotations
 import random
 from pathlib import Path
 
+import pytest
+
 from tessera.recomb.analyze import analyze
 from tessera.recomb.clusters import (
     all_singletons,
@@ -97,16 +99,17 @@ def test_clustered_view_pools_counts_and_is_identity_for_singletons(tmp_path) ->
                "sib1": _mutate(query, 0.001, rng), "pa0": _mutate(lane_a, 0.001, rng)}
     result = _result(records, tmp_path)
 
-    # Pooling two members sums their per-window counts.
+    # Pooling two members averages their per-window counts (rounded to whole sites), so
+    # the pooled lineage carries one genome's worth of evidence; the similarity is the
+    # pooled ratio.
     view, sizes = clustered_view(result, [["sib0", "sib1"], ["pa0"]])
     rep = next(r for r, n in sizes.items() if n == 2)
     for i in range(len(result.positions)):
-        assert view.numerators[rep][i] == (
-            result.numerators["sib0"][i] + result.numerators["sib1"][i]
-        )
-        assert view.denominators[rep][i] == (
-            result.denominators["sib0"][i] + result.denominators["sib1"][i]
-        )
+        num = result.numerators["sib0"][i] + result.numerators["sib1"][i]
+        den = result.denominators["sib0"][i] + result.denominators["sib1"][i]
+        assert view.numerators[rep][i] == round(num / 2)
+        assert view.denominators[rep][i] == round(den / 2)
+        assert view.similarities[rep][i] == pytest.approx(num / den)
 
     # All-singleton view reproduces the input arrays exactly (backward compatibility).
     singleton_view, sizes2 = clustered_view(result, [["sib0"], ["sib1"], ["pa0"]])
@@ -168,3 +171,25 @@ class _Positions:
 
     def __init__(self, positions):
         self.positions = positions
+
+
+def test_a_pooled_cluster_carries_one_genomes_evidence(tmp_path) -> None:
+    # Four exact copies of one genome pooled into a lineage must emit as that genome
+    # does. Summed, the copies carried four times its evidence and every singleton state
+    # was charged log(0.5) for each site of the difference.
+    from tessera.recomb.hmm import _emission_matrix
+
+    lane_a, lane_b = _lanes()
+    query = lane_a[:R1] + lane_b[R1:]
+    rng = random.Random(12)
+    a = _mutate(lane_a, 0.02, rng)
+    records = {"query": query, "A": a, "A1": a, "A2": a, "A3": a,
+               "D": _mutate(lane_b, 0.02, rng)}
+    result = _result(records, tmp_path)
+    view, sizes = clustered_view(result, [["A", "A1", "A2", "A3"], ["D"]])
+    assert sizes == {"A": 4, "D": 1}
+    assert view.numerators["A"] == result.numerators["A"]
+    assert view.denominators["A"] == result.denominators["A"]
+    pooled = _emission_matrix(view, ["A", "D"], 0.95)
+    single = _emission_matrix(result, ["A", "D"], 0.95)
+    assert pooled == pytest.approx(single)
