@@ -304,9 +304,11 @@ references are recruited, not how the scan calls regions:
 
 Callers (audit 4). Caller-statistics fixes from the fourth audit
 (`docs/superpowers/specs/2026-10-12-audit-swot-gap.md`, items A1-A14, B2, B4). The
-lineage-cluster changes (A1, A2), the descent floor (A3, A6), the last-window fix and the
-Bootscan null can change which regions are reported on panels with near-duplicate
-references or at the genome ends; the others change reported values only. Measured
+lineage-cluster changes (A1, A2), the descent floor (A3, A6), the HMM segment padding
+(B4, A10), the last-window fix and the Bootscan null can change which regions are reported
+on panels with near-duplicate references, at the genome ends, or wherever a padded segment
+moves across the sign test's significance threshold; the others change reported values
+only. Measured
 effects on the offline harnesses are listed after the bullets.
 
 - **Near-duplicate references could silence the HMM.** A lineage cluster's per-window
@@ -327,7 +329,11 @@ effects on the offline harnesses are listed after the bullets.
   `n_windows` was a maximum over different units. Both are restated over the merged span;
   `n_windows` counts base-pair windows for every caller. (A11, A8)
 - **HMM `n_windows` and `posterior_support` described the untrimmed segment**; they now
-  describe the reported span. Segment ends are padded by the median window step. (B4, A10)
+  describe the reported span. Segment ends are also padded by the median window step
+  rather than by the gap between the first two windows, which is not typical under
+  informative-site windowing. That padding moves the segment, and so can change whether
+  the HMM's sign test over it reaches significance -- it changes which HMM regions are
+  called, not only the values reported for them. (B4, A10)
 - **Bootscan's permutation null dropped wins** when the window count was not a multiple of
   the block, giving anti-conservative p-values. (A5)
 - **The last `(width - window) % step` columns were in no window**, so a tract or a
@@ -351,10 +357,14 @@ What this measurably changed, on the simulated and curated harnesses (10 replica
   and after, but that run now reports two rather than one. At `--min-methods 2` there is
   none either way.
 - `n_windows` moves in 13 of the 21 curated regions and in both directions, and
-  `mean_sim_minor` in 4 of them at the fourth decimal, both by design.
-- One curated region (`sarscov2_xbb`) loses its HMM vote and 406 bp of extent, because
-  the HMM's posterior is now scored over its own segment's windows rather than the merged
-  span. The region is still called by three callers and the dataset still passes.
+  `mean_sim_minor` in 4 of them -- two in the third decimal (0.8982 to 0.8996, 0.8347 to
+  0.8363) and two in the fourth -- both by design.
+- One curated region (`sarscov2_xbb`) loses its HMM vote and 406 bp of extent. The cause
+  is the segment padding above, not the restated statistics: reverting only the
+  median-step pad restores the HMM to the row's callers (`3seq,maxchi` becomes
+  `hmm,3seq,maxchi`) and
+  the extent with it, because the padded segment's sign test falls from p 0.03 to p 0.23.
+  The region is still called by three callers and the dataset still passes.
 - No curated verdict changes, and `hcv_clonal_1b` fails before and after (a pre-existing
   12 bp MaxChi region on a clonal control).
 

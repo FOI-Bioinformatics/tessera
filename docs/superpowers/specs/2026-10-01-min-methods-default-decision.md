@@ -19,6 +19,14 @@ false positive by construction. Replicate counts are small; the intervals are wi
 
 Source files: `validation/data/audit-c/task9/spec_mm1.txt`, `spec_mm2.txt`.
 
+**These figures predate the fourth audit's caller-statistics branch**, which lowered them:
+putting the shallow donors into the triplet callers' Benjamini-Hochberg families moved
+`--min-methods 1` to 16/40 (19 regions; hmm = 16, maxchi = 3, 3seq = 1) and
+`--min-methods 2` to 1/40, measured the same way at 10 replicates
+(`validation/data/audit-g/final/spec_mm1.txt`, `spec_mm2.txt`). The decision below was
+taken on the rows above; the direction of every argument is unchanged, and the gate is
+still not free of false regions.
+
 The agreement gate is therefore not free of false regions at this replicate count (2/40),
 and it lost one of ten positive-control detections.
 

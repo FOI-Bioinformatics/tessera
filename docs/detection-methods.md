@@ -98,7 +98,8 @@ segment's ends are padded by the median spacing between windows, which under
 informative-site windowing is not the spacing of the first two windows.
 In the final table every row passes through the ensemble merge, which restates both
 `mean_sim_*` and `n_windows` over the row's own (for a merged row, the union) span, with
-`n_windows` counted in base-pair scan windows; `posterior_support` stays the best member's.
+`n_windows` counted in base-pair scan windows; `posterior_support` stays the best
+member's.
 
 **A posterior at a genome end reads high.** Windows start every `--window-step` and one
 further window is placed flush with the alignment end, so that the last

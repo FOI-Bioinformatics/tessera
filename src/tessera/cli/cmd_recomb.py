@@ -75,7 +75,9 @@ def recomb(
         "and the site callers report regions of any length. A donor-absent coverage row "
         "is not a caller's region: it is not bounded, and removing a short region can "
         "leave a coverage gap with nothing overlapping it, so a bounded run can report "
-        "a donor-absent row that an unbounded one did not.",
+        "a donor-absent row that an unbounded one did not. It also sets the shortest "
+        "run lineage clustering will treat as a region, and the shortest segment the "
+        "sibling test examines; both use the window size when it is unset.",
     ),
     margin: float = typer.Option(
         0.0, "--margin",
