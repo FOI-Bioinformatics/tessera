@@ -58,7 +58,8 @@ def median_window_step(result) -> int:
     Converting a base-pair threshold like ``--min-region`` into a window count needs
     the spacing between windows. Under base-pair windowing the gaps equal
     ``window_step`` except the last, which is shorter when a final window is placed
-    flush with the alignment end; the median is unmoved by that one gap. Under
+    flush with the alignment end; from three gaps up the median ignores that one, and
+    with exactly two it is their mean, so a three-window alignment reads short. Under
     **informative-site windowing** -- automatic below ~8 % divergence, which is
     exactly where the low-divergence pathogens (mpox, VZV, ebola, within-Omicron) are
     analysed -- ``positions`` are the midpoints of informative-site windows, and their

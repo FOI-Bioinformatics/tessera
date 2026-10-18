@@ -199,11 +199,18 @@ def _read_alignment(msa_path: str) -> dict[str, np.ndarray]:
 
 
 def _window_starts(width: int, window: int, step: int) -> list[int]:
-    """Window start columns: every ``step``, plus one window flush with the end.
+    """Window start indices: every ``step``, plus one window flush with the end.
 
-    Without the final window the last ``(width - window) % step`` columns fell in no
+    Without the final window the last ``(width - window) % step`` positions fell in no
     window at all (499 of 5999 columns at window 1000, step 500), so a tract there was
     invisible to every window-based caller and to the coverage diagnostic.
+
+    The indices are alignment columns for the base-pair scan and informative-site ranks
+    for the informative-site scan, which uses the same grid over its own sites. The
+    final window overlaps its predecessor by more than ``window - step``, and where
+    ``step`` exceeds ``window`` -- a deliberately sparse grid -- it can overlap it
+    heavily; every consumer either reads the spans directly or takes a median over the
+    gaps, so this changes coverage, not spacing.
     """
     starts = list(range(0, width - window + 1, step))
     if starts and starts[-1] != width - window:

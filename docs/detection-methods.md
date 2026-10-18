@@ -96,6 +96,21 @@ In the final table every row passes through the ensemble merge, which restates b
 `mean_sim_*` and `n_windows` over the row's own (for a merged row, the union) span, with
 `n_windows` counted in base-pair scan windows; `posterior_support` stays the best member's.
 
+**A posterior at a genome end reads high.** Windows start every `--window-step` and one
+further window is placed flush with the alignment end, so that the last
+`(width - window) % step` columns fall inside a window at all. That final window can
+share up to `window - 1` columns with its predecessor, and the HMM treats each window as
+an independent observation, so the evidence in those shared columns is counted twice.
+A region whose tract reaches a genome end therefore carries a higher
+`posterior_support` than the same tract elsewhere: a 500 bp tail tract measured 0.52 on
+a 20 000-column alignment that fits the window grid and 0.9993 on a 20 001-column one
+that does not. Whether the region is called is decided by the sign test over the
+segment's columns, not by the posterior, and null runs over tail-only segments produced
+no extra regions; it is the reported figure that is inflated, so read a
+`posterior_support` near 1.0 on a region touching an end as the weaker claim it is. The
+same double count reaches the sibling test's beaten-run fraction, which rose from 0.051
+to 0.075 on a 1400 bp tail case.
+
 **`--min-region`.** When given, it bounds every reported region: a region shorter than
 it, in query bases, is removed after the callers' regions are merged and before the
 agreement gate, whichever caller found it. A donor-absent coverage row is a statement
