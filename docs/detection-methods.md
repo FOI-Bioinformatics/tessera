@@ -245,13 +245,14 @@ their p-values have a Spearman correlation of 0.95 (0.88 over the 143 walks MaxC
 permutes, i.e. excluding donors whose descent is too shallow and which receive p = 1),
 and at alpha 0.05 both reject in 3.0 % of walks where independence would give 0.12 %:
 MaxChi rejects in 90 % of the walks where 3SEQ does. Each is calibrated on its own
-(3.3 % and 3.7 % at a nominal 5 %). A region found by 3SEQ and MaxChi together is
-therefore one triplet signal tested twice, not corroborated twice, and `--min-methods 2`
-satisfied by that pair alone adds little to either caller. The callers that look at
-different evidence are the HMM (per-window copying likelihood over the whole panel,
-confirmed by a sign test on the segment), Bootscan (per-window bootstrap of the closest
-reference, with a run-length null) and the 3SEQ/MaxChi pair (one tract of the triplet
-walk); how far those three are independent of each other has not been measured.
+(3SEQ 3.3 %; MaxChi 3.7 % without its depth floor and 3.3 % with it; nominal 5 %). A
+region found by 3SEQ and MaxChi together is therefore one triplet signal tested twice,
+not corroborated twice, and `--min-methods 2` satisfied by that pair alone adds little
+to either caller. The callers that look at different evidence are the HMM (per-window
+copying likelihood over the whole panel, confirmed by a sign test on the segment),
+Bootscan (per-window bootstrap of the closest reference, with a run-length null) and
+the 3SEQ/MaxChi pair (one tract of the triplet walk); how far those three are
+independent of each other has not been measured.
 
 A donor whose descent is shallower than four sites is counted in MaxChi's
 Benjamini-Hochberg family with p = 1 rather than permuted, so MaxChi does not call

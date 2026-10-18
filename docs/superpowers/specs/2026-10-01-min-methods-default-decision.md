@@ -137,7 +137,8 @@ the two p-values have a Spearman correlation of 0.95 (0.88 over the 143 walks Ma
 permutes, excluding donors with a descent too shallow to permute, which receive p = 1);
 at alpha 0.05 both reject in 0.030 of walks against 0.0012 expected under independence,
 and MaxChi rejects in 0.90 of the walks where 3SEQ does. Both are individually
-calibrated (0.033 and 0.037 at a nominal 0.05). The two false regions that remained at
+calibrated (3SEQ 0.033; MaxChi 0.037 without its depth floor and 0.033 with it; nominal
+0.05). The two false regions that remained at
 `--min-methods 2` in the table above were exactly such a pair. For option A this means
 the agreement gate of two is weaker than it reads whenever the two agreeing callers are
 3SEQ and MaxChi; a gate that counted them as one vote is a further option (A'), not
@@ -153,9 +154,11 @@ The options, for the maintainer:
   (for example a permutation of marker positions), stated in the `--min-methods` help;
 - give it a null first, then count it.
 
-Nothing was measured for this: no harness selects the barcode caller, which is opt-in
-and needs a typed panel. Measuring it needs `run_hybrids.py` with `--method all` on
-typed panels.
+The barcode caller is exercised in the opt-in attribution comparison of
+`validation/run_hybrids.py` (the `+barcode` and `consensus+barcode` entries of
+`COMPARE_CONFIGS`; see `validation/README.md`), where it is recorded as inert on those
+datasets. What no harness measures is its effect on the `--min-methods` agreement gate,
+which is what this decision needs.
 
 ## Decision
 

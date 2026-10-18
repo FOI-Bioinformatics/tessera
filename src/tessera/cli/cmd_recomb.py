@@ -39,7 +39,7 @@ def recomb(
         "opt-in, and 'all' runs every one. Callers: "
         "hmm (HMM segmentation + a discordant-site "
         "significance test), 3seq (scan-aware triplet max-drawdown test; strong at low "
-        "divergence), maxchi (chi-square triplet test, complementary to 3seq), bootscan "
+        "divergence), maxchi (chi-square triplet test on the same tract as 3seq), bootscan "
         "(distance + bootstrap support for the closest parent), geneconv (longest "
         "uninterrupted donor-match run), barcode (clade-marker "
         "lineage attribution; needs typed references), heuristic (legacy margin/merge). "

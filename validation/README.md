@@ -746,7 +746,7 @@ decide PASS / FAIL / SKIP:
 MaxChi and Bootscan are part of the default ensemble because they raise confidence at no
 cost: on the earlier 18-run set, restricting to `hmm,3seq` (`HARNESS_METHODS=hmm,3seq`) gave
 the same verdicts but corroborated the donor in only 12 of 18 cases, whereas the four-caller
-default reached 17 -- the two extra independent callers add agreement with no regression and
+default reached 17 -- the two extra callers add agreement with no regression and
 no new false positives. Adding the legacy heuristic (`HARNESS_METHODS=all`) does not change
 either number. `--method hmm,3seq` is the lighter option for large genomes (Bootscan's
 bootstrap is the main added cost).
