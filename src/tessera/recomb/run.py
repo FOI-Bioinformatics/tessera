@@ -65,7 +65,7 @@ class RecombParams:
     # Region calling. The default ensemble runs the hmm and 3seq callers and merges
     # their regions into a consensus; a single-method tuple reproduces one caller.
     methods: tuple[str, ...] = DEFAULT_METHODS
-    # Callers that must independently find a region before it is reported; clamped to the
+    # Callers that must each find a region before it is reported; clamped to the
     # number of callers actually run. Raising it to 2 is a real precision/recall trade and
     # the right setting depends on the panel, so the default reports the union.
     #
