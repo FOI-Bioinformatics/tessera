@@ -156,4 +156,4 @@ def test_barcode_and_one_state_hmm_are_both_reported_not_run(tmp_path: Path, log
     run = json.loads((out / "run_provenance.json").read_text())["run"]
     assert run["callers not run"].startswith("hmm (lineage clustering")
     assert "; barcode (it needs typed references" in run["callers not run"]
-    assert run["min methods (agreement gate)"] == "1 (requested 2; 1 caller ran)"
+    assert run["min methods (agreement gate)"] == "1 (requested 2; 1 caller could test)"

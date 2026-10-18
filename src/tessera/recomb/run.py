@@ -511,8 +511,9 @@ def run_recomb(
     gate_lowered = (bool(callers_not_run) or hmm_one_state) and min_agree < params.min_methods
     if gate_lowered:
         logger.warning(
-            "--min-methods %d cannot be met: %d caller(s) ran. The agreement gate used "
-            "is %d, so regions found by fewer callers than requested are reported.",
+            "--min-methods %d cannot be met: %d caller(s) could test. The agreement "
+            "gate used is %d, so regions found by fewer callers than requested are "
+            "reported.",
             params.min_methods, n_ran, min_agree,
         )
     regions, method_breakdown, suppressed = filter_by_agreement(
@@ -646,8 +647,10 @@ def run_recomb(
         # --min-methods 2 or --no-cluster-lineages is indistinguishable from a default
         # run in the record.
         "min methods (agreement gate)": (
+            # "could test", not "ran": a one-state HMM executed but could not call a
+            # region, so counting it as having run would overstate the corroboration.
             f"{min_agree} (requested {params.min_methods}; {n_ran} caller"
-            f"{'' if n_ran == 1 else 's'} ran)" if gate_lowered else str(min_agree)
+            f"{'' if n_ran == 1 else 's'} could test)" if gate_lowered else str(min_agree)
         ),
         "sibling exclusion": "on" if params.exclude_siblings else "off",
         "lineage clustering": "on" if params.cluster_lineages else "off",

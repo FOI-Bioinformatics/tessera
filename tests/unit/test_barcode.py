@@ -169,7 +169,7 @@ def test_a_lowered_agreement_gate_is_logged_and_recorded(tmp_path: Path) -> None
     out = _run(tmp_path, log, methods=("3seq", "barcode"), min_methods=2)
     assert any("--min-methods 2" in m and "1 caller" in m for m in warnings)
     run = json.loads((out / "run_provenance.json").read_text())["run"]
-    assert run["min methods (agreement gate)"] == "1 (requested 2; 1 caller ran)"
+    assert run["min methods (agreement gate)"] == "1 (requested 2; 1 caller could test)"
 
 
 def test_barcode_not_run_on_a_typed_panel_without_marked_clades(tmp_path: Path) -> None:

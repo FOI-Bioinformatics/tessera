@@ -62,7 +62,7 @@ def test_a_one_state_hmm_does_not_count_toward_the_agreement_gate(tmp_path, logg
     assert all(r["methods"] == "3seq" for r in called)
     gate = json.loads((out / "run_provenance.json").read_text())["run"][
         "min methods (agreement gate)"]
-    assert gate == "1 (requested 2; 1 caller ran)"
+    assert gate == "1 (requested 2; 1 caller could test)"
 
 
 def test_a_testable_hmm_still_counts(tmp_path, logger) -> None:

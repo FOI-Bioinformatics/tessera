@@ -28,6 +28,10 @@ def test_min_region_names_its_callers_and_what_it_bounds() -> None:
     assert "donor-absent" in text
 
 
-def test_margin_and_merge_gap_are_marked_heuristic_only() -> None:
+def test_margin_is_marked_heuristic_only_and_merge_gap_names_both_callers() -> None:
     assert "(heuristic only;" in _help("recomb", "--margin")
     assert "a fraction, 0-1" in _help("recomb", "--margin")
+    # --merge-gap is no longer heuristic-only: it also merges coverage gaps.
+    merge_gap = _help("recomb", "--merge-gap")
+    assert "heuristic caller" in merge_gap and "coverage gaps" in merge_gap
+    assert "heuristic only" not in merge_gap
