@@ -1,13 +1,12 @@
 """MaxChi / Chimaera caller (Maynard Smith 1992; RDP family).
 
 A second triplet test on the same discriminating-site +/-1 walk the 3SEQ caller uses
-(:func:`tessera.recomb.threeseq.triplet_steps`), but with an independent statistic. 3SEQ
+(:func:`tessera.recomb.threeseq.triplet_steps`), but with a different statistic. 3SEQ
 asks whether the minor-matching sites form a deep contiguous *run* (maximum drawdown);
-MaxChi asks whether the **proportion** of minor matches differs sharply inside a tract
-versus outside it -- a 2x2 chi-square. The two are sensitive to different mosaics (a
-shallow-but-wide tract has a weak drawdown but a strong proportion shift, and vice
-versa), so in an ensemble a region significant under *both* nulls is corroborated by two
-independent tests, exactly as RDP treats MaxChi and 3SEQ as separate methods.
+MaxChi asks whether the **proportion** of minor matches inside that tract differs from
+the rest -- a 2x2 chi-square. Both score the same tract (``max_descent``), so they are
+not independent tests: their p-values are strongly correlated under the clonal null (see
+docs/detection-methods.md), and a region found by both rests on one triplet signal.
 
 The candidate tract is the same maximal minor run 3SEQ localises (reusing
 :func:`max_descent`); the significance is the chi-square of the tract's major:minor

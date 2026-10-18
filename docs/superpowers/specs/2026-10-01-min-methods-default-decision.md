@@ -127,6 +127,36 @@ the mechanism, but the form measured here is not ready: it cost a real HMM call 
 coarsened p-values. The audit's suggestion is to take C now (it is documentation only)
 and treat B as a design task of its own, gated on the hybrid harness.
 
+## Addendum (2026-10-12, audit 4): what a vote is worth
+
+Two findings of the fourth audit bear on this decision. Neither changes a default.
+
+**3SEQ and MaxChi are one signal, not two (audit item A12).** MaxChi computes its
+chi-square over the tract 3SEQ's maximum descent finds. On 300 simulated clonal walks
+the two p-values have a Spearman correlation of 0.95 (0.88 over the 143 walks MaxChi
+permutes, excluding donors with a descent too shallow to permute, which receive p = 1);
+at alpha 0.05 both reject in 0.030 of walks against 0.0012 expected under independence,
+and MaxChi rejects in 0.90 of the walks where 3SEQ does. Both are individually
+calibrated (0.033 and 0.037 at a nominal 0.05). The two false regions that remained at
+`--min-methods 2` in the table above were exactly such a pair. For option A this means
+the agreement gate of two is weaker than it reads whenever the two agreeing callers are
+3SEQ and MaxChi; a gate that counted them as one vote is a further option (A'), not
+measured here.
+
+**The barcode caller votes without a significance test (audit item A14).** A barcode
+region has a support and no p-value, q-value or test, yet counts toward `--min-methods`.
+The options, for the maintainer:
+
+- keep it counting (status quo): a typed panel's barcode call corroborates like any
+  other caller;
+- record barcode in `methods` but do not count it toward the gate until it has a null
+  (for example a permutation of marker positions), stated in the `--min-methods` help;
+- give it a null first, then count it.
+
+Nothing was measured for this: no harness selects the barcode caller, which is opt-in
+and needs a typed panel. Measuring it needs `run_hybrids.py` with `--method all` on
+typed panels.
+
 ## Decision
 
 _To be filled in by the maintainer: option chosen, date, and the harness numbers it was

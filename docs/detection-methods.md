@@ -11,7 +11,8 @@ diagnostic that runs for every method.
 The callers are complementary: 3SEQ recovers short low-divergence tracts the HMM
 segmentation dilutes (the `cryptic_insert` example), while the HMM localizes breakpoints
 better on divergent parents (the `divergent` example); MaxChi and Bootscan add two more
-independent votes. By default Tessera runs **four** of them
+votes, though not independent ones (see the MaxChi section). By default Tessera runs
+**four** of them
 (`--method hmm,3seq,maxchi,bootscan`) and merges their regions into one consensus,
 sharing the single similarity scan so the extra callers are cheap. On the synthetic
 harness this leaves the verdict set unchanged but corroborates the donor in 17 of 18
@@ -40,10 +41,12 @@ divergence only the HMM has power at all, so requiring two of them is structural
 impossible in exactly the regime where detection is hardest. Raise `--min-methods` when
 your panel carries near-duplicate references and you want precision; leave it at 1 for a
 curated panel. The threshold is clamped to the number of callers actually run, and any
-suppressed count is logged rather than silently dropped.
+suppressed count is logged rather than silently dropped. Two of the default callers,
+3SEQ and MaxChi, score the same tract (see the MaxChi section), so a region found by
+those two alone meets a gate of two without independent corroboration.
 
-The default ensemble's two further callers are **MaxChi** (a chi-square triplet test,
-complementary to 3SEQ) and **Bootscan** (a distance + bootstrap method that yields a
+The default ensemble's two further callers are **MaxChi** (a chi-square triplet test
+on the same tract as 3SEQ) and **Bootscan** (a distance + bootstrap method that yields a
 support for the closest parent). Select callers with a comma list or `all`: `--method
 hmm,3seq,maxchi,bootscan` (default), `--method hmm` (one caller, reproducing the
 single-method report), `--method hmm,3seq` (the two fastest), or `--method all` (every
@@ -232,13 +235,22 @@ the null accounts for scanning every breakpoint it does not over-call.
 ## MaxChi caller (`--method maxchi`, chi-square triplet test)
 
 A third triplet caller after Maynard Smith (1992) (the RDP family), on the same
-discriminating-site +1/-1 walk as 3SEQ but with an independent statistic: rather than
+discriminating-site +1/-1 walk as 3SEQ but with a different statistic: rather than
 the maximum *drawdown* it tests whether the **proportion** of donor matches differs
 sharply inside a tract versus outside it -- a 2x2 chi-square -- with a scan-aware
-permutation null. Drawdown and proportion are sensitive to different mosaics (a
-shallow-but-wide tract is weak under one and strong under the other), so MaxChi and 3SEQ
-are genuinely independent votes; a region significant under both is corroborated by two
-tests, exactly as RDP treats them as separate methods.
+permutation null. MaxChi scores the tract 3SEQ finds -- the same maximum descent of the
+same walk -- so the two are **not independent votes**. On 300 simulated clonal walks
+their p-values have a Spearman correlation of 0.95 (0.88 over the 143 walks MaxChi
+permutes, i.e. excluding donors whose descent is too shallow and which receive p = 1),
+and at alpha 0.05 both reject in 3.0 % of walks where independence would give 0.12 %:
+MaxChi rejects in 90 % of the walks where 3SEQ does. Each is calibrated on its own
+(3.3 % and 3.7 % at a nominal 5 %). A region found by 3SEQ and MaxChi together is
+therefore one triplet signal tested twice, not corroborated twice, and `--min-methods 2`
+satisfied by that pair alone adds little to either caller. The callers that look at
+different evidence are the HMM (per-window copying likelihood over the whole panel,
+confirmed by a sign test on the segment), Bootscan (per-window bootstrap of the closest
+reference, with a run-length null) and the 3SEQ/MaxChi pair (one tract of the triplet
+walk); how far those three are independent of each other has not been measured.
 
 A donor whose descent is shallower than four sites is counted in MaxChi's
 Benjamini-Hochberg family with p = 1 rather than permuted, so MaxChi does not call
@@ -300,6 +312,10 @@ the genome-level callers at low divergence. It is opt-in and needs typed referen
 untyped panel it cannot run, which is not the same as finding nothing: in an ensemble it is
 logged and shown as `not run` in the method comparison, and a run that selected only
 `barcode` is refused. It composes with `--pool-consensus` but needs only a typed panel.
+A barcode region carries a support but no p-value or q-value: the caller has no
+significance test, and its regions count toward `--min-methods` like any other caller's.
+Whether they should is an open decision
+(`docs/superpowers/specs/2026-10-01-min-methods-default-decision.md`).
 
 ## Parent-free recombination signal (PHI + Rmin)
 
