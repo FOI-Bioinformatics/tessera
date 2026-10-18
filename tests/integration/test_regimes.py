@@ -250,10 +250,16 @@ def test_min_region_bounds_every_callers_reported_length(tmp_path) -> None:
                           if r.get("donor_absent") != "yes"]
     assert lengths["default"] and min(lengths["default"]) < 5000  # short tracts reported
     assert all(n >= 5000 for n in lengths["bounded"])
+    # ... and the floor removed them, rather than the list being empty for another reason.
+    assert len(lengths["bounded"]) < len(lengths["default"])
 
 
-def test_min_region_is_applied_to_the_merged_span_before_the_agreement_gate(tmp_path) -> None:
+def test_min_region_judges_the_merged_span_not_each_callers_own_tract(tmp_path) -> None:
     """Review focus: ``--min-region`` with ``--min-methods 2``, on the merged span.
+
+    This guards the span the filter judges, not its position relative to the agreement
+    gate: filtering before the gate and after it give the same output here, since the
+    filter does not change any region's method list.
 
     The floor is 3000, which on this panel only the HMM's own tract clears: 3seq and
     maxchi call 2981 bp, bootscan 2901 and geneconv 944. So a per-caller filter would
@@ -276,7 +282,7 @@ def test_min_region_is_applied_to_the_merged_span_before_the_agreement_gate(tmp_
                                      RegionParams.with_defaults(WINDOW, method=method))
         spans = [r.length_bp for r in regions if r.query_start < hi and r.query_end > lo]
         own[method] = max(spans) if spans else 0
-    assert own and max(own.values()) < floor, own  # no site caller clears the floor alone
+    assert max(own.values()) < floor, own  # no site caller clears the floor alone
 
     out = tmp_path / "out"
     run_recomb(RecombParams(msa=msa, output=out, query=rg.QUERY, plot_format="png",

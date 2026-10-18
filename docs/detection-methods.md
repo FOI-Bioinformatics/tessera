@@ -100,11 +100,20 @@ In the final table every row passes through the ensemble merge, which restates b
 it, in query bases, is removed after the callers' regions are merged and before the
 agreement gate, whichever caller found it. A donor-absent coverage row is a statement
 about reference coverage rather than a region a caller called, is added afterwards, and
-is not bounded by it. When `--min-region` is not given, only the HMM applies a length
-floor, and only to its segments before they are trimmed (the window size): a trimmed HMM
-region can be shorter than a window, and 3SEQ, MaxChi, Bootscan and GENECONV report
-regions of any length -- finding tracts shorter than a window is what the site-based
-callers are for. Lineage clustering and sibling exclusion also read it, as a run length.
+is not bounded by it. One consequence is worth knowing, because it runs against what the
+name suggests: a coverage gap is reported as a donor-absent row only when no called
+region overlaps it, so removing a short region can leave its gap with nothing
+overlapping, and a bounded run can report a donor-absent row that an unbounded run did
+not. On a redundant panel carrying a 1.2 kb block divergent from every reference,
+`--min-region 2000` drops two sub-kilobase site-caller rows and reports a 3.0 kb
+donor-absent row in their place -- which is the honest statement about that locus once
+the short calls are suppressed.
+
+When `--min-region` is not given, the HMM and the heuristic caller apply the window size
+as a floor -- the HMM to its segments before they are trimmed, so a trimmed HMM region
+can be shorter than a window -- and 3SEQ, MaxChi, Bootscan and GENECONV report regions of
+any length: finding tracts shorter than a window is what the site-based callers are for.
+Lineage clustering and sibling exclusion also read it, as a run length.
 
 ```
 Recombination regions (major parent: cowpox_KC813504):

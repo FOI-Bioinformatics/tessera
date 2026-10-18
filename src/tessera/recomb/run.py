@@ -98,9 +98,10 @@ class RecombParams:
     # genotype-level panels that work in base-pair mode (measles ~10%, HIV ~37%).
     informative_max_fraction: float = 0.08
     # Region-length floor. When given, every merged region shorter than it is removed
-    # (donor_absent coverage rows are not callers' regions and are not bounded); when
-    # None, the HMM drops segments shorter than the window size and the site callers are
-    # not bounded.
+    # (donor_absent coverage rows are not callers' regions and are not bounded; removing
+    # a short region can leave a coverage gap uncaveated, so a bounded run can report a
+    # donor-absent row an unbounded one did not); when None, the HMM and the heuristic
+    # caller use the window size and the site callers are not bounded.
     min_region: int | None = None
     # Heuristic-only thresholds. merge_gap is not passed to the coverage diagnostic,
     # which merges gaps within one window size.
