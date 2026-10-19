@@ -18,7 +18,7 @@ from __future__ import annotations
 import gzip
 import re
 from collections import Counter
-from collections.abc import Iterable, Mapping
+from collections.abc import Container, Iterable, Mapping
 from pathlib import Path
 
 from ..core.io import strip_sequence_extension
@@ -98,8 +98,13 @@ def genotype_from_title(title: str, organism: str | None = None) -> str | None:
 
 
 # What the pool builders write in the label slot when a genome carries no clade: an
-# empty note, Nextclade's "NA", and the marker given to a dataset's example sequences.
-_NO_POOL_LABEL = frozenset({"", "na", "example"})
+# empty note, Nextclade's "NA", the marker given to a dataset's example sequences, and
+# the value Nextclade writes for a tip it places in no clade ("unassigned"; the mumps
+# dataset uses "unclassified"). These are not clades, so a genome carrying one must not
+# be given a lineage of its own: on the mpox dataset "unassigned" is the reconstructed
+# ancestral sequence, which is a maximum-likelihood reconstruction rather than an
+# observed genome.
+_NO_POOL_LABEL = frozenset({"", "na", "example", "unassigned", "unclassified"})
 
 
 def label_from_pool_header(title: str) -> str | None:
@@ -117,14 +122,35 @@ def label_from_pool_header(title: str) -> str | None:
     return None if label.lower() in _NO_POOL_LABEL else label
 
 
+def _is_composite_clade(clade: str, clades: Container[str]) -> bool:
+    """True when ``clade`` is a ``/``-joined pair of clades that ``clades`` also holds.
+
+    A tip labelled ``Ib/IIb`` beside standalone ``Ib`` and ``IIb`` spans both and is no
+    lineage of its own; given one it wins a panel slot and competes as a donor, which on
+    a clonal query reads as a mosaic. The parts must themselves be clades of the same
+    pool, because a slash is also part of ordinary clade names: enterovirus D68 names a
+    clade ``A2/D`` while naming neither ``A2`` nor ``D``, and Ebola names
+    ``Ebov-2013/r2021``.
+    """
+    parts = [part.strip() for part in clade.split("/")]
+    return len(parts) > 1 and all(part in clades for part in parts)
+
+
 def pool_labels(files: Iterable[Path]) -> dict[str, str]:
-    """``label -> clade`` for pool genome files, read from their deflines."""
+    """``label -> clade`` for pool genome files, read from their deflines.
+
+    A clade that is a composite of two other clades in the same pool is left out
+    (:func:`_is_composite_clade`), so those genomes type as untyped and dereplicate by
+    ANI rather than seeding a lineage.
+    """
     out: dict[str, str] = {}
     for path in files:
         label = label_from_pool_header(first_header(path))
         if label:
             out[strip_sequence_extension(path.name)] = label
-    return out
+    clades = set(out.values())
+    return {label: clade for label, clade in out.items()
+            if not _is_composite_clade(clade, clades)}
 
 
 def first_header(path: Path) -> str:

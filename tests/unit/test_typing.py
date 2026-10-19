@@ -183,3 +183,29 @@ def test_build_lineage_map_pool_label_beats_title_and_yields_to_datasets_and_use
         "D1": ("DATASETS", "ncbi-datasets"),
         "U1": ("USER", "user"),
     }
+
+
+def test_label_from_pool_header_none_for_unassigned_labels():
+    # Nextclade writes "unassigned" (and mumps "unclassified") for a tip it places in
+    # no clade. Treating that as a clade gives it its own panel slot: on the mpox
+    # dataset it admitted the reconstructed ancestral sequence as a donor.
+    for header in ("ACC1 unassigned", "ACC1 Unassigned", "ACC1 unclassified"):
+        assert label_from_pool_header(header) is None
+
+
+def test_pool_labels_drops_a_composite_of_two_present_clades(tmp_path: Path):
+    # "Ib/IIb" alongside standalone Ib and IIb spans both, so it is not a lineage of
+    # its own. One such tip exists in the mpox pool and became the minor parent of a
+    # 2.7 kb false-positive region on a clonal clade-IIb query.
+    (tmp_path / "A.fasta").write_text(">A Ib\nACGT\n")
+    (tmp_path / "B.fasta").write_text(">B IIb\nACGT\n")
+    (tmp_path / "C.fasta").write_text(">C Ib/IIb\nACGT\n")
+    assert pool_labels(sorted(tmp_path.iterdir())) == {"A": "Ib", "B": "IIb"}
+
+
+def test_pool_labels_keeps_a_slash_clade_whose_parts_are_not_clades(tmp_path: Path):
+    # Enterovirus D68 names a real clade "A2/D" (364 genomes across two cached pools).
+    # Neither "A2" nor "D" is a clade there, so the name is not a composite.
+    (tmp_path / "A.fasta").write_text(">A A2/D\nACGT\n")
+    (tmp_path / "B.fasta").write_text(">B B3\nACGT\n")
+    assert pool_labels(sorted(tmp_path.iterdir())) == {"A": "A2/D", "B": "B3"}
