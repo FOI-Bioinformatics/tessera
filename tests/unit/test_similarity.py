@@ -242,3 +242,49 @@ def test_an_all_gap_row_is_unaligned_not_an_alphabet_problem(tmp_path: Path) -> 
     flagged = dict(low_canonical_records(rows, min_fraction=0.5))
     assert "unplaced" not in flagged
     assert flagged["unknown"] == 0.0
+
+
+def test_the_last_columns_fall_in_a_window(tmp_path: Path) -> None:
+    # width 5999, window 1000, step 500: starts 0..4500 end at column 5500, leaving 499
+    # columns in no window. A final window flush with the end covers them.
+    import random
+
+    rng = random.Random(1)
+    seq = "".join(rng.choice("ACGT") for _ in range(5999))
+    msa = write_fasta(tmp_path / "w.fasta", {"q": seq, "r1": seq, "r2": seq})
+    result = compute_similarity(str(msa), "q", window_size=1000, window_step=500)
+    assert result.positions[-1] + 500 == 5999  # the last window ends at the last column
+    assert result.positions[:-1] == [500 + 500 * i for i in range(10)]
+    assert len(result.similarities["r1"]) == len(result.positions) == 11
+    assert len(result.informative) == 11
+
+
+def test_an_exact_fit_adds_no_extra_window(tmp_path: Path) -> None:
+    # Guard: when (width - window) is a multiple of step nothing changes.
+    import random
+
+    rng = random.Random(2)
+    seq = "".join(rng.choice("ACGT") for _ in range(6000))
+    msa = write_fasta(tmp_path / "x.fasta", {"q": seq, "r1": seq, "r2": seq})
+    result = compute_similarity(str(msa), "q", window_size=1000, window_step=500)
+    assert result.positions == [500 + 500 * i for i in range(11)]
+
+
+def test_informative_windows_reach_the_last_informative_site(tmp_path: Path) -> None:
+    # The same trailing gap under informative-site windowing. 103 informative sites,
+    # 40 per window, step 5: starts 0..60 end at site 100.
+    import random
+
+    import numpy as np
+
+    rng = random.Random(3)
+    base = "".join(rng.choice("ACGT") for _ in range(3000))
+    other = list(base)
+    cols = sorted(rng.sample(range(3000), 103))
+    for c in cols:
+        other[c] = "A" if base[c] != "A" else "C"
+    msa = write_fasta(tmp_path / "i.fasta", {"q": base, "r1": base, "r2": "".join(other)})
+    result = compute_similarity_informative(str(msa), "q", info_window=40, info_step=5)
+    info = np.flatnonzero(_informative_column_mask(result.rows, ["r1", "r2"])).tolist()
+    assert len(info) == 103
+    assert result.window_spans[-1] == (info[63], info[102] + 1)

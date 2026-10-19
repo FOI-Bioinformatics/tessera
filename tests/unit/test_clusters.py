@@ -5,6 +5,8 @@ from __future__ import annotations
 import random
 from pathlib import Path
 
+import pytest
+
 from tessera.recomb.analyze import analyze
 from tessera.recomb.clusters import (
     all_singletons,
@@ -97,16 +99,17 @@ def test_clustered_view_pools_counts_and_is_identity_for_singletons(tmp_path) ->
                "sib1": _mutate(query, 0.001, rng), "pa0": _mutate(lane_a, 0.001, rng)}
     result = _result(records, tmp_path)
 
-    # Pooling two members sums their per-window counts.
+    # Pooling two members averages their per-window counts (rounded to whole sites), so
+    # the pooled lineage carries one genome's worth of evidence; the similarity is the
+    # pooled ratio.
     view, sizes = clustered_view(result, [["sib0", "sib1"], ["pa0"]])
     rep = next(r for r, n in sizes.items() if n == 2)
     for i in range(len(result.positions)):
-        assert view.numerators[rep][i] == (
-            result.numerators["sib0"][i] + result.numerators["sib1"][i]
-        )
-        assert view.denominators[rep][i] == (
-            result.denominators["sib0"][i] + result.denominators["sib1"][i]
-        )
+        num = result.numerators["sib0"][i] + result.numerators["sib1"][i]
+        den = result.denominators["sib0"][i] + result.denominators["sib1"][i]
+        assert view.numerators[rep][i] == round(num / 2)
+        assert view.denominators[rep][i] == round(den / 2)
+        assert view.similarities[rep][i] == pytest.approx(num / den)
 
     # All-singleton view reproduces the input arrays exactly (backward compatibility).
     singleton_view, sizes2 = clustered_view(result, [["sib0"], ["sib1"], ["pa0"]])
@@ -168,3 +171,111 @@ class _Positions:
 
     def __init__(self, positions):
         self.positions = positions
+
+
+def test_a_pooled_cluster_carries_one_genomes_evidence(tmp_path) -> None:
+    # Four exact copies of one genome pooled into a lineage must emit as that genome
+    # does. Summed, the copies carried four times its evidence and every singleton state
+    # was charged log(0.5) for each site of the difference.
+    from tessera.recomb.hmm import _emission_matrix
+
+    lane_a, lane_b = _lanes()
+    query = lane_a[:R1] + lane_b[R1:]
+    rng = random.Random(12)
+    a = _mutate(lane_a, 0.02, rng)
+    records = {"query": query, "A": a, "A1": a, "A2": a, "A3": a,
+               "D": _mutate(lane_b, 0.02, rng)}
+    result = _result(records, tmp_path)
+    view, sizes = clustered_view(result, [["A", "A1", "A2", "A3"], ["D"]])
+    assert sizes == {"A": 4, "D": 1}
+    assert view.numerators["A"] == result.numerators["A"]
+    assert view.denominators["A"] == result.denominators["A"]
+    pooled = _emission_matrix(view, ["A", "D"], 0.95)
+    single = _emission_matrix(result, ["A", "D"], 0.95)
+    assert pooled == pytest.approx(single)
+
+
+# --- a cluster covering the whole panel is not shared ----------------------
+
+def _whole_panel_pool(tmp_path: Path, *, refs: int, rate: float, donor: str,
+                      tract: tuple[int, int], length: int = 12_000,
+                      seed: int = 15) -> Path:
+    """A panel so uniform that clustering pools every reference into one lineage.
+
+    Under base-pair windowing every pair stays above the 98.5 % floor in every window,
+    which is the case documented in docs/detection-methods.md: it leaves the HMM a
+    single state. The query carries a real tract from ``donor``.
+    """
+    rng = random.Random(seed)
+    anc = [rng.choice(_BASES) for _ in range(length)]
+
+    def mut(seq: list[str], r: float) -> list[str]:
+        return [rng.choice([b for b in _BASES if b != c]) if rng.random() < r else c
+                for c in seq]
+
+    records = {f"ref_{i}": "".join(mut(anc, rate)) for i in range(refs)}
+    lo, hi = tract
+    query = list(records["ref_0"])
+    query[lo:hi] = list(records[donor][lo:hi])
+    msa = tmp_path / "pool.fasta"
+    write_fasta(msa, {"query": "".join(query), **records})
+    return msa
+
+
+def _pipeline_rows(msa: Path, out: Path, logger, **kwargs) -> list[dict[str, str]]:
+    import csv
+
+    from tessera.recomb.run import RecombParams, run_recomb
+
+    run_recomb(
+        RecombParams(msa=msa, output=out, query="query", plot_format="png",
+                     informative_sites=False, **kwargs),
+        logger,
+    )
+    with (out / "recombination_regions.tsv").open() as fo:
+        return list(csv.DictReader(fo, delimiter="\t"))
+
+
+def test_a_whole_panel_cluster_is_not_shared_with_the_merge(tmp_path, logger) -> None:
+    # Pooling the whole panel leaves the HMM one state (reported as "not run"), but it
+    # must not reach the merge: there it would make every pair of references the same
+    # donor, so two callers that named *different* donors would be reported as one row
+    # listing both -- agreement manufactured out of a disagreement, which also passes
+    # --min-methods 2. On this panel Bootscan names ref_3 and the site callers ref_6.
+    msa = _whole_panel_pool(tmp_path, refs=8, rate=0.001, donor="ref_3",
+                            tract=(4000, 8000))
+    rows = _pipeline_rows(
+        msa, tmp_path / "out", logger,
+        methods=("hmm", "3seq", "maxchi", "bootscan", "geneconv"),
+    )
+    by_donor = {r["minor_parent"]: set(r["methods"].split(",")) for r in rows}
+    assert set(by_donor) == {"ref_3", "ref_6"}, "the two donors must stay two rows"
+    assert by_donor["ref_3"] == {"bootscan"}
+    assert by_donor["ref_6"] == {"3seq", "maxchi", "geneconv"}
+
+
+def test_a_whole_panel_cluster_does_not_silence_bootscan(tmp_path, logger) -> None:
+    # Every candidate in the major parent's own group: no group can beat the major, so
+    # Bootscan could never claim a window. It must keep competing genomes here.
+    msa = _whole_panel_pool(tmp_path, refs=5, rate=0.0025, donor="ref_3",
+                            tract=(4000, 8000))
+    rows = _pipeline_rows(msa, tmp_path / "out", logger,
+                          methods=("3seq", "maxchi", "bootscan"))
+    assert rows
+    assert any("bootscan" in r["methods"].split(",") for r in rows)
+
+
+def test_a_whole_panel_cluster_still_leaves_the_hmm_one_state(tmp_path, logger) -> None:
+    # Invariant the other way round: the HMM keeps seeing the whole-panel cluster, so it
+    # is still reported as "not run" rather than competing every reference individually.
+    import json
+
+    msa = _whole_panel_pool(tmp_path, refs=8, rate=0.001, donor="ref_3",
+                            tract=(4000, 8000))
+    out = tmp_path / "out"
+    _pipeline_rows(msa, out, logger,
+                   methods=("hmm", "3seq", "maxchi", "bootscan", "geneconv"))
+    run = json.loads((out / "run_provenance.json").read_text())["run"]
+    assert run["callers not run"].startswith(
+        "hmm (lineage clustering pooled every reference"
+    )

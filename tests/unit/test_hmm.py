@@ -125,3 +125,34 @@ def test_hmm_does_not_split_a_single_source():
     segments, major = segment_query(result, jump_rate=1e-3)
     assert len(segments) == 1
     assert major == "refA"
+
+
+def _uneven_two_state_result():
+    """As _two_state_result, but the first two windows sit 3 columns apart, as the dense
+    5' end of an informative-site scan does; every later gap is 50 columns."""
+    result = _two_state_result()
+    positions = [22, 25] + [25 + 50 * i for i in range(1, len(result.positions) - 1)]
+    result.positions = positions
+    result.query_positions = positions
+    return result
+
+
+def test_segment_ends_use_the_median_window_spacing():
+    from tessera.recomb.clusters import median_window_step
+
+    result = _uneven_two_state_result()
+    segments, _ = segment_query(result, jump_rate=1e-3)
+    assert [s.state for s in segments] == ["refA", "refB"]
+    second = segments[1]
+    step = median_window_step(result)
+    assert step == 50
+    # The first gap (3 columns) is not the spacing of the scan.
+    assert second.msa_start == result.positions[second.start_window] - step
+    assert segments[0].msa_end == result.positions[segments[0].end_window] + step
+
+
+def test_segment_carries_its_per_window_posteriors():
+    segments, _ = segment_query(_two_state_result(), jump_rate=1e-3)
+    for seg in segments:
+        assert len(seg.window_posteriors) == seg.n_windows
+        assert abs(sum(seg.window_posteriors) / seg.n_windows - seg.mean_posterior) < 1e-4

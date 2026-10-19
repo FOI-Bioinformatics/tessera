@@ -76,3 +76,45 @@ def test_emission_loglik_prefers_fewer_mismatches_and_weights_n():
     assert math.isclose(
         emission_loglik(8, 10, 0.9), 8 * math.log(0.9) + 2 * math.log(0.1)
     )
+
+
+def _exact_log_tail(a: int, b: int) -> float:
+    """log P(X >= a), X ~ Bin(a + b, 0.5), from exact integer binomial coefficients."""
+    n = a + b
+    return math.log(sum(math.comb(n, i) for i in range(a, n + 1))) - n * math.log(2.0)
+
+
+def test_sign_test_pvalue_is_exact_above_a_thousand_sites():
+    # Above n = 1000 the test used a normal approximation whose 1 - cdf is exactly 0.0
+    # beyond z ~ 8.3, so 909:101 reported p = 0 while 900:100 reported 6.7e-162.
+    for a, b in ((909, 101), (1500, 300), (600, 500), (5200, 4800)):
+        got = sign_test_pvalue(a, b)
+        assert got > 0.0
+        assert math.isclose(math.log(got), _exact_log_tail(a, b), rel_tol=1e-9)
+
+
+def test_sign_test_pvalue_is_monotone_across_the_old_cliff():
+    # More discordant sites in the donor's favour can only lower the p-value.
+    assert 0.0 < sign_test_pvalue(909, 101) < sign_test_pvalue(900, 100)
+    assert 0.0 < sign_test_pvalue(1001, 0) < sign_test_pvalue(1000, 0)
+
+
+def test_sign_test_pvalue_below_the_float_range_is_floored_not_zero():
+    from tessera.recomb import stats
+
+    # The true value, about 1e-322, is below the smallest normal double.
+    assert stats.sign_test_pvalue(1827, 200) == stats.P_FLOOR > 0.0
+    assert stats.sign_test_log_pvalue(1827, 200) < math.log(stats.P_FLOOR)
+    assert math.isclose(stats.sign_test_log_pvalue(1827, 200), _exact_log_tail(1827, 200),
+                        rel_tol=1e-9)
+
+
+def test_sign_test_pvalue_one_sided_edges_at_large_n():
+    # Review focus: every site against the donor, or every site for it, far above 1000.
+    from tessera.recomb import stats
+
+    assert sign_test_pvalue(0, 5000) == 1.0
+    assert stats.sign_test_pvalue(5000, 0) == stats.P_FLOOR
+    assert math.isclose(sign_test_pvalue(1, 0), 0.5)
+    assert math.isclose(math.log(sign_test_pvalue(2500, 2500)), _exact_log_tail(2500, 2500),
+                        rel_tol=1e-9)

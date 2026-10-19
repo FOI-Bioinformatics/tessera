@@ -85,7 +85,7 @@ magnitude on real panels.
 
 ## Regimes the other harnesses do not sample
 
-`run_regimes.py` simulates two situations that fall outside `run_specificity.py`, whose
+`run_regimes.py` simulates situations that fall outside `run_specificity.py`, whose
 clades are about 16 % apart and so always run under base-pair windowing:
 
 | regime | what it asks |
@@ -93,6 +93,8 @@ clades are about 16 % apart and so always run under base-pair windowing:
 | `near_identical` with a tract | references about 0.2 % apart (the mpox / VZV regime, analysed under informative-site windowing): is the tract found, and is the HMM among the callers? |
 | `near_identical` clonal | the same panel with nothing recombined: every region is a false positive |
 | `sibling_tract` | the panel holds a sibling recombinant whose tract runs 600 bp past the query's; downstream of those 600 bp the donor and the backbone are identical, so nothing marks where the region ends |
+| `redundant_backbone` | the backbone lineage is three near-duplicates (~0.4 % apart) and a 1 kb tract comes from a single donor genome: is the HMM still among the callers? (audit 4, item A1) |
+| `redundant_donor` | the donor lineage is three near-duplicates and the tract is 3 kb: is the event one row, and are the HMM and Bootscan among its callers? (audit 4, item A2) |
 
 It defaults to `--min-methods 1`, the CLI default, so it reports what a user gets; pass
 `--min-methods 2` for the agreement gate and `--no-cluster-lineages` to switch lineage
@@ -476,7 +478,7 @@ callers on the left of the `|` divider and OpenRDP's methods on the right, both 
 Columns left of the `|` are Tessera's callers; right of it are OpenRDP's methods (`maxchi`/`bootscan`
 appear on both sides -- the same algorithm family in each tool).
 
-On these well-characterised real recombinants Tessera's four callers each fire independently, so no
+On these well-characterised real recombinants Tessera's four callers each fire, so no
 single method carries the ensemble here; the ensemble earns its keep on the harder cases -- short
 tracts, low divergence, multi-breakpoint mosaics -- where the callers disagree (see the synthetic
 hybrid harness `--compare` table below). OpenRDP concurs on the recombination in every case -- at
@@ -564,9 +566,10 @@ So the miss was **candidate selection, not windowing dilution or statistical pow
 these tracts because its all-vs-all scan tests every pair, so the donor is always a candidate.
 
 The fix (`src/tessera/recomb/{threeseq,maxchi,geneconv}.py`): draw candidates from `rank_datasets`
-(window winners first, then the remaining references), so a zero-win donor is still tested. The
-pre-Benjamini-Hochberg floors (`_MIN_DISCRIMINATING` / `_MIN_DESCENT` / min run) drop candidates
-without a real signal, so the extra donors cost little power. Re-measured:
+(window winners first, then the remaining references), so a zero-win donor is still tested.
+Candidates with fewer than 20 discriminating sites (`_MIN_DISCRIMINATING`) are not tested; since
+audit 4, 3SEQ tests every other donor and MaxChi counts shallow ones in its family with p = 1, so
+the extra donors enlarge the Benjamini-Hochberg family rather than escape it. Re-measured:
 
 | tract (x window) | dataset | before fix | after fix (default ensemble) |
 |---|---|---|---|
@@ -743,7 +746,7 @@ decide PASS / FAIL / SKIP:
 MaxChi and Bootscan are part of the default ensemble because they raise confidence at no
 cost: on the earlier 18-run set, restricting to `hmm,3seq` (`HARNESS_METHODS=hmm,3seq`) gave
 the same verdicts but corroborated the donor in only 12 of 18 cases, whereas the four-caller
-default reached 17 -- the two extra independent callers add agreement with no regression and
+default reached 17 -- the two extra callers add agreement with no regression and
 no new false positives. Adding the legacy heuristic (`HARNESS_METHODS=all`) does not change
 either number. `--method hmm,3seq` is the lighter option for large genomes (Bootscan's
 bootstrap is the main added cost).

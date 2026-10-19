@@ -198,8 +198,24 @@ def _read_alignment(msa_path: str) -> dict[str, np.ndarray]:
     return rows
 
 
-def _window_starts(width: int, window: int, step: int) -> range:
-    return range(0, width - window + 1, step)
+def _window_starts(width: int, window: int, step: int) -> list[int]:
+    """Window start indices: every ``step``, plus one window flush with the end.
+
+    Without the final window the last ``(width - window) % step`` positions fell in no
+    window at all (499 of 5999 columns at window 1000, step 500), so a tract there was
+    invisible to every window-based caller and to the coverage diagnostic.
+
+    The indices are alignment columns for the base-pair scan and informative-site ranks
+    for the informative-site scan, which uses the same grid over its own sites. The
+    final window overlaps its predecessor by more than ``window - step``, and where
+    ``step`` exceeds ``window`` -- a deliberately sparse grid -- it can overlap it
+    heavily; every consumer either reads the spans directly or takes a median over the
+    gaps, so this changes coverage, not spacing.
+    """
+    starts = list(range(0, width - window + 1, step))
+    if starts and starts[-1] != width - window:
+        starts.append(width - window)
+    return starts
 
 
 def _windowed_similarity(
@@ -271,7 +287,7 @@ def compute_similarity(
     # number of query bases in columns [0, k).
     query_cumulative = np.concatenate(([0], np.cumsum(query != GAP))).astype(int)
 
-    starts = list(_window_starts(width, window_size, window_step))
+    starts = _window_starts(width, window_size, window_step)
     positions = [start + window_size // 2 for start in starts]
     query_positions = [int(query_cumulative[c]) for c in positions]
 
@@ -360,7 +376,7 @@ def _informative_windowed_similarity(
     ratios: list[float] = []
     numers: list[int] = []
     denoms: list[int] = []
-    for start in range(0, n_info - info_window + 1, info_step):
+    for start in _window_starts(n_info, info_window, info_step):
         end = start + info_window
         denom = int(comp_cs[end] - comp_cs[start])
         numer = int(match_cs[end] - match_cs[start])
@@ -417,7 +433,7 @@ def compute_similarity_informative(
         )
 
     query_cumulative = np.concatenate(([0], np.cumsum(query != GAP))).astype(int)
-    starts = list(range(0, n_info - info_window + 1, info_step))
+    starts = _window_starts(n_info, info_window, info_step)
     positions = [int((info_cols[s] + info_cols[s + info_window - 1]) // 2) for s in starts]
     query_positions = [int(query_cumulative[c]) for c in positions]
     window_spans = [

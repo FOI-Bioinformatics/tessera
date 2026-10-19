@@ -11,19 +11,20 @@ diagnostic that runs for every method.
 The callers are complementary: 3SEQ recovers short low-divergence tracts the HMM
 segmentation dilutes (the `cryptic_insert` example), while the HMM localizes breakpoints
 better on divergent parents (the `divergent` example); MaxChi and Bootscan add two more
-independent votes. By default Tessera runs **four** of them
-(`--method hmm,3seq,maxchi,bootscan`) and merges their regions into one consensus,
-sharing the single similarity scan so the extra callers are cheap. On the synthetic
-harness this leaves the verdict set unchanged but corroborates the donor in 17 of 18
-cases (vs 12 with hmm,3seq alone), raising confidence without over-calling.
+votes, though not independent ones (see the MaxChi section). By default Tessera runs
+**four** of them (`--method hmm,3seq,maxchi,bootscan`) and merges their regions into one
+consensus, sharing the single similarity scan so the extra callers are cheap. On the
+synthetic harness this leaves the verdict set unchanged but corroborates the donor in 17
+of 18 cases (vs 12 with hmm,3seq alone), raising confidence without over-calling.
 
 The merge is transparent -- no combined score is invented. Two regions are the same
-event when they overlap in query coordinates and name the same donor -- the same minor
-parent genome, or, when the references are typed (a lineage map), the same **lineage**,
-so two callers that pick different representative genomes of one lineage still count as
-the same event and as agreement. The consensus region records exactly **which** callers
-found it (the report's *Method(s)* column and a *Method comparison* table) and whether
-the parent-free Hudson-Kaplan Rmin signal corroborates it.
+event when they overlap in query coordinates and name the same donor -- the same
+minor parent genome, two members of one lineage cluster (near-duplicates pooled for
+the HMM, below), or, when the references are typed (a lineage map), the same
+**lineage**, so two callers that pick different representative genomes of one lineage
+still count as the same event and as agreement. The consensus region records exactly
+**which** callers found it (the report's *Method(s)* column and a *Method comparison*
+table) and whether the parent-free Hudson-Kaplan Rmin signal corroborates it.
 
 Agreement can also be used as a **gate** (`--min-methods`), the control RDP5 exposes as
 "list events detected by more than N methods". It is **not on by default**, and the
@@ -38,11 +39,15 @@ The reason is that the callers have different applicability domains. At mpox's 0
 divergence only the HMM has power at all, so requiring two of them is structurally
 impossible in exactly the regime where detection is hardest. Raise `--min-methods` when
 your panel carries near-duplicate references and you want precision; leave it at 1 for a
-curated panel. The threshold is clamped to the number of callers actually run, and any
-suppressed count is logged rather than silently dropped.
+curated panel. The threshold is clamped to the number of callers that could test -- a
+barcode caller without typed references and an HMM left a single state by lineage
+clustering do not count -- and any suppressed count is logged rather than silently
+dropped. Two of the default callers, 3SEQ and MaxChi, score the same tract (see the
+MaxChi section), so a region found by those two alone meets a gate of two without
+independent corroboration.
 
-The default ensemble's two further callers are **MaxChi** (a chi-square triplet test,
-complementary to 3SEQ) and **Bootscan** (a distance + bootstrap method that yields a
+The default ensemble's two further callers are **MaxChi** (a chi-square triplet test
+on the same tract as 3SEQ) and **Bootscan** (a distance + bootstrap method that yields a
 support for the closest parent). Select callers with a comma list or `all`: `--method
 hmm,3seq,maxchi,bootscan` (default), `--method hmm` (one caller, reproducing the
 single-method report), `--method hmm,3seq` (the two fastest), or `--method all` (every
@@ -71,14 +76,11 @@ recombination between near-identical lineages) is flagged as marginal rather tha
 dropped. The legacy `--method heuristic` (margin / merge-gap / min-region) is kept
 for comparison.
 
-**Which options apply to which caller.** `--min-region` (default: the window size) is
-read by the HMM and the heuristic caller, and as the run length of lineage clustering and
-sibling exclusion. For the HMM it bounds the length of the segment before the reported
-span is trimmed (next paragraph), so a reported HMM region can be shorter than
-`--min-region`. 3SEQ, MaxChi, Bootscan, GENECONV and barcode do not apply it. `--margin`
-(a similarity fraction, 0-1) and `--merge-gap` are read by the heuristic caller only; the
-coverage diagnostic merges gaps within one window size whatever `--merge-gap` says. The
-`--help` text of each scoped option names the callers that read it.
+**Which options apply to which caller.** `--min-region` is described in its own paragraph
+below. `--margin` (a similarity fraction, 0-1) is read by the heuristic caller only;
+`--merge-gap` is read by the heuristic caller and also sets how far apart two coverage
+gaps may be and still be merged (default: one window size). The `--help` text of each
+scoped option names the callers that read it.
 
 **The reported span is not the segment.** A segment is where the HMM path sat in the
 donor state. Once there, the path has no reason to leave while donor and major are
@@ -90,9 +92,48 @@ searched to the end of the alignment, so a tract reaching a genome end is report
 that end. The sign test, its p-value and `support` are computed on the whole segment, so
 this step changes where a region is drawn and never whether it is called.
 `mean_sim_minor` / `mean_sim_major` are identity over the reported columns.
-`n_windows` and `posterior` describe the segment too, not the reported span: a trimmed
-region can list more windows than its length holds, and its posterior is the mean over
-the whole segment.
+`n_windows` and `posterior_support` are restated over the reported span as well: the
+segment's windows that overlap it, and their mean posterior for the donor state. A
+segment's ends are padded by the median spacing between windows, which under
+informative-site windowing is not the spacing of the first two windows.
+In the final table every row passes through the ensemble merge, which restates both
+`mean_sim_*` and `n_windows` over the row's own (for a merged row, the union) span, with
+`n_windows` counted in base-pair scan windows; `posterior_support` stays the best
+member's.
+
+**A posterior at a genome end reads high.** Windows start every `--window-step` and one
+further window is placed flush with the alignment end, so that the last
+`(width - window) % step` columns fall inside a window at all. That final window can
+share up to `window - 1` columns with its predecessor, and the HMM treats each window as
+an independent observation, so the evidence in those shared columns is counted twice.
+A region whose tract reaches a genome end therefore carries a higher
+`posterior_support` than the same tract elsewhere: a 500 bp tail tract measured 0.52 on
+a 20 000-column alignment that fits the window grid and 0.9993 on a 20 001-column one
+that does not. Whether the region is called is decided by the sign test over the
+segment's columns, not by the posterior, and null runs over tail-only segments produced
+no extra regions; it is the reported figure that is inflated, so read a
+`posterior_support` near 1.0 on a region touching an end as the weaker claim it is. The
+same double count reaches the sibling test's beaten-run fraction, which rose from 0.051
+to 0.075 on a 1400 bp tail case.
+
+**`--min-region`.** When given, it bounds every reported region: a region shorter than
+it, in query bases, is removed after the callers' regions are merged and before the
+agreement gate, whichever caller found it. A donor-absent coverage row is a statement
+about reference coverage rather than a region a caller called, is added afterwards, and
+is not bounded by it. One consequence is worth knowing, because it runs against what the
+name suggests: a coverage gap is reported as a donor-absent row only when no called
+region overlaps it, so removing a short region can leave its gap with nothing
+overlapping, and a bounded run can report a donor-absent row that an unbounded run did
+not. On a redundant panel carrying a 1.2 kb block divergent from every reference,
+`--min-region 2000` drops two sub-kilobase site-caller rows and reports a 3.0 kb
+donor-absent row in their place -- which is the honest statement about that locus once
+the short calls are suppressed.
+
+When `--min-region` is not given, the HMM and the heuristic caller apply the window size
+as a floor -- the HMM to its segments before they are trimmed, so a trimmed HMM region
+can be shorter than a window -- and 3SEQ, MaxChi, Bootscan and GENECONV report regions of
+any length: finding tracts shorter than a window is what the site-based callers are for.
+Lineage clustering and sibling exclusion also read it, as a run length.
 
 ```
 Recombination regions (major parent: cowpox_KC813504):
@@ -104,26 +145,37 @@ Recombination regions (major parent: cowpox_KC813504):
 ### Near-duplicate references (lineage clustering)
 
 A recruited panel often holds several near-identical genomes of one lineage. Competed
-individually they tie in every window and fragment the call, so the HMM caller first
-pools them (`--cluster-lineages`, on by default; hmm only). Two references are pooled
-when their identity stays at or above 98.5 % in every window, with no region-sized run
-below it. The pooled lineage competes as one state under the label of its best-covering
-member, and a region names that member. Clustering is skipped for panels of fewer than 4
-or more than 200 references.
+individually they tie in every window and fragment the call, so they are first
+grouped into lineage clusters (`--cluster-lineages`, on by default). The clusters are
+computed once and shared: the HMM pools them, Bootscan counts their bootstrap support
+together, and the merge treats two members of one cluster as one donor. Two
+references are pooled when their identity stays at or above 98.5 % in every window,
+with no region-sized run below it. The pooled lineage competes as one state under the
+label of its best-covering member, and a region names that member. Its evidence in
+each window is the mean over its members, not the sum: where the members are
+similarly covered, a lineage of five genomes weighs as one genome in the emission, so
+adding copies of a reference cannot outweigh a single-genome donor. A member with
+little data in a window lowers that window's mean, so a lineage holding a poorly
+covered genome weighs as less than one. Clustering is skipped for panels of fewer
+than 4 or more than 200 references.
 
 One limitation follows from the absolute threshold when identity is taken over all
-columns. On a panel in which *every* pair of references is at least 98.5 % identical in
-every window -- mpox, VZV and other sets below roughly 1.5 % divergence -- all references
-would pool into a single lineage and leave the HMM nothing to compete. Such panels are
-scanned under informative-site windowing (next section), and there the references are
-compared on the informative columns only, so distinct lineages stay apart. The limitation
-remains when base-pair windowing is forced on such a panel (`--no-informative-sites`):
-run with `--no-cluster-lineages` to keep the HMM's vote. The site-based callers (3SEQ,
-MaxChi) are unaffected either way. `run_provenance.json` records whether clustering was on.
+columns. On a panel in which *every* pair of references is at least 98.5 % identical
+in every window -- mpox, VZV and other sets below roughly 1.5 % divergence -- all
+references would pool into a single lineage and leave the HMM nothing to compete.
+Such a whole-panel cluster is the one case that is not shared: it reaches the HMM
+alone, so Bootscan and the merge go on competing and comparing individual genomes
+there -- a cluster holding every reference says nothing about which of them is the
+donor. Such panels are scanned under informative-site windowing (next section), and
+there the references are compared on the informative columns only, so distinct
+lineages stay apart. The limitation remains when base-pair windowing is forced on
+such a panel (`--no-informative-sites`): run with `--no-cluster-lineages` to keep the
+HMM's vote. The site-based callers (3SEQ, MaxChi) are unaffected either way.
+`run_provenance.json` records whether clustering was on.
 When clustering does leave the HMM a single state, the run says so: the HMM is reported
 as `not run` with this reason in the report header, the method comparison and
-`run_provenance.json` (`callers not run`), not as a caller that found nothing. It still
-counts toward `--min-methods`.
+`run_provenance.json` (`callers not run`), not as a caller that found nothing. It does
+not count toward `--min-methods`, as an unrunnable barcode caller does not.
 
 ### Low-divergence panels (intra-species sets, DNA viruses)
 
@@ -173,21 +225,42 @@ sustained run of donor matches inside the backbone, i.e. a mosaic. Its p-value i
 *exact* probability that a random arrangement of the same matches reaches that
 drawdown (a dynamic program over the walk depth, no dependency; a vectorised
 permutation falls back for very large inputs), Benjamini-Hochberg-corrected across
-the donors tested. Because it is purely informative-site based it keeps full power on
-near-identical panels -- it detects the mpox clade-I/II recombination where base-pair
-windowing finds nothing -- and because the null accounts for scanning every
-breakpoint it does not over-call.
+the donors tested. Every donor with at least 20 discriminating sites is tested and
+counted in that family, however shallow its descent: three consecutive donor matches
+among 189 sites are significant (p = 1.7e-4). Counting every donor tested keeps the
+correction honest, and makes it stricter than a family of survivors only: a region
+v1.2.0 reported may be absent because its q rose. Because it is purely
+informative-site based it keeps full power on near-identical panels -- it detects the
+mpox clade-I/II recombination where base-pair windowing finds nothing -- and because
+the null accounts for scanning every breakpoint it does not over-call.
 
 ## MaxChi caller (`--method maxchi`, chi-square triplet test)
 
 A third triplet caller after Maynard Smith (1992) (the RDP family), on the same
-discriminating-site +1/-1 walk as 3SEQ but with an independent statistic: rather than
+discriminating-site +1/-1 walk as 3SEQ but with a different statistic: rather than
 the maximum *drawdown* it tests whether the **proportion** of donor matches differs
 sharply inside a tract versus outside it -- a 2x2 chi-square -- with a scan-aware
-permutation null. Drawdown and proportion are sensitive to different mosaics (a
-shallow-but-wide tract is weak under one and strong under the other), so MaxChi and 3SEQ
-are genuinely independent votes; a region significant under both is corroborated by two
-tests, exactly as RDP treats them as separate methods.
+permutation null. MaxChi scores the tract 3SEQ finds -- the same maximum descent of the
+same walk -- so the two are **not independent votes**. On 300 simulated clonal walks
+their p-values have a Spearman correlation of 0.95 (0.88 over the 143 walks MaxChi
+permutes, i.e. excluding donors whose descent is too shallow and which receive p = 1),
+and at alpha 0.05 both reject in 3.0 % of walks where independence would give 0.12 %:
+MaxChi rejects in 90 % of the walks where 3SEQ does. Each is calibrated on its own
+(3SEQ 3.3 %; MaxChi 3.7 % without its depth floor and 3.3 % with it; nominal 5 %). A
+region found by 3SEQ and MaxChi together is therefore one triplet signal tested twice,
+not corroborated twice, and `--min-methods 2` satisfied by that pair alone adds little
+to either caller. The callers that look at different evidence are the HMM (per-window
+copying likelihood over the whole panel, confirmed by a sign test on the segment),
+Bootscan (per-window bootstrap of the closest reference, with a run-length null) and
+the 3SEQ/MaxChi pair (one tract of the triplet walk); how far those three are
+independent of each other has not been measured.
+
+A donor whose descent is shallower than four sites is counted in MaxChi's
+Benjamini-Hochberg family with p = 1 rather than permuted, so MaxChi does not call
+tracts that short even when its own null would find them significant (on a three-site
+tract among 189 discriminating sites its permutation p is 1.5e-4). 3SEQ tests those
+tracts exactly and cheaply, and does call them, which is why MaxChi does not spend
+20 000 permutations per donor on them.
 
 ## Bootscan caller (`--method bootscan`, distance + bootstrap)
 
@@ -197,7 +270,9 @@ candidate parent, then resamples the window's alignment columns with replacement
 **bootstrap support** of a parent is the fraction of resamples in which it is the query's
 closest match. A run of windows where a non-major parent's support clears 70 % and beats
 the backbone is a candidate region, carrying that support as a confidence the other
-callers express only as a p-value.
+callers express only as a p-value. Support is counted per lineage cluster: two
+near-duplicates of the donor each win about half the resamples, and neither alone
+would reach 70 %.
 
 Support alone is not evidence of recombination, though: it answers *which reference is
 closest here*, not *whether the query recombined*. Each candidate run is therefore also
@@ -240,6 +315,10 @@ the genome-level callers at low divergence. It is opt-in and needs typed referen
 untyped panel it cannot run, which is not the same as finding nothing: in an ensemble it is
 logged and shown as `not run` in the method comparison, and a run that selected only
 `barcode` is refused. It composes with `--pool-consensus` but needs only a typed panel.
+A barcode region carries a support but no p-value or q-value: the caller has no
+significance test, and its regions count toward `--min-methods` like any other caller's.
+Whether they should is an open decision
+(`docs/superpowers/specs/2026-10-01-min-methods-default-decision.md`).
 
 ## Parent-free recombination signal (PHI + Rmin)
 
@@ -355,14 +434,14 @@ The practical readings:
 | File | Contents |
 |---|---|
 | `report.html` | Self-contained report: run provenance, the region table, the per-dataset stats, and an embedded interactive plot |
-| `recombination_regions.tsv` | Called regions: minor/major parent, start/end in **both MSA columns and query bases**, `length_bp` / `length_msa`, `n_windows` and `posterior` (for an HMM region both describe the HMM segment, not the trimmed span), `support`, `pvalue` / `qvalue` with the `test` and `statistic` that produced them, mean similarities, the calling `methods`, and `parent_free_support` (`not run` when the PHI test gave no result) |
+| `recombination_regions.tsv` | Called regions: minor/major parent, start/end in **both MSA columns and query bases**, `length_bp` / `length_msa`, `posterior` (the best contributing caller's value over its own span, not the whole row's span), `support`, `pvalue` / `qvalue` with the `test` and `statistic` that produced them, `n_windows` (base-pair scan windows overlapping the region, the same unit for every caller), mean similarities (identity over the region's own span, for a merged row the whole merged span), the calling `methods`, and `parent_free_support` (`not run` when the PHI test gave no result) |
 | `recombination_methods.tsv` | Ensemble breakdown (only when several methods run): one row per row of `recombination_regions.tsv`, in the same order (a donor-absent region reads `no` for every caller that ran), with `yes` / `no` per method (`not run` for a selected caller that could not run) and the parent-free flag; the parent-free flag is `not run` likewise |
 | `recombination_profile.tsv` | Parent-free signal: header with the PHI p-value (`NA` when not testable) and Rmin, then per-informative-site local incompatibility (the PHI profile) |
 | `similarity_windows.tsv` | Full per-window matrix: `msa_position`, `query_position`, `winner`, and one similarity column per dataset. Always base-pair windows (identity over all comparable columns) |
 | `informative_site_windows.tsv` | Only under informative-site windowing: the windows the HMM segmented -- `msa_position`, `query_position`, the window's `msa_start` / `msa_end` (end-exclusive), `winner`, and per dataset the query's identity **at polymorphic columns only**. Not comparable with similarity or ANI |
 | `similarity_stats.tsv` | Per-dataset similarity statistics (median, windows above identity thresholds) |
 | `window_winners.tsv` | Per-dataset count of windows won (ties included) |
-| `coverage_gaps.tsv` | Stretches where even the closest reference is below the best-similarity threshold, with a `kind`: `divergent` (the query is far from every reference -- a possible missing reference), `low_information` (too few comparable bases to judge -- shown in the report as its own note, not as a possible missing reference), or `breakpoint` (windows straddling a called breakpoint: each under-threshold window is matched, to the threshold, by a single switch between the region's two parents; not a missing reference, and it does not caveat the region) |
+| `coverage_gaps.tsv` | Stretches where even the closest reference is below the best-similarity threshold, with a `kind`: `divergent` (the query is far from every reference -- a possible missing reference), `low_information` (too few comparable bases to judge -- shown in the report as its own note, not as a possible missing reference), or `breakpoint` (windows straddling a called breakpoint: each under-threshold window is matched, to the threshold, by a single switch between the region's two parents; not a missing reference, and it does not caveat the region). Two gaps no more than `--merge-gap` alignment columns apart (default: one window size) are reported as one |
 | `similarity_top{N}.{fmt}` | Static plot of the nearest `--top-n` datasets, called regions shaded |
 | `informative_sites_top{N}.{fmt}` | Only under informative-site windowing: the same plot for identity at informative sites |
 | `similarity_pair.{fmt}` | Static plot of the major parent against the donor of the longest called region, regions shaded (the two leading window winners when no donor was called) |

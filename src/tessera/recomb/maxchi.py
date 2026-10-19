@@ -1,13 +1,12 @@
 """MaxChi / Chimaera caller (Maynard Smith 1992; RDP family).
 
 A second triplet test on the same discriminating-site +/-1 walk the 3SEQ caller uses
-(:func:`tessera.recomb.threeseq.triplet_steps`), but with an independent statistic. 3SEQ
+(:func:`tessera.recomb.threeseq.triplet_steps`), but with a different statistic. 3SEQ
 asks whether the minor-matching sites form a deep contiguous *run* (maximum drawdown);
-MaxChi asks whether the **proportion** of minor matches differs sharply inside a tract
-versus outside it -- a 2x2 chi-square. The two are sensitive to different mosaics (a
-shallow-but-wide tract has a weak drawdown but a strong proportion shift, and vice
-versa), so in an ensemble a region significant under *both* nulls is corroborated by two
-independent tests, exactly as RDP treats MaxChi and 3SEQ as separate methods.
+MaxChi asks whether the **proportion** of minor matches inside that tract differs from
+the rest -- a 2x2 chi-square. Both score the same tract (``max_descent``), so they are
+not independent tests: their p-values are strongly correlated under the clonal null (see
+docs/detection-methods.md), and a region found by both rests on one triplet signal.
 
 The candidate tract is the same maximal minor run 3SEQ localises (reusing
 :func:`max_descent`); the significance is the chi-square of the tract's major:minor
@@ -23,7 +22,6 @@ import numpy as np
 from .similarity import WindowSimilarity
 from .stats import benjamini_hochberg
 from .threeseq import (
-    _MIN_DESCENT,
     _MIN_DISCRIMINATING,
     _region_similarity,
     max_descent,
@@ -36,6 +34,9 @@ _PERMUTATIONS = 20_000  # permutation null resolution (~1/_PERMUTATIONS floor)
 # allocated hundreds of megabytes per array -- per candidate donor, once per reference.
 # This bounds the batch, not the permutation count: see maxchi_pvalue.
 _MAX_PERM_CELLS = 20_000_000
+# Below this descent depth a donor enters the BH family with p = 1 instead of being
+# permuted; see call_regions_maxchi.
+_MIN_PERMUTED_DEPTH = 4
 
 
 
@@ -77,15 +78,30 @@ def _exceedances(steps: np.ndarray, observed: float, k: int, rng) -> int:
     rows = np.arange(k)
     in_major = cum_major[rows, trough] - cum_major[rows, peak]
     in_minor = cum_minor[rows, trough] - cum_minor[rows, peak]
-    tot_major, tot_minor = cum_major[:, -1], cum_minor[:, -1]
-    out_major, out_minor = tot_major - in_major, tot_minor - in_minor
-    n = length
-    r1 = in_major + in_minor
-    r2 = out_major + out_minor
-    det = in_major.astype(np.float64) * out_minor - in_minor.astype(np.float64) * out_major
-    denom = r1 * r2 * tot_major * tot_minor
-    chi2 = np.where(denom > 0, n * det**2 / np.where(denom > 0, denom, 1), 0.0)
+    chi2 = _chi2_batch(in_major, in_minor, cum_major[:, -1], cum_minor[:, -1])
     return int(np.count_nonzero(chi2 >= observed))
+
+
+def _chi2_batch(
+    in_major: np.ndarray, in_minor: np.ndarray, tot_major: np.ndarray, tot_minor: np.ndarray
+) -> np.ndarray:
+    """Vectorised :func:`_chi2_2x2` for tract-versus-rest tables.
+
+    Every factor is converted to float64 before it is multiplied. The denominator is a
+    product of four counts; in int64 it wraps above about 110 000 discriminating sites
+    with balanced counts, and the positivity guard below then set that permutation's
+    statistic to zero (or the wrapped value was positive and wrong) -- while the observed
+    statistic, computed with Python integers, did not wrap. float64 holds the product
+    without wrapping at any size a genome alignment reaches.
+    """
+    a = in_major.astype(np.float64)
+    b = in_minor.astype(np.float64)
+    c = tot_major.astype(np.float64) - a
+    d = tot_minor.astype(np.float64) - b
+    denom = (a + b) * (c + d) * (a + c) * (b + d)
+    det = a * d - b * c
+    n = a + b + c + d
+    return np.where(denom > 0, n * det**2 / np.where(denom > 0, denom, 1.0), 0.0)
 
 
 def maxchi_pvalue(steps: np.ndarray, observed: float, *, seed: int = 0) -> float:
@@ -128,7 +144,7 @@ def call_regions_maxchi(result: WindowSimilarity, analysis, params):
     if len(labels) < 2:
         return [], (labels[0] if labels else None), []
     # Keep non-winning references as candidate donors: a sub-window tract's donor may win no
-    # window yet carry a strong discriminating-site signal (the pre-BH floors drop the rest).
+    # window yet carry a strong discriminating-site signal.
     ranked = rank_datasets(analysis, len(labels)) or labels
     major = ranked[0]
     candidates = []
@@ -139,10 +155,14 @@ def call_regions_maxchi(result: WindowSimilarity, analysis, params):
         if steps.size < _MIN_DISCRIMINATING:
             continue
         descent = max_descent(steps)
-        if descent.depth < _MIN_DESCENT:
-            continue
         chi2 = maxchi_statistic(steps, descent.start_site, descent.end_site)
-        p = maxchi_pvalue(steps, chi2)
+        # A donor with a shallow descent is still a member of the Benjamini-Hochberg
+        # family: it is counted, with p = 1, rather than dropped before the correction,
+        # which shrank the family to the survivors and inflated their significance. Its
+        # permutation null is not run: 20 000 permutations of a long walk per such donor
+        # made a 16-genome scan ten times slower, and 3SEQ, which scores the same tract
+        # exactly and cheaply, tests these shallow tracts (see threeseq).
+        p = maxchi_pvalue(steps, chi2) if descent.depth >= _MIN_PERMUTED_DEPTH else 1.0
         candidates.append((minor, steps, cols, descent, chi2, p))
     if not candidates:
         return [], major, []
@@ -167,7 +187,10 @@ def call_regions_maxchi(result: WindowSimilarity, analysis, params):
         support = float(np.count_nonzero(tract == -1) / tract.size) if tract.size else 0.0
         sim_minor = _region_similarity(result.rows, result.query, minor, msa_start, msa_end)
         sim_major = _region_similarity(result.rows, result.query, major, msa_start, msa_end)
-        bp_lo = result.column_to_query(int(cols[max(0, peak - 1)]))
+        # The breakpoint lies between the last site before the tract and its first
+        # site. A tract starting at the first discriminating site has no site before
+        # it, so the interval runs from the alignment start, not zero-width.
+        bp_lo = result.column_to_query(int(cols[peak - 1])) if peak > 0 else 0
         bp_hi = result.column_to_query(int(cols[peak]))
         regions.append(Region(
             minor_parent=minor, major_parent=major,

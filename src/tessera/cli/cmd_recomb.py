@@ -39,7 +39,7 @@ def recomb(
         "opt-in, and 'all' runs every one. Callers: "
         "hmm (HMM segmentation + a discordant-site "
         "significance test), 3seq (scan-aware triplet max-drawdown test; strong at low "
-        "divergence), maxchi (chi-square triplet test, complementary to 3seq), bootscan "
+        "divergence), maxchi (chi-square triplet test on the same tract as 3seq), bootscan "
         "(distance + bootstrap support for the closest parent), geneconv (longest "
         "uninterrupted donor-match run), barcode (clade-marker "
         "lineage attribution; needs typed references), heuristic (legacy margin/merge). "
@@ -47,7 +47,7 @@ def recomb(
     ),
     min_methods: int = typer.Option(
         1, "--min-methods",
-        help="Callers that must independently find a region before it is reported "
+        help="Callers that must each find a region before it is reported "
         "(default 1: report the union). Raise to 2 to require corroboration -- a large win "
         "on a redundant panel with several near-equidistant relatives of the "
         "query, but it costs true detections on a curated panel, and at very low "
@@ -69,11 +69,15 @@ def recomb(
     ),
     min_region: int | None = typer.Option(
         None, "--min-region",
-        help="Minimum length in alignment columns of an HMM segment before its reported "
-        "span is trimmed to the sites that support the donor, and of a heuristic region "
-        "(hmm, heuristic; also the run length used by lineage clustering and sibling "
-        "exclusion). A reported HMM region can be shorter; 3seq, maxchi, bootscan, "
-        "geneconv and barcode do not apply it. Default: the window size.",
+        help="Minimum length, in query bp, of every reported region, whichever caller "
+        "found it. When unset, the HMM and the heuristic caller apply the window size "
+        "as a floor -- the HMM to its segment, before its reported span is trimmed -- "
+        "and the site callers report regions of any length. A donor-absent coverage row "
+        "is not a caller's region: it is not bounded, and removing a short region can "
+        "leave a coverage gap with nothing overlapping it, so a bounded run can report "
+        "a donor-absent row that an unbounded one did not. It also sets the shortest "
+        "run lineage clustering will treat as a region, and the shortest segment the "
+        "sibling test examines; both use the window size when it is unset.",
     ),
     margin: float = typer.Option(
         0.0, "--margin",
@@ -83,9 +87,8 @@ def recomb(
     ),
     merge_gap: int | None = typer.Option(
         None, "--merge-gap",
-        help="Merge same-parent regions separated by at most this many alignment columns "
-        "(heuristic only; the other callers and the coverage diagnostic ignore it). "
-        "Default: the window size.",
+        help="Merge same-parent regions (heuristic caller) and coverage gaps separated "
+        "by at most this many alignment columns. Default: the window size.",
     ),
     coverage_floor: float | None = typer.Option(
         None, "--coverage-floor",
