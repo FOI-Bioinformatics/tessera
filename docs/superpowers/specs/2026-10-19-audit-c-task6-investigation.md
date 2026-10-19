@@ -148,3 +148,22 @@ different minor parents, as predicted.
 Findings 2 and 3 are filed as issues #81 and #82 and are not addressed here. The gate's
 acceptance criterion in the plan has been corrected on both premises, and the query
 chooser it now uses is `validation/pick_pool_query.py`.
+
+## The HIV-1 gate was abandoned
+
+The paired HIV-1 run, using a pure subtype A1 tip in place of the recombinant the original
+gate picked, was killed after about 90 minutes while still on the baseline side. Round 1
+found a 1947 bp coverage gap at query 4990-6937, the fill split it into nine remote
+`blastn/nt` submissions, and NCBI returned its ten-minute warning on each of the three
+issued. Neither side reached the scan, so there is no region table to compare.
+
+The fix is unaffected: all 1052 genomes of that pool type identically with and without the
+two new rules, because the pool carries no sentinel and no slash label, so the mpox
+comparison above is the fix's whole gate. What remains untested is Task 6's panel change
+on an unrecombined HIV-1 query. That is an untested absence rather than a negative, the
+same distinction the corrected criterion now requires, and it must not be read as a pass.
+
+One observation survives from the baseline side: `Lineage selection: 0 representative(s)
+from 0 lineage(s); 412 untyped genome(s) -> 166 after ANI dereplication`. Zero lineages
+typed from 1052 labelled tips is Task 6's premise, confirmed by the CLI rather than by
+reading the pool offline.
