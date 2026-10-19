@@ -6,6 +6,52 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Caller behaviour, plan C Task 6: pool clade labels
+
+Completes the one task of plan C
+(`docs/superpowers/plans/2026-10-01-audit-c-caller-behaviour.md`) that was held back when
+its end-to-end gate was not met, rebased onto the plan D-G work. The investigation behind
+the decision is `docs/superpowers/specs/2026-10-19-audit-c-task6-investigation.md`.
+
+- **Pool clade labels are read as written instead of mined.** Tessera writes pool genomes
+  with the defline `accession label`, then passed that defline to a miner built for
+  free-text GenBank titles, which wants a digit-bearing token of four or more characters.
+  Short and multi-word clades did not survive: on the cached pools every measles tip
+  (846), all but two mpox tips (1556) and 413 of 1052 HIV-1 tips came back untyped, and
+  128 recombinant-named SARS-CoV-2 tips were never excluded because they were never typed.
+  Those genomes fell back to clade-blind ANI dereplication. The label is now read verbatim
+  for pools Tessera built and carried to the panel's lineage table through a
+  `pool_labels.tsv` sidecar; a user's own `--candidate-pool` is still mined, since its
+  headers are free text. This changes panel composition: selection changed for 15 of the
+  33 cached pools.
+- **A label that is not a clade no longer seeds a lineage.** Selection takes one
+  representative per lineage, so every distinct label won a panel slot. Two kinds of label
+  do not deserve one. `unassigned` is what Nextclade writes for a tip it places in no
+  clade (mumps writes `unclassified`); it appears in nine of the 33 cached pools, 126 tips
+  in the H3N2 HA dataset, and on the mpox dataset it is the reconstructed ancestral
+  sequence, which reading it as a clade admitted to the panel as a donor. A label such as
+  `Ib/IIb` spans two clades the same pool also carries standalone; the one mpox tip
+  carrying it became the minor parent of a 2721 bp region called on a clonal clade-IIb
+  query. A composite is only recognised when every slash-separated part is itself a clade
+  of the same pool, because a slash also occurs inside ordinary clade names: enterovirus
+  D68 names a clade `A2/D` across 364 cached genomes while naming neither `A2` nor `D`,
+  and Ebola names `Ebov-2013/r2021`. Over the 33 cached pools the two rules drop 221 of
+  34027 typed genomes and no legitimate clade.
+
+The gate that originally failed rested on two premises that did not hold, and its
+criterion has been corrected. Its mpox baseline never scanned, because selection left it
+one reference and detection needs two, so "no regions before" was an untested absence
+rather than a negative. Its HIV-1 query was AY900575, typed CRF24_BG, a designated
+circulating recombinant form, so a region reported on it was not evidence of a false
+positive. The gate now chooses a query whose label is a clade in its own right and
+reports a dataset whose baseline could not scan as not testable rather than as a pass.
+
+Two defects the investigation uncovered are independent of this task and are filed rather
+than fixed here: a false positive where the major parent is locally gap-degraded on a
+low-divergence panel (#81), and the coverage guard that cannot see it, because its 0.95
+best-similarity threshold has no resolution on such a panel and its undercover flag
+describes the minor parent only (#82).
+
 ### Fourth audit, plan F: reporting, CLI and reassortment
 
 From `docs/superpowers/specs/2026-10-12-audit-swot-gap.md` (B1, B3, B5, B7-B9, the smaller
