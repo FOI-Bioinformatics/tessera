@@ -8,9 +8,11 @@ from tessera.recomb.typing import (
     build_lineage_map,
     dominant_lineage_token,
     genotype_from_title,
+    label_from_pool_header,
     lineage_map_from_rows,
     lineage_of,
     load_lineage_map,
+    pool_labels,
     read_lineage_rows,
     titles_from_collection,
     typed,
@@ -135,3 +137,49 @@ def test_lineage_map_from_rows_strips_file_ext_keeps_version():
     # lookup time (test_typed_version_insensitive_fallback).
     rows = [("MK573073.1.fasta", "GII.4", "title")]
     assert lineage_map_from_rows(rows) == {"MK573073.1": "GII.4"}
+
+
+
+# --- structured pool labels -------------------------------------------------
+
+def test_label_from_pool_header_takes_the_label_verbatim():
+    # the short and multi-word clades that title mining drops
+    assert label_from_pool_header("MN908947.3 B.1") == "B.1"
+    assert label_from_pool_header("OX1 XBB") == "XBB"
+    assert label_from_pool_header("K03455 B") == "B"
+    assert label_from_pool_header("MV1 D8") == "D8"
+    assert label_from_pool_header("NC_063383 IIb") == "IIb"
+    assert label_from_pool_header("VZV1 clade 2 wild-type") == "clade 2 wild-type"
+    assert genotype_from_title("MN908947.3 B.1") is None  # why mining is not enough
+
+
+def test_label_from_pool_header_none_for_unlabelled_genomes():
+    for header in ("ACC1", "ACC1 ", "ACC1 NA", "ACC1 example", ""):
+        assert label_from_pool_header(header) is None
+
+
+def test_pool_labels_reads_each_file_header(tmp_path: Path):
+    (tmp_path / "ACC1.fasta").write_text(">ACC1 B\nACGT\n")
+    (tmp_path / "ACC2.fasta").write_text(">ACC2 NA\nACGT\n")
+    (tmp_path / "ACC3.2.fasta").write_text(">ACC3.2 clade 5\nACGT\n")
+    files = sorted(tmp_path.iterdir())
+    assert pool_labels(files) == {"ACC1": "B", "ACC3.2": "clade 5"}
+
+
+def test_build_lineage_map_pool_label_beats_title_and_yields_to_datasets_and_user(
+    tmp_path: Path,
+):
+    user = tmp_path / "user.tsv"
+    user.write_text("U1\tUSER\n")
+    rows = build_lineage_map(
+        user_tsv=user,
+        datasets_rows=[("D1", "DATASETS")],
+        title_by_label={"P1": "P1 CRF01_AE", "T1": "T1 Norovirus GII.4 isolate x"},
+        pool_labels={"P1": "A1", "D1": "pool", "U1": "pool"},
+    )
+    assert dict((label, (g, src)) for label, g, src in rows) == {
+        "P1": ("A1", "pool-header"),      # not the token mined from its title
+        "T1": ("GII.4", "title"),         # no pool label: mined as before
+        "D1": ("DATASETS", "ncbi-datasets"),
+        "U1": ("USER", "user"),
+    }

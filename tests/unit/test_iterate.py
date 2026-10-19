@@ -491,8 +491,9 @@ def test_seed_source_nextclade_routes_through_pool_selection(monkeypatch, tmp_pa
         captured["dataset"] = params.nextclade_dataset
         return [pool_dir / "REF1.fasta"]
 
-    def fake_select(params, genomes, logger):
+    def fake_select(params, genomes, logger, *, pool_headers=False):
         from tessera.discover.pool import PoolSelection
+        captured["pool_headers"] = pool_headers
         return PoolSelection(selected=list(genomes))
 
     monkeypatch.setattr(iterate, "_fetch_nextclade", fake_fetch)
@@ -504,6 +505,11 @@ def test_seed_source_nextclade_routes_through_pool_selection(monkeypatch, tmp_pa
         logger,
     )
     assert captured["dataset"] == "nextstrain/sars-cov-2/XBB"
+    # a Nextclade pool's headers hold structured clade labels; they are read as such
+    assert captured["pool_headers"] is True
+    # ... and carried to the panel's lineage table, although "A1" is too short to mine
+    assert (out / "pool_labels.tsv").read_text() == "REF1\tA1\n"
+    assert "REF1\tA1\tpool-header" in (out / "lineages.tsv").read_text()
     assert (out / "collection" / "REF1.fasta").exists()
 
 

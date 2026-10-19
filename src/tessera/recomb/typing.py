@@ -97,6 +97,36 @@ def genotype_from_title(title: str, organism: str | None = None) -> str | None:
     return max(candidates, key=len) if candidates else None
 
 
+# What the pool builders write in the label slot when a genome carries no clade: an
+# empty note, Nextclade's "NA", and the marker given to a dataset's example sequences.
+_NO_POOL_LABEL = frozenset({"", "na", "example"})
+
+
+def label_from_pool_header(title: str) -> str | None:
+    """The clade/lineage label of a pool genome's defline, verbatim.
+
+    Tessera writes pool genomes itself -- Nextclade tree tips and NCBI Virus genomes --
+    with the defline ``{accession} {label}``, so the label is everything after the
+    accession and needs no mining. :func:`genotype_from_title` is for free-text GenBank
+    titles: it wants a digit-bearing token of four characters or more, which drops
+    ``B.1``, ``XBB``, ``D8``, ``IIb``, the HIV pure subtypes and any multi-word clade
+    (``clade 2 wild-type``). Returns ``None`` for a genome that carries no label.
+    """
+    parts = title.split(None, 1)
+    label = parts[1].strip() if len(parts) == 2 else ""
+    return None if label.lower() in _NO_POOL_LABEL else label
+
+
+def pool_labels(files: Iterable[Path]) -> dict[str, str]:
+    """``label -> clade`` for pool genome files, read from their deflines."""
+    out: dict[str, str] = {}
+    for path in files:
+        label = label_from_pool_header(first_header(path))
+        if label:
+            out[strip_sequence_extension(path.name)] = label
+    return out
+
+
 def first_header(path: Path) -> str:
     """Return the first FASTA defline (without the leading '>'), or '' if none.
 
@@ -170,18 +200,26 @@ def build_lineage_map(
     datasets_rows: Iterable[tuple[str, str]] | None = None,
     title_by_label: Mapping[str, str] | None = None,
     organism: str | None = None,
+    pool_labels: Mapping[str, str] | None = None,
 ) -> list[tuple[str, str, str]]:
     """Merge typed names from all sources by priority into sorted sidecar rows.
 
-    Priority (highest wins): user map > NCBI datasets lineage > mined title token.
-    Keys are normalized with ``strip_sequence_extension`` so they match MSA leaves.
+    Priority (highest wins): user map > NCBI datasets lineage > pool label > mined
+    title token. ``pool_labels`` are the structured labels of genomes that came from a
+    pool Tessera built (see :func:`label_from_pool_header`); a genome that has one is
+    never typed from a mined token. Keys are normalized with
+    ``strip_sequence_extension`` so they match MSA leaves.
     """
     merged: dict[str, tuple[str, str]] = {}  # label -> (genotype, source)
-    # Source 3 (lowest): a token mined from each reference's title/header note.
+    # Source 4 (lowest): a token mined from each reference's title/header note.
     for label, title in (title_by_label or {}).items():
         genotype = genotype_from_title(title, organism)
         if genotype:
             merged[strip_sequence_extension(label)] = (genotype, "title")
+    # Source 3: the label a pool builder wrote into the header, taken verbatim.
+    for label, clade in (pool_labels or {}).items():
+        if clade:
+            merged[strip_sequence_extension(label)] = (clade, "pool-header")
     # Source 2: the structured NCBI datasets lineage / pangolin classification.
     for label, lineage in datasets_rows or []:
         if lineage:
