@@ -11,12 +11,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  checks:
-    # Lint and types are platform- and version-independent, so they run once. They
-    # used to run inside every matrix entry, which paid for the same answer four
-    # times and delayed the test results behind it.
+  test:
+    # Lint, types and tests in one job on one interpreter. They were split apart when
+    # the tests ran as a version matrix, where a separate job stopped the same lint
+    # answer being paid for in every entry; with a single supported Python there is no
+    # duplication left to avoid, and lint runs first here, so a style error still
+    # surfaces about as early as it did from its own job.
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -30,26 +32,6 @@ jobs:
         run: ruff check src tests validation
       - name: Type check
         run: mypy
-
-  test:
-    # Every supported Python on Linux, with the aligner-gated tests. macOS is a job
-    # of its own below. The floor is 3.12: see requires-python in pyproject.toml.
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.12", "3.13"]
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install package and dev dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
       - name: Install mafft aligner
         # mafft is the default per-genome aligner and the only external binary the
         # requires_binary tests need; it ships in the ubuntu repos, so the workflow
@@ -66,13 +48,10 @@ jobs:
 
   test-macos:
     # macOS is here because the project is developed on Darwin/arm64 and
-    # docs/aligners.md records conda-build problems specific to that platform. It is a
-    # job of its own rather than an `include:` entry in the matrix above, which is what
-    # forced two conditional aligner-install steps into a single job. One Python
-    # version: the point is platform-specific breakage -- path handling, os.replace
-    # across filesystems, subprocess behaviour against a real aligner -- not a second
-    # pass over the version matrix. It runs the same two test steps as Linux, and at
-    # about 5.5 minutes against 3.3 for a Linux entry it is not what makes CI slow.
+    # docs/aligners.md records conda-build problems specific to that platform. What it
+    # looks for is platform-specific breakage -- path handling, os.replace across
+    # filesystems, subprocess behaviour against a real aligner -- so it runs the tests
+    # only; lint and types above are platform-independent.
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
