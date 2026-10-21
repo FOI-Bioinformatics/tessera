@@ -507,6 +507,89 @@ def test_seed_source_nextclade_routes_through_pool_selection(monkeypatch, tmp_pa
     assert (out / "collection" / "REF1.fasta").exists()
 
 
+def test_pool_seeding_skips_the_query_own_record_and_excluded_accessions(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A query that is itself in the pool (a published genome typed against its own
+    Nextclade tree) must not be seeded as a reference: it would match itself everywhere."""
+    import logging
+
+    pool_dir = tmp_path / "pool"
+    pool_dir.mkdir()
+    for name in ("QRY1", "REF1", "REF2", "BAD1"):
+        (pool_dir / f"{name}.fasta").write_text(f">{name} A1\nACGT\n")
+    offered: list[str] = []
+
+    def fake_select(params, genomes, logger, **kwargs):
+        from tessera.discover.pool import PoolSelection
+        offered.extend(sorted(g.stem for g in genomes))
+        return PoolSelection(selected=list(genomes))
+
+    monkeypatch.setattr(iterate, "_select_from", fake_select)
+    collection = tmp_path / "collection"
+    collection.mkdir()
+    params = FillParams(query=pool_dir / "QRY1.fasta", collection=None, output=tmp_path / "out",
+                        seed_source="local", candidate_pool=pool_dir, exclude=("BAD1.2",))
+    iterate._seed_from_pool(params, collection, logging.getLogger("tessera.test"))
+    assert offered == ["REF1", "REF2"]
+    assert sorted(p.stem for p in collection.iterdir()) == ["REF1", "REF2"]
+
+
+def _offered_to_selection(monkeypatch, tmp_path: Path, *, pool: list[str],
+                          query: Path) -> list[str]:
+    """Names of the pool genomes that reach selection after the exclusion filter."""
+    import logging
+
+    pool_dir = tmp_path / "pool"
+    pool_dir.mkdir(exist_ok=True)
+    for name in pool:
+        (pool_dir / f"{name}.fasta").write_text(f">{name}\nACGT\n")
+    offered: list[str] = []
+
+    def fake_select(params, genomes, logger, **kwargs):
+        from tessera.discover.pool import PoolSelection
+        offered.extend(sorted(g.name.removesuffix(".fasta") for g in genomes))
+        return PoolSelection(selected=[])
+
+    monkeypatch.setattr(iterate, "_select_from", fake_select)
+    collection = tmp_path / "collection"
+    collection.mkdir()
+    params = FillParams(query=query, collection=None, output=tmp_path / "out",
+                        seed_source="local", candidate_pool=pool_dir)
+    iterate._seed_from_pool(params, collection, logging.getLogger("tessera.test"))
+    return offered
+
+
+def test_pool_exclusion_does_not_truncate_lineage_named_genomes(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Version-stripping is made for accessions. Applied to a query headed ">BA.2.86" it
+    gives "BA", which every BA.* pool genome would match."""
+    query = tmp_path / "sample.fasta"
+    query.write_text(">BA.2.86 a query\nACGT\n")
+    pool = ["BA.1", "BA.1_consensus", "BA.2", "BA.2_consensus", "XBB.1.5_consensus"]
+    assert _offered_to_selection(monkeypatch, tmp_path, pool=pool, query=query) == pool
+
+
+def test_pool_exclusion_matches_a_versioned_accession_file(monkeypatch, tmp_path: Path) -> None:
+    query = tmp_path / "sample.fasta"
+    query.write_text(">MG572182.1 a query\nACGT\n")
+    assert _offered_to_selection(
+        monkeypatch, tmp_path, pool=["MG572182.2", "REF1.2", "REF2"], query=query,
+    ) == ["REF1.2", "REF2"]
+
+
+def test_pool_exclusion_covers_the_query_file_itself(monkeypatch, tmp_path: Path) -> None:
+    """The query file sits in the pool under a name that is not its accession: it shares
+    the query's label, so offering it would stop the alignment on a duplicate label."""
+    pool_dir = tmp_path / "pool"
+    pool_dir.mkdir()
+    query = pool_dir / "QRY1.fasta"
+    query.write_text(">MG572182.1 a query\nACGT\n")
+    assert _offered_to_selection(monkeypatch, tmp_path, pool=["REF1", "REF2"],
+                                 query=query) == ["REF1", "REF2"]
+
+
 # --- the round structure: what is aligned, and when the panel is curated ----------
 
 def _recording_build(monkeypatch, builds):

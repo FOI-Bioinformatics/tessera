@@ -8,12 +8,14 @@ from tessera.recomb.diagnostics import (
     RecombinationSignal,
     biallelic_columns,
     corroborating_intervals,
+    effective_phi_window,
     hudson_kaplan_rmin,
     incompatibility_matrix,
     phi,
     phi_pvalue,
     recombination_signal,
 )
+from tessera.recomb.similarity import _read_alignment
 
 
 def _rows(seqs: dict[str, str]) -> dict[str, np.ndarray]:
@@ -127,6 +129,37 @@ def test_recombination_signal_none_below_min_informative() -> None:
     assert recombination_signal(rows, "s0", lambda c: c) is None
 
 
+def test_effective_phi_window_is_capped_at_a_tenth_of_the_sites() -> None:
+    assert effective_phi_window(100, 159) == 15
+    assert effective_phi_window(100, 54) == 5
+    assert effective_phi_window(100, 10) == 1  # never below one rank
+    # unchanged once the alignment holds ten windows' worth of sites
+    assert effective_phi_window(100, 1000) == 100
+    assert effective_phi_window(100, 5000) == 100
+    assert effective_phi_window(8, 5000) == 8  # a smaller request is honoured
+
+
+def test_signal_at_the_minimum_number_of_informative_sites() -> None:
+    # Ten informative sites is the floor for reporting a signal at all; the window is
+    # then a single rank and the test must still return a valid p-value.
+    rows = _block_alignment(recombinant=True, per_block=5)
+    signal = recombination_signal(rows, "s0", lambda c: c)
+    assert signal is not None and signal.n_informative == 10
+    assert signal.phi_window == 1
+    assert 0.0 < signal.phi_p <= 1.0
+
+
+def test_default_window_has_power_on_the_shipped_example(example_data) -> None:
+    # 159 informative sites: a 100-rank window spans most pairs, and PHI was 1.0 on an
+    # alignment whose recombinant tract four callers agree on.
+    rows = _read_alignment(str(example_data / "divergent.msa.fasta"))
+    signal = recombination_signal(rows, "query", lambda c: c)
+    assert signal is not None
+    assert signal.n_informative == 159
+    assert signal.phi_window == 15  # the window used, not the one asked for
+    assert signal.phi_p < 0.05
+
+
 # --- corroborating intervals ------------------------------------------------
 
 def _signal(phi_p: float, intervals: list[tuple[int, int]]) -> RecombinationSignal:
@@ -149,29 +182,31 @@ def test_corroborating_intervals_require_a_significant_phi() -> None:
     assert corroborating_intervals(_signal(0.40, intervals), alpha=0.05) == []
 
 
+def test_corroborating_intervals_of_an_untestable_signal() -> None:
+    # "Not testable" is not "significant": no interval is corroborated. The window cap
+    # keeps recombination_signal clear of this state, so it is built by hand.
+    untestable = RecombinationSignal(n_informative=24, phi_p=None, phi_observed=0.5,
+                                     phi_window=100, rmin=2, rmin_intervals=[(10, 20)])
+    assert corroborating_intervals(untestable, alpha=0.05) == []
+
+
 def test_corroborating_intervals_without_a_signal() -> None:
     assert corroborating_intervals(None, alpha=0.05) == []
 
 
 # --- "not testable" is not "no signal" --------------------------------------
 
-def test_phi_is_not_testable_when_every_site_pair_is_inside_the_window() -> None:
+def test_a_window_wider_than_the_alignment_is_capped_and_stays_testable() -> None:
     """With z informative sites and a window of at least z - 1 ranks, the statistic
     averages over every pair of sites, so reordering the sites cannot change it and the
-    permutation p-value is 1 whatever the data. That was reported as "no signal"."""
+    permutation p-value is 1 whatever the data. The window is capped at z // 10, so a
+    request that wide is no longer run as asked: the test uses the capped window and
+    returns a p-value."""
     rows = _block_alignment(recombinant=True)  # 24 informative columns
-    signal = recombination_signal(rows, "s0", lambda c: c, window=100, seed=1)
-    assert signal is not None
-    assert signal.n_informative == 24
-    assert signal.phi_p is None  # was 1.0
-    assert signal.rmin >= 1  # Rmin does not depend on the window
-    assert corroborating_intervals(signal, alpha=0.05) == []
-
-
-def test_phi_becomes_testable_one_rank_below_the_site_count() -> None:
-    rows = _block_alignment(recombinant=True)  # z = 24, so z - 1 = 23
-    at_limit = recombination_signal(rows, "s0", lambda c: c, window=23, seed=1)
-    below = recombination_signal(rows, "s0", lambda c: c, window=22, seed=1)
-    assert at_limit is not None and below is not None
-    assert at_limit.phi_p is None
-    assert below.phi_p is not None
+    for requested in (100, 23, 22):
+        signal = recombination_signal(rows, "s0", lambda c: c, window=requested, seed=1)
+        assert signal is not None
+        assert signal.n_informative == 24
+        assert signal.phi_window == 2
+        assert signal.phi_p is not None
+        assert signal.rmin >= 1  # Rmin does not depend on the window

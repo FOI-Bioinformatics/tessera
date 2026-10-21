@@ -67,9 +67,11 @@ def _exceedances(steps: np.ndarray, observed: float, k: int, rng) -> int:
     runmax = np.maximum.accumulate(cum, axis=1)
     trough = np.argmax(runmax - cum, axis=1)  # (k,) end of each permutation's tract
     cols = np.arange(length + 1)
-    # peak = where the running max was reached, on or before the trough
+    # peak = the LAST place the running max was reached, on or before the trough --
+    # the same rule threeseq.max_descent applies to the observed walk, so the null
+    # and the observed statistic are computed on the same kind of tract.
     masked = np.where(cols[None, :] <= trough[:, None], cum, np.iinfo(np.int64).min)
-    peak = np.argmax(masked, axis=1)
+    peak = length - np.argmax(masked[:, ::-1], axis=1)
     cum_major = np.hstack([np.zeros((k, 1), np.int64), np.cumsum(perm == 1, axis=1)])
     cum_minor = np.hstack([np.zeros((k, 1), np.int64), np.cumsum(perm == -1, axis=1)])
     rows = np.arange(k)

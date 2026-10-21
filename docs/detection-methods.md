@@ -71,11 +71,22 @@ recombination between near-identical lineages) is flagged as marginal rather tha
 dropped. The legacy `--method heuristic` (margin / merge-gap / min-region) is kept
 for comparison.
 
+**The reported span is not the segment.** A segment is where the HMM path sat in the
+donor state. Once there, the path has no reason to leave while donor and major are
+identical, and its ends are only as fine as the window grid. The coordinates reported
+for an HMM region therefore run from the first to the last site inside the segment at
+which the query matches the donor and not the major; columns matching both parents or
+neither cannot hold a region open. A segment that includes the first or last window is
+searched to the end of the alignment, so a tract reaching a genome end is reported from
+that end. The sign test, its p-value and `support` are computed on the whole segment, so
+this step changes where a region is drawn and never whether it is called.
+`mean_sim_minor` / `mean_sim_major` are identity over the reported columns.
+
 ```
 Recombination regions (major parent: cowpox_KC813504):
-  Minor parent  Major parent     Query start  Query end  Length(bp)  Sim minor  Sim major  Support  q-value  Breakpoint
-  --------------------------------------------------------------------------------------------------------------------
-  variola       cowpox_KC813504  66268        147150     80882       0.999      0.977      0.97     2e-300   66768
+  Minor parent  Major parent     Query start  Query end  Length(bp)  Sim minor  Sim major  Support  q-value   Breakpoint   Method(s)
+  ---------------------------------------------------------------------------------------------------------------------------------
+  variola       cowpox_KC813504  67252        146829     79577       0.999      0.9796     0.98     7.6e-195  67205-67319  hmm
 ```
 
 ### Near-duplicate references (lineage clustering)
@@ -88,12 +99,15 @@ below it. The pooled lineage competes as one state under the label of its best-c
 member, and a region names that member. Clustering is skipped for panels of fewer than 4
 or more than 200 references.
 
-One limitation follows from the absolute threshold. On a panel in which *every* pair of
-references is at least 98.5 % identical in every window -- mpox, VZV and other sets below
-roughly 1.5 % divergence -- all references pool into a single lineage and the HMM has
-nothing left to compete, so it calls no region whatever the data. The site-based callers
-(3SEQ, MaxChi) are unaffected. On such a panel, run with `--no-cluster-lineages` to keep
-the HMM's vote. `run_provenance.json` records whether clustering was on.
+One limitation follows from the absolute threshold when identity is taken over all
+columns. On a panel in which *every* pair of references is at least 98.5 % identical in
+every window -- mpox, VZV and other sets below roughly 1.5 % divergence -- all references
+would pool into a single lineage and leave the HMM nothing to compete. Such panels are
+scanned under informative-site windowing (next section), and there the references are
+compared on the informative columns only, so distinct lineages stay apart. The limitation
+remains when base-pair windowing is forced on such a panel (`--no-informative-sites`):
+run with `--no-cluster-lineages` to keep the HMM's vote. The site-based callers (3SEQ,
+MaxChi) are unaffected either way. `run_provenance.json` records whether clustering was on.
 
 ### Low-divergence panels (intra-species sets, DNA viruses)
 
@@ -110,6 +124,14 @@ the references differ at less than ~8 % of columns, and controllable with
 `--informative-step`). Breakpoint intervals are necessarily coarser at low divergence
 -- you cannot localise a switch more finely than the spacing of the discriminating
 sites.
+
+Before the HMM runs, near-duplicate references are pooled into lineages so that
+duplicates do not tie every window (`--cluster-lineages`, on by default for panels of 4
+to 200 references). Two references pool when their agreement stays at or above 98.5 % in
+every window. Under informative-site windowing that agreement is measured **on the
+informative columns**: on a near-identical panel every pair is above 98.5 % over all
+columns, and measuring it there would pool the whole panel and leave the HMM nothing to
+choose between. On the informative columns only true duplicates agree.
 
 **Informative-site identity is not similarity.** A window of polymorphic columns leaves
 out every column where the references agree, so a reference that is 98-99 % identical to
@@ -249,18 +271,26 @@ one query introduces, so PHI can stay non-significant even where detection succe
 (e.g. yellow fever). In that regime Rmin and the per-site PHI **profile** -- which
 localizes the signal rather than averaging it away -- are the more informative
 parent-free outputs. The diagnostic runs for every `--method`; disable with
-`--no-phi`, or widen its window with `--phi-window`.
+`--no-phi`.
+
+The PHI window (`--phi-window`, default 100) is counted in informative-site ranks and
+is an **upper bound**: the window used is capped at a tenth of the informative sites.
+PHI asks whether *nearby* sites are more compatible than a random reordering, and
+"nearby" stops meaning anything once the window spans most of the sites -- at 159
+informative sites a 100-rank window gave p = 1 on an alignment whose tract every caller
+found, where a 15-rank window gives p = 0.001. Alignments with a thousand informative
+sites or more are unaffected. The report and `recombination_profile.tsv` state the
+window that was used. The per-site profile is smoothed over the same window, so on an alignment
+with few informative sites it is close to the raw per-site values.
 
 The PHI p-value is judged at the run's `--alpha`, in the report and for the per-region
-flag alike. The test is **not testable** when the alignment has too few informative sites
-for the window (`--phi-window`, default 100 site ranks; at least window + 2 sites are
-needed): every pair of sites then falls inside one window, so reordering the sites cannot
-change the statistic and the permutation p-value would be 1 whatever the data. Tessera
-reports this as `not testable` (`NA` in the `recombination_profile.tsv` header) rather
-than as a non-significant result, and no region is flagged `parent_free_support`; lower
-`--phi-window` to test such an alignment. Just above that limit the test is defined but
-has little power: the shipped `divergent` example (159 informative sites) gives p = 1 at
-the default window and p = 0.001 at `--phi-window 20`.
+flag alike. If every pair of sites fell inside one window, reordering the sites could not
+change the statistic and the permutation p-value would be 1 whatever the data; the cap on
+the window described above keeps the test clear of that case for any alignment that
+reaches the minimum of ten informative sites. Should the test still be undefined, Tessera
+reports `not testable` (`NA` in the `recombination_profile.tsv` header) rather than a
+non-significant result, and no region is flagged `parent_free_support`. With few
+informative sites the window is only a few ranks wide and the test has limited power.
 
 This all remains an **indicative screen**: the built-in HMM and 3SEQ tests are fast
 triplet/segmentation screens, not a full tree-based analysis (such as GARD). Treat

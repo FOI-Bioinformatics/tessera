@@ -132,7 +132,9 @@ def recomb(
     ),
     phi_window: int = typer.Option(
         100, "--phi-window",
-        help="PHI test window width, in informative-site ranks.",
+        help="PHI test window width, in informative-site ranks. An upper bound: the "
+        "window is capped at a tenth of the informative sites, and the report states "
+        "the one used.",
     ),
     reattribute_donors: bool = typer.Option(
         False, "--reattribute-donors/--no-reattribute-donors",

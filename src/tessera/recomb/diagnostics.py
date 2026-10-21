@@ -43,6 +43,9 @@ from .similarity import CANONICAL_BASES
 # Below this many informative columns the statistics are not meaningful.
 _MIN_INFORMATIVE = 10
 _PERMUTATIONS = 1000
+# The PHI window is capped at 1/_WINDOW_FRACTION of the informative sites; see
+# effective_phi_window.
+_WINDOW_FRACTION = 10
 # Cap on cells in the z*z incompatibility matrix. 25M cells is z ~= 5000, which holds
 # the bool matrix at ~25 MB and its int64 gamete-count intermediates at ~200 MB each.
 # Beyond this the matrix alone would run to tens of gigabytes.
@@ -222,6 +225,20 @@ def hudson_kaplan_rmin(
     return rmin, intervals
 
 
+def effective_phi_window(window: int, n_informative: int) -> int:
+    """The PHI window actually used: ``window``, capped at a tenth of the sites.
+
+    PHI compares the incompatibility of *nearby* site pairs with that of a random
+    reordering. "Nearby" only means something while the window is small against the
+    number of informative sites: once it spans most of them nearly every pair is
+    "nearby", the statistic barely changes under permutation, and the test cannot
+    reject whatever the data hold (with ``window >= n - 1`` it is exactly invariant and
+    p is always 1). Capping at ``n // 10`` keeps at least ten windows' worth of sites,
+    and leaves the window untouched on any alignment with ``10 * window`` sites or more.
+    """
+    return max(1, min(int(window), n_informative // _WINDOW_FRACTION))
+
+
 def recombination_signal(
     rows: dict[str, np.ndarray], query_label: str, column_to_query, *,
     window: int = 100, seed: int = 0,
@@ -239,6 +256,8 @@ def recombination_signal(
     window, the statistic is the mean over all pairs, and no reordering of the columns
     can change it -- the permutation p-value would be 1 whatever the data. Rmin, the
     intervals and the profile do not depend on the permutation and are still returned.
+    The window is capped first (:func:`effective_phi_window`), so with the minimum of ten
+    informative columns this case is not reached; the check is kept as a guard.
     """
     allele1, allele0, positions = biallelic_columns(rows)
     z = positions.size
@@ -251,6 +270,9 @@ def recombination_signal(
         allele1, allele0, positions = allele1[keep], allele0[keep], positions[keep]
         z = positions.size
     incompatible = incompatibility_matrix(allele1, allele0)
+    # `window` is an upper bound. The reported `phi_window` is the one actually used,
+    # so the report never states a window the test did not run with.
+    window = effective_phi_window(window, int(z))
     p: float | None
     if z - 1 > window:
         p, observed = phi_pvalue(incompatible, window, seed=seed)
