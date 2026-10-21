@@ -46,6 +46,11 @@ pytest -m "not requires_binary"     # fast suite, no aligner binaries needed
 pytest                              # full suite (needs aligners on PATH)
 ```
 
+The package requires **Python 3.12 or newer** and uses 3.12 syntax, so an older
+interpreter fails at import with a `SyntaxError`. The repository keeps a 3.12
+virtual environment in `.venv` (git-ignored); if the `python` on PATH is older,
+use `.venv/bin/python`, `.venv/bin/pytest`, `.venv/bin/ruff` and `.venv/bin/mypy`.
+
 The `requires_binary` marker gates tests that need an external aligner. Ruff config is
 in `pyproject.toml` (line length 100, `E/F/I/UP/B`).
 

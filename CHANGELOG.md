@@ -6,6 +6,17 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Python 3.12 is the floor
+
+- **`requires-python` is now `>=3.12`** (it was `>=3.11`), with the 3.11 classifier
+  removed, `environment.yml` and the README install line raised to match, and the CI
+  matrix reduced to 3.12 and 3.13. `ruff`'s `target-version` moves to `py312`, which
+  enables the PEP 695 rewrites: `core/ncbi.py`, `core/plugins.py` and
+  `core/executors.py` now declare their type parameters inline (`def f[T](...)`,
+  `class Registry[T]`) instead of through module-level `TypeVar`s. That is 3.12-only
+  syntax, so an older interpreter now fails at import with a `SyntaxError` rather than
+  with a dependency message; `CONTRIBUTING.md` says how to set up a 3.12 environment.
+
 ### Validation: an offline false-positive control on real genomes
 
 - **`validation/run_pool_specificity.py`.** `run_specificity.py` has exact ground truth

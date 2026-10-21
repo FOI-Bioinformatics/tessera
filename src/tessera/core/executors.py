@@ -11,13 +11,9 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import TypeVar
-
-T = TypeVar("T")
-R = TypeVar("R")
 
 
-def parallel_map(
+def parallel_map[T, R](
     fn: Callable[[T], R],
     items: Iterable[T],
     workers: int,

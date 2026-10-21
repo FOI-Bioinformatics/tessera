@@ -11,12 +11,9 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points
-from typing import Generic, TypeVar
 
 from .binaries import BinarySpec, check_binaries
 from .errors import PluginError
-
-T = TypeVar("T")
 
 
 @dataclass(frozen=True)
@@ -36,7 +33,7 @@ class ToolCapabilities:
     conda: tuple[str, ...] = ()
 
 
-class Registry(Generic[T]):
+class Registry[T]:
     """Lazily-loaded registry of adapter classes for one entry-point group."""
 
     def __init__(self, group: str):

@@ -2,10 +2,24 @@
 
 ## Setup
 
+Tessera needs **Python 3.12 or newer** (`requires-python` in `pyproject.toml`). The
+package uses 3.12 syntax, so an older interpreter fails at import with a `SyntaxError`
+rather than with a dependency message.
+
+```
+python3.12 -m venv .venv            # or any interpreter >= 3.12
+.venv/bin/pip install -e ".[dev]"
+.venv/bin/ruff check src tests validation
+.venv/bin/pytest -m "not requires_binary"   # fast suite, no aligner binaries needed
+```
+
+`.venv` is git-ignored. If `python` on your PATH is already 3.12 or newer, the plain
+forms work as before:
+
 ```
 pip install -e ".[dev]"
 ruff check src tests validation
-pytest -m "not requires_binary"     # fast suite, no aligner binaries needed
+pytest -m "not requires_binary"
 ```
 
 The fast suite runs in a few seconds and needs no external tools, network, or downloaded

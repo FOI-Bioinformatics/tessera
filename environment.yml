@@ -3,7 +3,7 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
-  - python>=3.11
+  - python>=3.12
   - pip
   # Aligner backends (external tools). sibeliaz is the default; mafft (accurate
   # base-level MSA for similar genomes) and minimap2 (fast assembly-to-reference,

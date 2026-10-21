@@ -33,12 +33,12 @@ jobs:
 
   test:
     # Every supported Python on Linux, with the aligner-gated tests. macOS is a job
-    # of its own below.
+    # of its own below. The floor is 3.12: see requires-python in pyproject.toml.
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.12", "3.13"]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
