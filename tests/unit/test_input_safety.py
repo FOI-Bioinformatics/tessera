@@ -365,7 +365,7 @@ def test_xmfa_without_the_reference_is_reported_against_the_file(tmp_path: Path)
         "> 1:1-4 + /data/a.fasta\nACGT\n> 2:1-4 + /data/b.fasta\nACGT\n=\n"
     )
     with pytest.raises(UserInputError, match=r"other\.xmfa.*/data/ref\.fasta"):
-        xmfa_to_fasta(xmfa, "/data/ref.fasta", 0, tmp_path / "out.fasta")
+        xmfa_to_fasta(xmfa, "/data/ref.fasta", tmp_path / "out.fasta")
 
 
 def test_empty_mafft_output_is_a_tessera_error(tmp_path: Path) -> None:
@@ -419,3 +419,50 @@ def test_copy_collection_accepts_an_empty_existing_directory(tmp_path: Path) -> 
     copy_collection(source, dest)
 
     assert [p.name for p in collection_genomes(dest)] == ["a.fasta"]
+
+
+def test_sibeliaz_bsd_wrapper_rewrites_paste_and_xargs(monkeypatch, tmp_path: Path) -> None:
+    # BSD paste takes no long options and reads '--delimiters' as a file name, so the
+    # wrapper's MAF step wrote headers only and the adapter reported an empty MAF
+    # (blamed on memory) for every input on macOS.
+    wrapper = tmp_path / "sibeliaz"
+    wrapper.write_text(
+        'find $outdir -name "*.tmp" -printf "%p\\n"\n'
+        "paste <(echo \"$header\") <(echo \"$output\") --delimiters ' ' >> \"$alignment_output\"\n"
+        "find $outdir -name \"*.tmp\" | xargs -I @ -P $threads bash -c \"block_align @\"\n"
+    )
+    monkeypatch.setattr(sibeliaz.sys, "platform", "darwin")
+    monkeypatch.setattr(sibeliaz.shutil, "which", lambda name: str(wrapper))
+    cmd = sibeliaz._sibeliaz_invocation(tmp_path, _LOG)
+    patched = Path(cmd[-1]).read_text()
+    assert "--delimiters" not in patched
+    assert "paste -d ' ' <(echo \"$header\") <(echo \"$output\")" in patched
+    # BSD xargs caps an -I replacement at 255 bytes; two absolute paths exceed it.
+    assert "xargs -S 4096 -I @ -P $threads" in patched
+
+
+@pytest.mark.parametrize("kind", ["file", "symlink", "dangling"])
+def test_a_non_directory_at_the_working_collection_path_is_a_user_error(
+    tmp_path: Path, kind: str
+) -> None:
+    # A previous run's marker is present, so the path counts as Tessera's own; what
+    # sits there is not a directory. Clearing it raised a bare NotADirectoryError (an
+    # OSError for a symlink, a FileExistsError for a dangling one), reported as
+    # "Unexpected error".
+    source = _collection(tmp_path / "src")
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / ".tessera-working-collection").write_text("")
+    dest = out / "collection"
+    if kind == "file":
+        dest.write_text("not a directory\n")
+    elif kind == "dangling":
+        dest.symlink_to(tmp_path / "gone", target_is_directory=True)
+    else:
+        elsewhere = _collection(tmp_path / "elsewhere", names=("keep",))
+        dest.symlink_to(elsewhere, target_is_directory=True)
+    with pytest.raises(UserInputError, match=r"collection.*not a directory"):
+        copy_collection(source, dest)
+    assert dest.exists() or dest.is_symlink()
+    if kind == "symlink":
+        assert (tmp_path / "elsewhere" / "keep.fasta").exists()

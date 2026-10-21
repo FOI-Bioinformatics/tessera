@@ -22,8 +22,9 @@ from ..core.process import run_tool
 from .base import Aligner, AlignParams, AlignResult
 
 # SibeliaZ's bash wrapper uses GNU/Linux-only constructs in its alignment step
-# (`free`, GNU `find -printf`, `stat -c`, `mktemp --suffix`). On macOS/BSD these
-# fail silently, so blocks are found but no MAF is written. We run a patched copy
+# (`free`, GNU `find -printf`, `stat -c`, `mktemp --suffix`, `paste --delimiters`, and
+# an `xargs -I` command longer than BSD's 255-byte default). On macOS/BSD these fail
+# silently, so blocks are found but no MAF rows are written. We run a patched copy
 # of the wrapper on those platforms.
 _BSD_PATCHES: tuple[tuple[str, str], ...] = (
     (
@@ -40,6 +41,15 @@ _BSD_PATCHES: tuple[tuple[str, str], ...] = (
     # FASTA extension). Patch the whole $(...) so the result still ends in .fa.
     ("$(mktemp --suffix=.fa $outdir/block.XXXXX)", "$(mktemp $outdir/block.XXXXX).fa"),
     ("ulimit $memory_min", ":"),
+    # BSD paste has no long options and reads '--delimiters' as a file name, so every
+    # MAF row is lost and the MAF holds headers only (SibeliaZ 1.2.7).
+    (
+        "paste <(echo \"$header\") <(echo \"$output\") --delimiters ' '",
+        "paste -d ' ' <(echo \"$header\") <(echo \"$output\")",
+    ),
+    # BSD xargs limits an -I replacement to 255 bytes; the command it builds holds two
+    # absolute paths, so a long output directory stopped every block alignment.
+    ("xargs -I @ -P $threads", "xargs -S 4096 -I @ -P $threads"),
 )
 
 
@@ -104,10 +114,11 @@ class SibeliazAligner(Aligner):
         if not any(line.startswith("s") for line in maf.read_text().splitlines()):
             raise OutputError(
                 f"SibeliaZ wrote an empty MAF (no alignment rows) at {maf}. Its "
-                "blocks were found but the per-block spoa alignment produced "
-                "nothing -- most often spoa was OOM-killed on a large collinear "
-                "block. Give the machine more memory or use the progressivemauve "
-                "backend."
+                "blocks were found but the per-block alignment step wrote nothing; "
+                "the wrapper runs it with errors suppressed. Known causes are spoa "
+                "being killed for lack of memory on a large collinear block, and a "
+                "wrapper command this platform does not support. Give the machine "
+                "more memory, or use the minimap2 or mafft backend."
             )
 
         # SibeliaZ's MAF uses sequence/contig IDs (FASTA header first token), not

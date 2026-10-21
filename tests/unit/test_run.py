@@ -62,3 +62,24 @@ def test_reattribution_skipped_when_no_major_parent_resolves() -> None:
 
     with _pytest.raises(AttributeError):
         lineage_of(None, {"refA": "clade1"})  # type: ignore[arg-type]
+
+
+def test_scan_names_an_all_gap_row_as_unaligned(tmp_path: Path, caplog) -> None:
+    import numpy as np
+
+    from tessera.recomb.run import _warn_unusable_rows
+
+    rows = {
+        "good": np.frombuffer(b"ACGTACGTAC", dtype=np.uint8),
+        "unplaced": np.frombuffer(b"----------", dtype=np.uint8),
+        "junk": np.frombuffer(b"NNNNNNNNNN", dtype=np.uint8),
+    }
+    log = logging.getLogger("scan_rows_test")
+    with caplog.at_level(logging.WARNING, logger="scan_rows_test"):
+        _warn_unusable_rows(rows, log)
+    lines = caplog.text.splitlines()
+    unplaced = [line for line in lines if "'unplaced'" in line]
+    junk = [line for line in lines if "'junk'" in line]
+    assert len(unplaced) == 1 and "no aligned base" in unplaced[0]
+    assert "alphabet" not in unplaced[0]
+    assert len(junk) == 1 and "alphabet" in junk[0]

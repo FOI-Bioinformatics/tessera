@@ -3,7 +3,9 @@
 Every adapter runs its binary through :func:`run_tool` rather than calling
 ``subprocess`` directly. Commands are passed as argument lists and executed
 without a shell, so user-supplied paths and filenames cannot inject shell
-metacharacters. A non-zero exit raises :class:`ToolExecutionError`.
+metacharacters. A non-zero exit raises :class:`ToolExecutionError`. Standard input
+is ``/dev/null``: no tool here is fed on stdin, and one that waited on an inherited
+terminal would hang the run, as alignment has no default timeout.
 
 Two properties matter for unattended runs. A tool can be given a ``timeout``, so a
 wedged child fails the run instead of hanging it forever -- relevant because these
@@ -94,8 +96,8 @@ def run_tool(
         try:
             with open(partial, "w") as out:
                 proc = subprocess.run(
-                    cmd, stdout=out, stderr=subprocess.PIPE, text=True,
-                    timeout=timeout, env=env,
+                    cmd, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.PIPE,
+                    text=True, timeout=timeout, env=env,
                 )
         except subprocess.TimeoutExpired as exc:
             partial.unlink(missing_ok=True)
@@ -114,7 +116,8 @@ def run_tool(
     else:
         try:
             proc = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=timeout, env=env
+                cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                timeout=timeout, env=env,
             )
         except subprocess.TimeoutExpired as exc:
             raise _timeout_error(cmd, timeout) from exc

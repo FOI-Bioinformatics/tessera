@@ -46,6 +46,7 @@ def _query_version(name: str, version_args: tuple[str, ...]) -> str | None:
     try:
         proc = subprocess.run(
             [name, *version_args],
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=30,

@@ -35,7 +35,13 @@ from ..core.executors import parallel_map
 from ..core.io import normalize_reference, read_fasta, write_fasta_record
 from ..core.plugins import ToolCapabilities
 from ..core.process import run_tool
-from .base import Aligner, AlignParams, AlignResult
+from .base import (
+    Aligner,
+    AlignParams,
+    AlignResult,
+    split_thread_budget,
+    warn_unplaced,
+)
 
 # extra-arg key -> MAFFT option taking a value.
 _VALUE_TUNING = {
@@ -125,8 +131,7 @@ class MafftAligner(Aligner):
 
         # The thread budget is shared: concurrent jobs each get a slice of it rather than
         # the whole. Pairwise-alignment jobs are also limited by memory.
-        budget = max(1, params.threads)
-        jobs = max(1, min(budget, len(queries)))
+        jobs, per_job = split_thread_budget(params.threads, len(queries))
         if not sixmer:
             limit = _multipair_job_limit(len(ref_seq), max(longest_added, 1))
             if limit < jobs:
@@ -134,8 +139,8 @@ class MafftAligner(Aligner):
                     "Running %d MAFFT job(s) at a time instead of %d to bound memory.",
                     limit, jobs,
                 )
-                jobs = limit
-        threads = str(budget // jobs)
+                jobs, per_job = split_thread_budget(params.threads, len(queries), limit)
+        threads = str(per_job)
 
         def add_genome(genome: Path) -> tuple[str, str]:
             aligned = out_dir / f"{genome.stem}.aln.fasta"
@@ -152,6 +157,7 @@ class MafftAligner(Aligner):
 
         rows = parallel_map(add_genome, queries, jobs, logger=logger)
 
+        warn_unplaced(rows, reference.stem, logger)
         msa = out_dir / "msa.fasta"
         with open(msa, "w") as out:
             write_fasta_record(out, reference.stem, ref_seq)

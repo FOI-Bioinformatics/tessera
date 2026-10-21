@@ -126,6 +126,19 @@ def maf_to_fasta(
                 f"not in the backbone '{ref_key}' as staged. The aligner's sequence "
                 "names do not match the input FASTA."
             )
+        declared = dict(ref_contigs)
+        resized = sorted(
+            f"{name} ({size} bp in the MAF, {declared[name]} bp in the FASTA)"
+            for name, size in seen_contigs.items() if size != declared[name]
+        )
+        if resized:
+            # Laid out by the FASTA, a block placed by the MAF's own length would land
+            # on the next contig's columns.
+            raise OutputError(
+                f"{maf_path} gives backbone sequence lengths that differ from the "
+                f"backbone '{ref_key}' as staged: {', '.join(resized)}. The aligner's "
+                "output does not belong to this input."
+            )
         layout = list(ref_contigs)
     else:
         layout = sorted(seen_contigs.items())
@@ -204,7 +217,7 @@ def maf_to_fasta(
 def _iter_blocks(maf_path: Path):
     block: list[_Row] = []
     with open(maf_path) as fo:
-        for line in fo:
+        for lineno, line in enumerate(fo, start=1):
             if line.startswith("a"):
                 if block:
                     yield block
@@ -212,11 +225,19 @@ def _iter_blocks(maf_path: Path):
             elif line.startswith("s"):
                 parts = line.split()
                 # s src start size strand srcSize text
-                if len(parts) >= 7:
-                    block.append(_Row(
-                        name=parts[1], start=int(parts[2]), size=int(parts[3]),
-                        strand=parts[4], src_size=int(parts[5]), text=parts[6],
-                    ))
+                if len(parts) < 7:
+                    # Dropping the row would leave its genome as an all-gap row, which
+                    # reads as divergence rather than as a file cut off mid-write.
+                    raise OutputError(
+                        f"Truncated alignment row in {maf_path} at line {lineno}: "
+                        f"{line.strip()!r} has {len(parts)} field(s), a MAF 's' line "
+                        "has 7. The aligner's output looks incomplete; check that it "
+                        "finished."
+                    )
+                block.append(_Row(
+                    name=parts[1], start=int(parts[2]), size=int(parts[3]),
+                    strand=parts[4], src_size=int(parts[5]), text=parts[6],
+                ))
             elif line.strip() == "" and block:
                 yield block
                 block = []

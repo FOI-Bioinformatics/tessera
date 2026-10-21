@@ -477,3 +477,129 @@ def test_progressivemauve_rejects_a_projection_that_is_not_pairwise(
         pm_mod.ProgressiveMauveAligner().align(
             genomes, genomes[0], tmp_path / "out", AlignParams(threads=1), _LOG
         )
+
+
+# --- minimap2 shares its thread budget across concurrent jobs ----------------------
+def _minimap2_runs(monkeypatch, tmp_path: Path, *, threads: int, n_queries: int
+                   ) -> tuple[list[int], list[list[str]]]:
+    """Run the minimap2 adapter against a fake `minimap2`; return (pool sizes, commands)."""
+    commands: list[list[str]] = []
+    workers: list[int] = []
+    real_map = mm_mod.parallel_map
+
+    def spy_map(fn, items, n, **kw):
+        workers.append(n)
+        return real_map(fn, items, n, **kw)
+
+    def fake_run(caps, cmd, **kw):
+        commands.append([str(c) for c in cmd])
+        kw["stdout_path"].write_text(
+            "@SQ\tSN:ref\tLN:12\nq\t0\tref\t1\t60\t12M\t*\t0\t0\tACGTACGTACGT\t*\n"
+        )
+        return ""
+
+    monkeypatch.setattr(mm_mod, "parallel_map", spy_map)
+    monkeypatch.setattr(mm_mod, "run_tool", fake_run)
+    ref = tmp_path / "ref.fasta"
+    ref.write_text(">ref\nACGTACGTACGT\n")
+    genomes = [ref]
+    for i in range(n_queries):
+        qry = tmp_path / f"qry{i}.fasta"
+        qry.write_text(f">qry{i}\nACGTACGTACGT\n")
+        genomes.append(qry)
+    mm_mod.Minimap2Aligner().align(genomes, ref, tmp_path / "out",
+                                   AlignParams(threads=threads), _LOG)
+    return workers, commands
+
+
+def test_minimap2_splits_threads_across_concurrent_jobs(monkeypatch, tmp_path: Path) -> None:
+    """--threads 4 used to start four minimap2 processes of four threads each."""
+    workers, commands = _minimap2_runs(monkeypatch, tmp_path, threads=4, n_queries=5)
+    assert workers == [4]
+    assert len(commands) == 5
+    assert {cmd[cmd.index("-t") + 1] for cmd in commands} == {"1"}
+
+
+def test_minimap2_gives_a_single_job_all_threads(monkeypatch, tmp_path: Path) -> None:
+    workers, commands = _minimap2_runs(monkeypatch, tmp_path, threads=4, n_queries=1)
+    assert workers == [1]
+    assert commands[0][commands[0].index("-t") + 1] == "4"
+
+
+def test_minimap2_never_starts_more_threads_than_the_budget(monkeypatch, tmp_path: Path) -> None:
+    # A budget that does not divide evenly: five threads over two queries. Two jobs of
+    # two threads stay within it; two jobs of five, or of three, would not.
+    workers, commands = _minimap2_runs(monkeypatch, tmp_path, threads=5, n_queries=2)
+    per_job = {int(cmd[cmd.index("-t") + 1]) for cmd in commands}
+    assert workers == [2]
+    assert per_job == {2}
+    assert workers[0] * max(per_job) <= 5
+
+
+# --- a genome the aligner did not place is named -----------------------------------
+# Not under the "tessera" logger: the CLI tests switch its propagation off, and caplog
+# only sees records that reach the root logger.
+_WARN_LOG = logging.getLogger("aligner_unplaced_test")
+
+
+def _ref_and_queries(tmp_path: Path) -> list[Path]:
+    paths = []
+    for name, seq in (("ref", "ACGTACGTACGT"), ("near", "ACGTACGTACGT"), ("far", "TTTTTTTTTTTT")):
+        path = tmp_path / f"{name}.fasta"
+        path.write_text(f">{name}\n{seq}\n")
+        paths.append(path)
+    return paths
+
+
+def test_minimap2_names_a_genome_it_could_not_map(monkeypatch, tmp_path: Path, caplog) -> None:
+    def fake_run(caps, cmd, **kw):
+        if "far" in str(cmd[-1]):
+            body = "far\t4\t*\t0\t0\t*\t*\t0\t0\tTTTTTTTTTTTT\t*\n"  # unmapped
+        else:
+            body = "near\t0\tref\t1\t60\t12M\t*\t0\t0\tACGTACGTACGT\t*\n"
+        kw["stdout_path"].write_text("@SQ\tSN:ref\tLN:12\n" + body)
+        return ""
+
+    monkeypatch.setattr(mm_mod, "run_tool", fake_run)
+    genomes = _ref_and_queries(tmp_path)
+    with caplog.at_level(logging.WARNING, logger=_WARN_LOG.name):
+        result = mm_mod.Minimap2Aligner().align(genomes, genomes[0], tmp_path / "out",
+                                                AlignParams(threads=1), _WARN_LOG)
+    assert _read_msa(result.msa_fasta)["far"] == "-" * 12
+    assert "1 genome(s)" in caplog.text
+    assert "far" in caplog.text and "near" not in caplog.text
+
+
+def test_mafft_names_a_genome_it_could_not_place(monkeypatch, tmp_path: Path, caplog) -> None:
+    def fake_run(caps, cmd, **kw):
+        row = "-" * 12 if "far" in str(cmd[cmd.index("--addfragments") + 1]) else "ACGTACGTACGT"
+        kw["stdout_path"].write_text(f">ref\nACGTACGTACGT\n>added\n{row}\n")
+        return ""
+
+    monkeypatch.setattr(mafft_mod, "run_tool", fake_run)
+    genomes = _ref_and_queries(tmp_path)
+    with caplog.at_level(logging.WARNING, logger=_WARN_LOG.name):
+        mafft_mod.MafftAligner().align(genomes, genomes[0], tmp_path / "out",
+                                       AlignParams(threads=1), _WARN_LOG)
+    assert "far" in caplog.text and "near" not in caplog.text
+
+
+def test_progressivemauve_names_a_genome_in_no_block(monkeypatch, tmp_path: Path, caplog) -> None:
+    def fake_run(caps, cmd, **kw):
+        cmd = [str(c) for c in cmd]
+        xmfa = Path(cmd[cmd.index("--output") + 1])
+        ref_path, query_path = cmd[-2], cmd[-1]
+        header = f"#Sequence1File\t{ref_path}\n#Sequence2File\t{query_path}\n"
+        if "far" in query_path:  # the reference aligned to nothing
+            xmfa.write_text(header + f"> 1:1-12 + {ref_path}\nACGTACGTACGT\n=\n")
+        else:
+            xmfa.write_text(header + f"> 1:1-12 + {ref_path}\nACGTACGTACGT\n"
+                            f"> 2:1-12 + {query_path}\nACGTACGTACGT\n=\n")
+        return ""
+
+    monkeypatch.setattr(pm_mod, "run_tool", fake_run)
+    genomes = _ref_and_queries(tmp_path)
+    with caplog.at_level(logging.WARNING, logger=_WARN_LOG.name):
+        pm_mod.ProgressiveMauveAligner().align(genomes, genomes[0], tmp_path / "out",
+                                               AlignParams(threads=1), _WARN_LOG)
+    assert "far" in caplog.text and "near" not in caplog.text

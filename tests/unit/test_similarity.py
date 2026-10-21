@@ -225,3 +225,20 @@ def test_low_canonical_records_flags_unreadable_rows(tmp_path: Path) -> None:
     assert "junk" in flagged
     assert "good" not in flagged
     assert "gappy" not in flagged   # judged over non-gap positions only
+
+
+def test_an_all_gap_row_is_unaligned_not_an_alphabet_problem(tmp_path: Path) -> None:
+    """An all-gap row means the aligner placed nothing of that genome; reporting it
+    as an unreadable alphabet sent the user looking in the wrong place."""
+    from tessera.recomb.similarity import unaligned_records
+
+    msa = write_fasta(tmp_path / "m.fasta", {
+        "good": "ACGTACGTAC",
+        "unplaced": "----------",
+        "unknown": "NNNNNNNNNN",   # placed, but no canonical base: still an alphabet flag
+    })
+    rows = _read_alignment(str(msa))
+    assert unaligned_records(rows) == ["unplaced"]
+    flagged = dict(low_canonical_records(rows, min_fraction=0.5))
+    assert "unplaced" not in flagged
+    assert flagged["unknown"] == 0.0

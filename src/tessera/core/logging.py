@@ -17,10 +17,13 @@ def configure_logging(output_dir: Path | None = None, level: int = logging.INFO)
     """Configure and return the ``tessera`` logger.
 
     Idempotent: re-configuring replaces existing handlers so repeated calls (e.g.
-    in tests) do not duplicate log lines.
+    in tests) do not duplicate log lines. The replaced handlers are closed, so a
+    previous run log does not stay open.
     """
     logger = logging.getLogger(LOGGER_NAME)
     logger.setLevel(logging.DEBUG)
+    for handler in logger.handlers:
+        handler.close()
     logger.handlers.clear()
     logger.propagate = False
 

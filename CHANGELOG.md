@@ -17,10 +17,63 @@ around the callers change: the `donor_undercovered` flag and
 donor-absent rows where a coverage gap is now recognised as a breakpoint artefact; runs
 that select the barcode caller on a panel where it cannot run (it no longer counts toward
 `--min-methods`, and a barcode-only run is refused); and what reaches the scan -- an
-alignment built with the MAFFT or MAF-based backends, or a panel built with `--curate`,
-may now be a different (corrected) one.
+alignment built with the MAFFT or MAF-based backends, an alignment built with
+progressiveMauve (the backbone row is now the reference itself), a sibeliaz alignment on
+macOS (which previously came out empty), or a panel built with `--curate`, may now be a
+different (corrected) one.
 
 ### Fixed
+
+Alignment integrity, from the fourth audit
+(`docs/superpowers/specs/2026-10-12-audit-swot-gap.md`, section 1.3). These change what
+alignment reaches the scan, not how the scan calls regions:
+
+- **The progressiveMauve backbone row could lose columns.** It was taken from the first
+  query's projection, which is gapped wherever that query did not align; with queries
+  covering different parts of the backbone, the rest of the backbone came out as gaps,
+  and which part depended on the order of the queries. The backbone row is now the
+  backbone's own sequence. Checked against a fake of the tool only: progressiveMauve is
+  not installed in CI or on the development machine.
+- **The `sibeliaz` backend wrote no alignment on macOS.** Its wrapper uses
+  `paste --delimiters`, which BSD `paste` reads as a file name, and an `xargs -I` command
+  longer than BSD's 255-byte default; either left the MAF without rows, and the adapter
+  reported this as spoa running out of memory. The patched wrapper now rewrites both.
+  Reproduced and checked with SibeliaZ 1.2.7 on macOS; Linux is unaffected.
+- **Two records with one sequence ID in a genome were silently merged.** The `sibeliaz`,
+  `cactus` and `minimap2` layouts are keyed on the ID, so the second record's blocks were
+  written onto the first one's columns (or the backbone row lost a record) in an
+  otherwise well-formed alignment. Such a file is now refused at staging, for every
+  backend, naming the file, the ID and both lines.
+- **`minimap2` multiplied its thread budget.** `--threads N` started N concurrent
+  `minimap2` processes with N threads each. The budget is now shared between them, by the
+  same rule the `mafft` backend uses.
+- **A genome the `minimap2`, `mafft` or `progressivemauve` backend could not place was
+  dropped in silence.** It became an all-gap row with no warning (only the MAF-based
+  backends named it), and the scan later reported it as an alphabet problem. These
+  backends now name such genomes, and the scan reports an all-gap row as unaligned,
+  separately from a record whose letters it could not read.
+- **Two MAF inputs were absorbed instead of reported.** A MAF row cut off before its
+  sequence text was dropped, so its genome became an all-gap row that read as divergence;
+  and a backbone contig whose length in the MAF differed from the staged FASTA had its
+  blocks written onto the next contig's columns. Both now stop the run with a message
+  naming the file.
+- **The Nextclade pool cache could not be installed over an existing directory.** Two runs
+  building the same pool at once, or a cache directory holding only unrecognised files,
+  made the install fail with "Unexpected error". The pool is now installed the way the
+  NCBI Virus panel is: a pool another run finished first is kept, a directory without a
+  completeness record is replaced, and the pool carries such a record. Pools cached by
+  earlier releases are still used.
+- **A file or symlink at `<output>/collection` gave a raw error.** When a previous run's
+  marker was present, clearing the working collection failed with `NotADirectoryError`,
+  an `OSError` for a symlink, or `FileExistsError` for a dangling one. Each is now a user
+  error that names the path; a symlink is refused rather than followed.
+- **External tools inherited standard input.** A tool that read stdin or prompted would
+  have waited on the terminal, and alignment has no default timeout. Every external tool,
+  and every version probe, now runs with standard input closed. No current tool is known
+  to have done this. Reconfiguring logging also now closes the previous run log.
+- **`cactus`: two labels differing only in `.` and `_` would share one row.** Cactus
+  sample names cannot contain `.`, and the adapter maps it to `_`; such inputs are now
+  refused before Cactus starts. Checked without the binary, which is not installed here.
 
 Data safety and alignment:
 

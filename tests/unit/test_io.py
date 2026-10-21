@@ -130,3 +130,58 @@ def test_stage_genomes_cleans_a_gzipped_genome(tmp_path: Path) -> None:
     query.write_text(">q\nACGT\n")
     staged, _ = stage_genomes(query, coll, tmp_path / "stage", _LOG)
     assert {p.stem: p for p in staged}["z"].read_text() == ">z\nACGT\nTTAA\n"
+
+
+
+# --- a sequence ID repeated inside one genome ------------------------------------
+# The sibeliaz, cactus and minimap2 backends lay a genome's contigs out by sequence ID,
+# in dicts keyed on that ID. Two records with one ID collapse to one entry: a donor
+# block lands on the wrong contig's columns, or the backbone row comes back half gapped,
+# and the alignment still looks well-formed.
+
+def _collection_with(tmp_path: Path, refa_text: str) -> Path:
+    collection = tmp_path / "collection"
+    collection.mkdir()
+    (collection / "refA.fasta").write_text(refa_text)
+    (collection / "refB.fasta").write_text(">refB\nACGTACGT\n")
+    return collection
+
+
+def test_a_sequence_id_repeated_within_a_genome_is_rejected(tmp_path: Path) -> None:
+    collection = _collection_with(tmp_path, ">c1\nACGT\n>c2\nGGGG\n>c1\nTTTT\n")
+    query = tmp_path / "query.fasta"
+    query.write_text(">q\nACGTACGT\n")
+    with pytest.raises(UserInputError, match=r"refA\.fasta.*'c1'.*lines 1 and 5"):
+        stage_genomes(query, collection, tmp_path / "genomes", _LOG)
+    assert not (tmp_path / "genomes").exists()  # rejected before anything is staged
+
+
+def test_a_sequence_id_repeated_within_the_query_is_rejected(tmp_path: Path) -> None:
+    collection = _collection_with(tmp_path, ">refA\nACGTACGT\n")
+    query = tmp_path / "query.fasta"
+    query.write_text(">q\nACGT\n>q\nTTTT\n")
+    with pytest.raises(UserInputError, match=r"query\.fasta.*'q'"):
+        stage_genomes(query, collection, tmp_path / "genomes", _LOG)
+
+
+def test_a_repeated_id_is_found_in_a_gzipped_genome_by_its_first_token(tmp_path: Path) -> None:
+    # NCBI downloads arrive gzipped, and two records can share an accession while their
+    # descriptions differ; the ID is the first token, which is what the aligners read.
+    collection = _collection_with(tmp_path, ">refA\nACGTACGT\n")
+    with gzip.open(collection / "refC.fasta.gz", "wt") as fo:
+        fo.write(">NC_1.1 chromosome\nACGT\n>NC_1.1 plasmid pX\nTTTT\n")
+    query = tmp_path / "query.fasta"
+    query.write_text(">q\nACGTACGT\n")
+    with pytest.raises(UserInputError, match=r"refC\.fasta\.gz.*'NC_1\.1'"):
+        stage_genomes(query, collection, tmp_path / "genomes", _LOG)
+
+
+def test_one_id_in_two_different_genomes_is_still_staged(tmp_path: Path) -> None:
+    # Guard (passes before and after): only a repeat inside one file is rejected here.
+    # An ID shared between genomes is the sibeliaz adapter's own check.
+    collection = _collection_with(tmp_path, ">contig_1\nACGTACGT\n")
+    (collection / "refB.fasta").write_text(">contig_1\nACGTACGA\n")
+    query = tmp_path / "query.fasta"
+    query.write_text(">q\nACGTACGT\n")
+    staged, _ = stage_genomes(query, collection, tmp_path / "genomes", _LOG)
+    assert len(staged) == 3

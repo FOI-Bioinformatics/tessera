@@ -24,6 +24,44 @@ _TRUTHY = frozenset({"1", "true", "yes", "on"})
 _FALSY = frozenset({"0", "false", "no", "off", ""})
 
 
+def split_thread_budget(
+    threads: int, tasks: int, job_limit: int | None = None
+) -> tuple[int, int]:
+    """Divide a ``--threads`` budget between concurrent tool runs.
+
+    Returns ``(jobs, threads_per_job)``: at most one job per task, never more jobs than
+    threads, and never fewer than one of either. ``job_limit`` caps the number of jobs
+    further (a memory bound, say). ``jobs * threads_per_job`` never exceeds the budget,
+    so ``--threads 16`` starts at most sixteen threads in all rather than sixteen
+    processes of sixteen threads each.
+    """
+    budget = max(1, threads)
+    jobs = max(1, min(budget, tasks))
+    if job_limit is not None:
+        jobs = max(1, min(jobs, job_limit))
+    return jobs, budget // jobs
+
+
+def warn_unplaced(
+    rows: Sequence[tuple[str, str]], backbone: str, logger: logging.Logger
+) -> None:
+    """Name every genome whose row holds no aligned base.
+
+    The pairwise backends write a genome they could not place against the backbone as
+    an all-gap row, so the alignment keeps one row per input genome. Such a row
+    contributes nothing to the scan; without a warning the panel is silently smaller
+    than the collection. The MAF-based backends say the same in their converter.
+    """
+    unplaced = sorted(label for label, row in rows if not row.strip("-"))
+    if unplaced:
+        logger.warning(
+            "%d genome(s) were not aligned to any part of the backbone '%s' and are "
+            "written as all-gap rows: %s. They contribute nothing to the scan; they "
+            "may be too divergent for this aligner.",
+            len(unplaced), backbone, ", ".join(unplaced),
+        )
+
+
 class OutputKind(Enum):
     MSA_FASTA = "msa_fasta"
 

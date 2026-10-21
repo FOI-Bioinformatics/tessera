@@ -1,12 +1,13 @@
 """XMFA -> FASTA converter (Python 3 port of x2fa.py).
 
 Port of ``x2fa.py`` v9 by Adrian Larkeryd, originally invoked as a Python 2
-subprocess by the legacy ``phylo.py``. Behaviour is preserved: the reference
-sequence defines the coordinate system, reference gaps are removed, optional
-deletion flanks are screened, and every sequence is projected onto the reference
-coordinates. Strings are handled as ``bytearray`` / ``bytes`` throughout (the
-original relied on Python 2 ``str``/``bytearray`` equivalence); regex scanning
-uses a latin-1 view so byte positions are 1:1 with characters.
+subprocess by the legacy ``phylo.py``. Otherwise behaviour is preserved: the reference
+sequence defines the coordinate system, reference gaps are removed, and every
+sequence is projected onto the reference coordinates. The original's optional
+deletion-flank screen is not carried over: no caller used it. Strings are handled
+as ``bytearray`` / ``bytes`` throughout (the original relied on Python 2
+``str``/``bytearray`` equivalence); regex scanning uses a latin-1 view so byte
+positions are 1:1 with characters.
 """
 
 from __future__ import annotations
@@ -34,14 +35,12 @@ def reverse_complement(dna: bytes) -> bytes:
 def xmfa_to_fasta(
     xmfa_path: str | Path,
     reference_name: str,
-    flank: int,
     out_path: str | Path,
     reference_length: int | None = None,
 ) -> Path:
     """Convert a progressiveMauve XMFA file to a reference-anchored FASTA.
 
     ``reference_name`` must match a ``#SequenceNFile`` entry in the XMFA.
-    ``flank`` (>=0) screens deletion flanks by that many bases.
 
     ``reference_length`` pins the output width to the full reference genome
     length. Without it the width is the furthest aligned reference position in
@@ -143,7 +142,6 @@ def xmfa_to_fasta(
 
         # Find reference gaps and remove those columns from every sequence.
         search_pos = 0
-        list_of_gaps: list[list[int]] = []
         ref_view = a_gen[alignment][reference_num]["seq"].decode("latin-1")
         while search_pos < len(a_gen[alignment][reference_num]["seq"]):
             gap_hit = _PATTERN_GAP.search(ref_view, search_pos)
@@ -159,46 +157,18 @@ def xmfa_to_fasta(
                 end = pos + rm_h[alignment][pos]
                 for sequence in a_gen[alignment]:
                     a_gen[alignment][sequence]["seq"][start:end] = bytearray()
-                if flank > 0:
-                    for g in list_of_gaps:
-                        g[0] = g[0] - end + start
-                        g[1] = g[1] - end + start
-                    list_of_gaps.append([start, start])
-
-        if flank > 0:
-            search_pos = 0
-            for sequence in a_gen[alignment]:
-                if sequence == reference_num:
-                    continue
-                seq_view = a_gen[alignment][sequence]["seq"].decode("latin-1")
-                while search_pos < length_of_reference:
-                    gap_hit = _PATTERN_GAP.search(seq_view, search_pos)
-                    if gap_hit:
-                        list_of_gaps.append([gap_hit.start(), gap_hit.end()])
-                        search_pos = gap_hit.end()
-                    else:
-                        break
-            for non_ref_gap in list_of_gaps:
-                for sequence in a_gen[alignment]:
-                    seq = a_gen[alignment][sequence]["seq"]
-                    new_start = max(0, non_ref_gap[0] - flank)
-                    new_end = min(non_ref_gap[1] + flank, len(seq))
-                    seq[new_start:new_end] = bytearray(b"-" * (new_end - new_start))
 
     # Project each alignment block onto reference coordinates.
     for alignment in a_gen:
         ref = a_gen[alignment][reference_num]
         start = int(ref["p1"]) - 1
         end = int(ref["p2"])
-        if flank > 0:
-            start += flank
-            end -= flank
         forward = ref["sign"] == "+"
         for sequence in a_gen[alignment]:
             seq = a_gen[alignment][sequence]["seq"]
             if not (start >= 0 and end > 0 and seq):
                 continue
-            fragment = bytes(seq[flank:-flank]) if flank > 0 else bytes(seq)
+            fragment = bytes(seq)
             if not forward:
                 fragment = reverse_complement(fragment)
             outseqs[sequence][start:end] = fragment

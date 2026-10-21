@@ -16,7 +16,7 @@ from pathlib import Path
 from ..converters.hal_to_maf import hal_to_maf
 from ..converters.maf_to_fasta import maf_to_fasta
 from ..core.binaries import BinarySpec
-from ..core.errors import OutputError
+from ..core.errors import OutputError, UserInputError
 from ..core.io import normalize_reference
 from ..core.plugins import ToolCapabilities
 from ..core.process import run_tool
@@ -44,6 +44,7 @@ class CactusAligner(Aligner):
         logger: logging.Logger,
     ) -> AlignResult:
         genomes, reference = normalize_reference(genomes, reference, tool="Cactus")
+        _reject_colliding_sample_names(genomes)
         out_dir.mkdir(parents=True, exist_ok=True)
 
         genome_paths = [os.path.abspath(g) for g in genomes]
@@ -95,6 +96,25 @@ class CactusAligner(Aligner):
 def _sample_name(genome: Path) -> str:
     """Cactus sample names must avoid '.' (reserved for haplotype suffixes)."""
     return genome.stem.replace(".", "_")
+
+
+def _reject_colliding_sample_names(genomes: Sequence[Path]) -> None:
+    """Refuse two genomes whose labels become one Cactus sample name.
+
+    Staging already refuses two inputs with one label, but ``_sample_name`` maps '.' to
+    '_', so ``MN908947.3`` and ``MN908947_3`` -- distinct labels -- would share a
+    sample name, a seqFile line and an MSA row.
+    """
+    seen: dict[str, str] = {}
+    for genome in genomes:
+        sample = _sample_name(genome)
+        if sample in seen and seen[sample] != genome.stem:
+            raise UserInputError(
+                f"Genomes '{seen[sample]}' and '{genome.stem}' both become the Cactus "
+                f"sample name '{sample}' (Cactus does not allow '.' in sample names). "
+                "Rename one, or use another --aligner."
+            )
+        seen[sample] = genome.stem
 
 
 def _find_hal(results: Path) -> Path | None:
