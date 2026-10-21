@@ -60,17 +60,11 @@ def run_pvalue(wins: np.ndarray, run_len: int, *, block: int = 1, seed: int = 0)
     if run_len <= 0 or k == 0 or run_len > k:
         return 1.0
     block = max(1, min(block, n_win))
-    n_blocks = int(np.ceil(n_win / block))
     perms = _PERMUTATIONS
     if n_win * perms > _MAX_PERM_CELLS:
         perms = max(_MIN_PERMUTATIONS, _MAX_PERM_CELLS // max(1, n_win))
 
-    rng = np.random.default_rng(seed)
-    padded = np.zeros(n_blocks * block, dtype=bool)
-    padded[:n_win] = wins
-    blocks = padded.reshape(n_blocks, block)
-    order = np.argsort(rng.random((perms, n_blocks)), axis=1)
-    shuffled = blocks[order].reshape(perms, n_blocks * block)[:, :n_win]
+    shuffled = _block_permutations(wins, block, perms, np.random.default_rng(seed))
 
     longest = np.zeros(perms, dtype=np.int32)
     cur = np.zeros(perms, dtype=np.int32)
@@ -78,6 +72,28 @@ def run_pvalue(wins: np.ndarray, run_len: int, *, block: int = 1, seed: int = 0)
         cur = np.where(shuffled[:, j], cur + 1, 0)
         longest = np.maximum(longest, cur)
     return float((np.count_nonzero(longest >= run_len) + 1) / (perms + 1))
+
+
+def _block_permutations(wins: np.ndarray, block: int, perms: int, rng) -> np.ndarray:
+    """``(perms, n_win)`` block permutations of ``wins``, every row holding its wins.
+
+    The vector is padded to whole blocks, the blocks are shuffled, and the padding cells
+    are then removed wherever they landed. Cutting the shuffled row back to ``n_win``
+    instead (the earlier approach) dropped any wins that a shuffle moved past the end
+    whenever ``n_win`` was not a multiple of ``block``, so the null had fewer wins than
+    the observed vector and its runs were shorter than they should be.
+    """
+    n_win = int(wins.size)
+    n_blocks = int(np.ceil(n_win / block))
+    padded = np.zeros(n_blocks * block, dtype=bool)
+    padded[:n_win] = wins
+    real = np.zeros(n_blocks * block, dtype=bool)
+    real[:n_win] = True
+    order = np.argsort(rng.random((perms, n_blocks)), axis=1)
+    values = padded.reshape(n_blocks, block)[order].reshape(perms, -1)
+    keep = real.reshape(n_blocks, block)[order].reshape(perms, -1)
+    # Every row has exactly n_win real cells, so the boolean selection reshapes cleanly.
+    return values[keep].reshape(perms, n_win)
 
 
 def bootstrap_support(
@@ -99,6 +115,17 @@ def bootstrap_support(
     identity = np.divide(m, c, out=np.zeros_like(m), where=c > 0)
     winners = np.argmax(identity, axis=0)  # (n,) best reference per resample
     return np.bincount(winners, minlength=n_refs) / n
+
+
+def _candidate_groups(candidates: list[str], clusters: list[list[str]] | None) -> np.ndarray:
+    """Group index per candidate: candidates in one lineage cluster share an index."""
+    of = {label: i for i, members in enumerate(clusters or []) for label in members}
+    keys: dict[object, int] = {}
+    out = np.empty(len(candidates), dtype=np.int64)
+    for k, label in enumerate(candidates):
+        key: object = ("cluster", of[label]) if label in of else ("genome", label)
+        out[k] = keys.setdefault(key, len(keys))
+    return out
 
 
 def call_regions_bootscan(result: WindowSimilarity, analysis, window_size: int, params):
@@ -131,6 +158,14 @@ def call_regions_bootscan(result: WindowSimilarity, analysis, window_size: int, 
 
     bounds = _window_bounds(result, window_size)  # window column spans (per position)
     width = match_stack.shape[1]
+    # Near-duplicates of one lineage split the bootstrap support between them: two
+    # genomes 0.4 % apart each win about half the resamples, and neither reaches the
+    # 70 % threshold the lineage would. Support is therefore counted per lineage cluster
+    # (the run's shared clusters; a genome outside every cluster is its own), and the
+    # cluster's best-supported member names the donor.
+    group = _candidate_groups(candidates, getattr(params, "reference_clusters", None))
+    n_groups = int(group.max()) + 1
+    major_group = int(group[major_idx])
     # winner[w] = the candidate index with top bootstrap support at window w (or major)
     winner = np.full(len(bounds), major_idx)
     support = np.zeros(len(bounds))
@@ -139,28 +174,36 @@ def call_regions_bootscan(result: WindowSimilarity, analysis, window_size: int, 
         if e - s < 1:
             continue
         sup = bootstrap_support(match_stack[:, s:e], comp_stack[:, s:e], seed=w)
-        best = int(np.argmax(sup))
-        if best != major_idx and sup[best] >= _SUPPORT and sup[best] > sup[major_idx]:
-            winner[w] = best
-            support[w] = sup[best]
+        by_group = np.bincount(group, weights=sup, minlength=n_groups)
+        best_group = int(np.argmax(by_group))
+        if (best_group != major_group and by_group[best_group] >= _SUPPORT
+                and by_group[best_group] > by_group[major_group]):
+            members = np.flatnonzero(group == best_group)
+            winner[w] = int(members[np.argmax(sup[members])])
+            support[w] = by_group[best_group]
 
     # Contiguous runs of the same non-major winner -> candidate regions, each scored
     # against the block-permutation null so a run of chance flips cannot pass as an
     # event. Bootstrap support says which reference is closest here; it does not say
     # that the query recombined, which is what the run length is tested for.
     block = _overlap_block(bounds)
+    # Runs are of one lineage, not one genome: the member with the top support can change
+    # from window to window within a cluster.
+    won = np.where(winner == major_idx, -1, group[winner])
     runs: list[tuple[int, int, int, float]] = []  # (donor, start_w, end_w, p)
     w = 0
-    while w < len(winner):
-        if winner[w] == major_idx:
+    while w < len(won):
+        if won[w] < 0:
             w += 1
             continue
-        donor = winner[w]
+        lineage = won[w]
         j = w
-        while j < len(winner) and winner[j] == donor:
+        while j < len(won) and won[j] == lineage:
             j += 1
         if j - w >= _MIN_WINDOWS:
-            p = run_pvalue(winner == donor, j - w, block=block, seed=donor)
+            # The run's donor is the member that won most of its windows.
+            donor = int(np.bincount(winner[w:j]).argmax())
+            p = run_pvalue(won == lineage, j - w, block=block, seed=donor)
             runs.append((donor, w, j, p))
         w = j
     if not runs:

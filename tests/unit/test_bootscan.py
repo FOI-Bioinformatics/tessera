@@ -99,3 +99,81 @@ def test_bootscan_does_not_call_a_clonal_panel(tmp_path: Path) -> None:
         result, analyze(result), 500, RegionParams.with_defaults(500, method="bootscan")
     )
     assert regions == []
+
+
+# --- the run-length null and lineage clusters --------------------------------
+
+def test_block_permutation_keeps_every_win_when_the_last_block_is_partial() -> None:
+    # 11 windows, block 10: the second block is one window long. Every window is a win,
+    # so every arrangement has a run of 11 and p must be 1. Cutting the shuffled vector
+    # back to 11 cells dropped ten wins whenever the short block came first.
+    from tessera.recomb.bootscan import run_pvalue
+
+    assert run_pvalue(np.ones(11, dtype=bool), 11, block=10) == 1.0
+
+
+def test_block_permutations_hold_the_win_count_and_length() -> None:
+    from tessera.recomb.bootscan import _block_permutations
+
+    wins = np.zeros(103, dtype=bool)
+    wins[[0, 1, 2, 50, 51, 100, 101, 102]] = True
+    perms = _block_permutations(wins, 10, 400, np.random.default_rng(0))
+    assert perms.shape == (400, 103)
+    assert set(perms.sum(axis=1)) == {8}
+
+
+def test_block_permutations_with_fewer_windows_than_one_block() -> None:
+    from tessera.recomb.bootscan import _block_permutations, run_pvalue
+
+    wins = np.array([1, 0, 1, 1, 0], dtype=bool)
+    perms = _block_permutations(wins, 5, 50, np.random.default_rng(0))
+    assert perms.shape == (50, 5)
+    assert (perms == wins).all()  # one block: the only arrangement is the observed one
+    assert run_pvalue(wins, 2, block=50) == 1.0  # block is clamped to n_win
+
+
+def test_block_permutations_unchanged_when_windows_are_a_multiple_of_the_block() -> None:
+    from tessera.recomb.bootscan import _block_permutations
+
+    wins = np.zeros(30, dtype=bool)
+    wins[[3, 4, 5, 20]] = True
+    rng = np.random.default_rng(7)
+    got = _block_permutations(wins, 10, 20, rng)
+    ref_rng = np.random.default_rng(7)
+    order = np.argsort(ref_rng.random((20, 3)), axis=1)
+    expected = wins.reshape(3, 10)[order].reshape(20, 30)
+    assert (got == expected).all()
+
+
+def _redundant_donor_msa(tmp_path: Path) -> Path:
+    """recombinant_msa with the donor lineage B represented by two genomes ~0.4 % apart,
+    each 0.2 % from the B sequence the query carries (neither is closer by design)."""
+    from tessera.core.io import read_fasta
+
+    from ..factories import _mutate
+
+    rng = random.Random(3)
+    records = dict(read_fasta(recombinant_msa(tmp_path, recombinant=True)))
+    original_b = records["B"]
+    records["B"] = _mutate(original_b, 0.002, rng)
+    records["B2"] = _mutate(original_b, 0.002, rng)
+    return write_fasta(tmp_path / "redundant.fasta", records)
+
+
+def test_bootscan_counts_support_per_lineage_cluster(tmp_path: Path) -> None:
+    # Two near-identical genomes of the donor lineage split the bootstrap support between
+    # them, so neither reaches 70 % and the tract is lost. Counted per cluster, it is not.
+    result = compute_similarity(str(_redundant_donor_msa(tmp_path)), "query",
+                                window_size=500, window_step=50)
+    split, _, _ = call_regions(
+        result, analyze(result), 500, RegionParams.with_defaults(500, method="bootscan")
+    )
+    assert split == []
+    pooled, major, _ = call_regions(
+        result, analyze(result), 500,
+        RegionParams.with_defaults(500, method="bootscan", reference_clusters=[["B", "B2"]]),
+    )
+    assert major == "A"
+    assert len(pooled) == 1
+    assert pooled[0].minor_parent in {"B", "B2"}
+    assert pooled[0].query_start < 2300 and pooled[0].query_end > 3700

@@ -27,7 +27,7 @@ from statistics import mean
 
 from ..core.errors import UserInputError
 from .analyze import AnalysisResult, rank_datasets
-from .clusters import all_singletons, cluster_references, clustered_view
+from .clusters import _window_bounds, clustered_view, lineage_clusters
 from .hmm import DEFAULT_JUMP_RATE, Segment, segment_query
 from .siblings import SiblingEvidence, sibling_aware_states
 from .similarity import WindowSimilarity, discordant_counts, region_identity
@@ -100,6 +100,10 @@ class RegionParams:
     # ONLY by that caller, never the genome competition, so it cannot reproduce the reverted
     # competition-layer pooling regression.
     lineage_map: dict[str, str] | None = None
+    # Lineage clusters computed once for the run (clusters.lineage_clusters): multi-member
+    # clusters only, ``[]`` for none. ``None`` means "not computed": the HMM caller then
+    # computes them itself, as it did before they were shared.
+    reference_clusters: list[list[str]] | None = None
 
     @classmethod
     def with_defaults(
@@ -115,6 +119,7 @@ class RegionParams:
         exclude_siblings: bool = True,
         cluster_lineages: bool = True,
         lineage_map: dict[str, str] | None = None,
+        reference_clusters: list[list[str]] | None = None,
     ) -> RegionParams:
         return cls(
             min_region=window_size if min_region is None else min_region,
@@ -127,6 +132,7 @@ class RegionParams:
             exclude_siblings=exclude_siblings,
             cluster_lineages=cluster_lineages,
             lineage_map=lineage_map,
+            reference_clusters=reference_clusters,
         )
 
 
@@ -149,6 +155,12 @@ class Region:
     breakpoint_hi: int | None = None
     # Share of distinguishing (discordant) sites that favour the donor, and the
     # sign-test p-value with its Benjamini-Hochberg q-value (FDR across segments).
+    # What `support` counts differs by caller, and `statistic` names the test rather
+    # than the unit, so one case needs saying here: Bootscan's value is the support of
+    # the donor's lineage cluster, pooled over its members, where the donor is one of a
+    # cluster of near-duplicates, and the support of the single genome otherwise. Its
+    # `statistic` reads "mean bootstrap support for the donor" either way, so the row
+    # does not say which of the two it is.
     support: float | None = None
     pvalue: float | None = None
     qvalue: float | None = None
@@ -225,14 +237,19 @@ def call_regions(
     analysis: AnalysisResult,
     window_size: int,
     params: RegionParams,
+    *,
+    not_run: dict[str, str] | None = None,
 ) -> tuple[list[Region], str | None, list[SiblingEvidence]]:
     """Call recombinant regions.
 
     Returns ``(regions, major_parent, excluded_siblings)`` -- the third element lists
     the query's whole-genome siblings set aside before segmenting (HMM caller only).
+
+    A caller that ran but could not test (the HMM left with one state) records why in
+    ``not_run`` under its own name, when a mapping is given; its result is unchanged.
     """
     if params.method == "hmm":
-        regions, major, siblings = _call_regions_hmm(result, window_size, params)
+        regions, major, siblings = _call_regions_hmm(result, window_size, params, not_run)
     elif params.method == "3seq":
         from .threeseq import call_regions_3seq
         regions, major, siblings = call_regions_3seq(result, analysis, params)
@@ -256,8 +273,16 @@ def call_regions(
     return regions, major, siblings
 
 
+# Why the HMM could not test when lineage clustering left it a single state.
+HMM_ONE_STATE = (
+    "lineage clustering pooled every reference into one lineage, so the HMM had no "
+    "second state to switch to; rerun with --no-cluster-lineages"
+)
+
+
 def _call_regions_hmm(
-    result: WindowSimilarity, window_size: int, params: RegionParams
+    result: WindowSimilarity, window_size: int, params: RegionParams,
+    not_run: dict[str, str] | None = None,
 ) -> tuple[list[Region], str | None, list[SiblingEvidence]]:
     """HMM segmentation; a non-major segment is reported only when its donor is a
     significantly better match than the major on the sites distinguishing them.
@@ -276,11 +301,15 @@ def _call_regions_hmm(
     # pooled lineages. A no-op for a curated panel (few refs, or all singletons).
     work = result
     cluster_size: dict[str, int] = {}
-    n_refs = len(result.similarities)
-    if params.cluster_lineages and params.cluster_min_refs <= n_refs <= params.cluster_max_refs:
-        clusters = cluster_references(result, window_size, params)
-        if not all_singletons(clusters):
-            work, cluster_size = clustered_view(result, clusters)
+    pooled = params.reference_clusters
+    if pooled is None:
+        pooled = lineage_clusters(result, window_size, params)
+    if pooled:
+        work, cluster_size = clustered_view(result, _with_singletons(result, pooled))
+    if len(work.similarities) < 2 and not_run is not None:
+        # One state cannot switch, so the decode below cannot call a region whatever
+        # the data. The run continues unchanged; the caller is reported as not run.
+        not_run["hmm"] = HMM_ONE_STATE
 
     states: list[str] | None = None
     dropped: list[SiblingEvidence] = []
@@ -330,15 +359,18 @@ def _call_regions_hmm(
         # informative-site windowing are identity at polymorphic columns only).
         mean_minor = region_identity(work.rows, work.query, seg.state, lo, hi)
         mean_major = region_identity(work.rows, work.query, major, lo, hi)
+        # The window count and the posterior describe the reported span too, not the
+        # segment it was trimmed from: the segment's windows that overlap the span.
+        n_windows, posterior = _span_windows(work, window_size, seg, lo, hi)
         regions.append(
             Region(
                 minor_parent=seg.state, major_parent=major,
                 msa_start=lo, msa_end=hi,
                 query_start=work.column_to_query(lo), query_end=work.column_to_query(hi),
-                n_windows=seg.n_windows,
+                n_windows=n_windows,
                 mean_sim_minor=round(mean_minor, 4), mean_sim_major=round(mean_major, 4),
                 margin=round(mean_minor - mean_major, 4),
-                posterior_support=seg.mean_posterior,
+                posterior_support=posterior,
                 breakpoint_lo=seg.breakpoint_lo, breakpoint_hi=seg.breakpoint_hi,
                 support=round(support, 3),
                 pvalue=pvalue, qvalue=q,
@@ -349,6 +381,42 @@ def _call_regions_hmm(
             )
         )
     return regions, major, dropped
+
+
+def _with_singletons(result: WindowSimilarity, pooled: list[list[str]]) -> list[list[str]]:
+    """Every reference in one cluster: the multi-member ``pooled`` clusters plus each
+    remaining label alone, in the order the labels first appear in ``result`` (the
+    order ``cluster_references`` returns, so the HMM's state order is unchanged)."""
+    index = {label: i for i, members in enumerate(pooled) for label in members}
+    out: list[list[str]] = []
+    seen: set[int] = set()
+    for label in result.similarities:
+        i = index.get(label)
+        if i is None:
+            out.append([label])
+        elif i not in seen:
+            seen.add(i)
+            out.append(pooled[i])
+    return out
+
+
+def _span_windows(
+    work: WindowSimilarity, window_size: int, seg: Segment, lo: int, hi: int
+) -> tuple[int, float]:
+    """``(n_windows, mean posterior)`` over the segment's windows overlapping ``[lo, hi)``.
+
+    Falls back to the whole segment when no window of it overlaps the span (a span
+    can only lie outside its segment's windows at an alignment end).
+    """
+    bounds = _window_bounds(work, window_size)
+    idx = [
+        i for i in range(seg.start_window, seg.end_window + 1)
+        if bounds[i][0] < hi and bounds[i][1] > lo
+    ]
+    if not idx or not seg.window_posteriors:
+        return seg.n_windows, seg.mean_posterior
+    post = [seg.window_posteriors[i - seg.start_window] for i in idx]
+    return len(idx), round(float(sum(post) / len(post)), 4)
 
 
 def _tract_span(work: WindowSimilarity, seg: Segment, major: str) -> tuple[int, int]:

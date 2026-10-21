@@ -214,7 +214,7 @@ def test_scan_segments_scans_assigned_only(tmp_path, monkeypatch):
     seen = []
 
     def fake_scan(segment, seq, dataset, out_dir, *, aligner, cache_dir, logger,
-                  dir_name=None):
+                  dir_name=None, threads=1):
         from tessera.reassort.scan import SegmentScan
         seen.append(segment)
         return SegmentScan(segment, True, segment == "HA", 1 if segment == "HA" else 0,
@@ -246,7 +246,7 @@ def test_scan_segments_marks_unassigned(tmp_path, monkeypatch):
     monkeypatch.setattr(assign, "require_aligner", lambda aligner: None)
 
     def fake_scan(segment, seq, dataset, out_dir, *, aligner, cache_dir, logger,
-                  dir_name=None):
+                  dir_name=None, threads=1):
         from tessera.reassort.scan import SegmentScan
         return SegmentScan(segment, True, False, 0, "none")
     monkeypatch.setattr(assign, "scan_segment", fake_scan)
@@ -336,7 +336,7 @@ def test_scan_segments_gives_alike_named_segments_separate_directories(tmp_path,
     dirs = {}
 
     def fake_scan(segment, seq, dataset, out_dir, *, aligner, cache_dir, logger,
-                  dir_name=None):
+                  dir_name=None, threads=1):
         from tessera.reassort.scan import SegmentScan
         dirs[segment] = dir_name
         return SegmentScan(segment, True, False, 0, "none")
@@ -346,3 +346,43 @@ def test_scan_segments_gives_alike_named_segments_separate_directories(tmp_path,
     assign_segments(q, output=tmp_path / "out", scan_segments=True, logger=LOG)
 
     assert dirs == {"seg/1": "seg_1", "seg_1": "seg_1_2"}
+
+
+# --- audit 4, E5: segment-scan threads and clade ties ---------------------------
+
+def test_scan_segments_receive_the_thread_count(tmp_path, monkeypatch):
+    """reassort had no thread option, so every segment scan aligned single-threaded."""
+    tip = tmp_path / "pool" / "strainA.fasta"
+    tip.parent.mkdir(parents=True)
+    tip.write_text(">x\nACGT\n")
+    _patch(monkeypatch,
+           resolve=lambda fasta, override, *, email, logger: _DS("ds"),
+           tips_by_path={"ds": [tip]},
+           ani_by_path={"pool": {tip: (99.0, 99.0)}})
+    monkeypatch.setattr(assign, "require_aligner", lambda aligner: None)
+    seen = {}
+
+    def fake_scan(segment, seq, dataset, out_dir, *, aligner, cache_dir, logger,
+                  dir_name=None, threads=1):
+        from tessera.reassort.scan import SegmentScan
+        seen[segment] = threads
+        return SegmentScan(segment, True, False, 0, "none")
+
+    monkeypatch.setattr(assign, "scan_segment", fake_scan)
+    q = _write_query(tmp_path, [("HA", "AAAA")])
+    assign_segments(q, output=tmp_path / "out", scan_segments=True, threads=4, logger=LOG)
+    assert seen == {"HA": 4}
+
+
+def test_clades_within_margin_lists_every_clade_in_the_near_best_window(tmp_path) -> None:
+    """The reported clade is the top tip's, ties broken by file name; the near-best
+    window can hold several clades, and nothing said so."""
+    tips = []
+    for name, clade in (("a", "3C.2a"), ("b", "3C.3a"), ("c", "3C.2a"), ("d", "2")):
+        tip = tmp_path / f"{name}.fasta"
+        tip.write_text(f">{name} {clade}\nACGT\n")
+        tips.append(tip)
+    ani = {tips[0]: (99.5, 90.0), tips[1]: (99.4, 90.0), tips[2]: (99.2, 90.0),
+           tips[3]: (97.0, 90.0)}
+    assert assign.clades_within_margin(tips, ani, 0.5) == ["3C.2a", "3C.3a"]
+    assert assign.clades_within_margin(tips, ani, 0.05) == ["3C.2a"]

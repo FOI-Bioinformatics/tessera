@@ -17,7 +17,7 @@ from .coverage import CoverageGap
 from .diagnostics import RecombinationSignal
 from .regions import Region
 from .report_assets import _CSS, _GLOSSARY, _REFERENCES
-from .report_context import ReportContext
+from .report_context import PHI, ReportContext
 from .report_plots import GREY, _color_map, build_interactive_figure, region_labels
 from .similarity import WindowSimilarity
 from .typing import LineageMap, typed
@@ -52,13 +52,46 @@ def _union_length(spans: list[tuple[int, int]]) -> int:
     return total
 
 
+def _not_run_caveat(methods_run: tuple[str, ...], not_run: dict[str, str]) -> str:
+    """A header note naming every selected caller that could not test, with the reason.
+
+    Shown whatever the number of callers: the method comparison, which also marks them,
+    is omitted for a single-caller run, and a caller that tested nothing must not leave
+    the verdict reading as a negative.
+    """
+    callers = [m for m in methods_run if m in not_run]
+    if not callers:
+        return ""
+    items = "; ".join(
+        f'<strong>{html.escape(m)}</strong> ({html.escape(not_run[m])})' for m in callers
+    )
+    lead = (
+        "No selected caller could test this alignment" if len(callers) == len(methods_run)
+        else "Not every selected caller could test this alignment"
+    )
+    return (
+        f'<div class="caveat"><span class="ic">&#9888;</span><div><strong>{lead}.</strong> '
+        f'Not run: {items}. A caller that did not run tested nothing; a region it does not '
+        f'list is not a negative result from it.</div></div>'
+    )
+
+
 def _summary(
-    result: WindowSimilarity, regions: list[Region], datasets: list[str]
+    result: WindowSimilarity, regions: list[Region], datasets: list[str],
+    major_parent: str | None = None,
 ) -> dict:
-    """Headline numbers: query length, backbone, donor list, recombinant fraction."""
+    """Headline numbers: query length, backbone, donor list, recombinant fraction.
+
+    The backbone is the run's reconciled ``major_parent`` when given, so the verdict and
+    run_provenance.json name the same genome. The first region's major or the leading
+    dataset is only a fallback: with lineage pooling the HMM's major is a cluster's
+    representative, which need not be the reference that wins the most windows.
+    """
     qcum = result.query_cumulative
     query_len = int(qcum[-1]) if len(qcum) else 0
-    if regions:
+    if major_parent:
+        major = major_parent
+    elif regions:
         major = regions[0].major_parent
     elif datasets:
         major = datasets[0]
@@ -98,8 +131,9 @@ def _confidence(present: list[Region], absent: list[Region]) -> str | None:
     min_q = min(qs) if qs else 1.0
     max_sup = max(sups) if sups else 0.0
     undercovered = any(r.donor_undercovered for r in present)
-    # Agreement is a first-class confidence signal: a region independently called by
-    # more than one method is high-confidence even if no single method is overwhelming.
+    # Agreement is a first-class confidence signal: a region called by more than one
+    # method is high-confidence even if no single method is overwhelming. It is a weaker
+    # signal when the two are 3SEQ and MaxChi, which score the same tract (A12).
     agreement = any(len(r.methods) >= 2 for r in present)
     if not undercovered and (agreement or (min_q <= 1e-5 and max_sup >= 0.70)):
         return "high"
@@ -125,13 +159,18 @@ def _query_lineage_clause(query: str, query_lineage: str | None) -> str:
 
 def _verdict_html(
     s: dict, query: str, colors: dict[str, str], lineage_map: LineageMap | None = None,
-    query_lineage: str | None = None,
+    query_lineage: str | None = None, untested: bool = False,
 ) -> str:
     major = html.escape(typed(s["major"], lineage_map))
     q_clause = _query_lineage_clause(query, query_lineage)
+    if s["n_regions"] == 0 and untested:
+        lead = ('No recombinant region was called, but no selected caller could test this '
+                'alignment, so this is <strong>not a negative result</strong> (see the note '
+                'below).')
+        return f'<p class="verdict">{lead}{q_clause}{_absent_clause(s)}</p>'
     if s["n_regions"] == 0:
-        lead = (f'No recombination among the present references &mdash; the query is most '
-                f'similar to <strong>{major}</strong> throughout.')
+        lead = (f'No recombination among the present references &mdash; the query follows '
+                f'<strong>{major}</strong> (the major parent) throughout.')
         return f'<p class="verdict">{lead}{q_clause}{_absent_clause(s)}</p>'
     donors = ", ".join(
         f'{_swatch(colors.get(m, GREY))}<strong>{html.escape(typed(m, lineage_map))}</strong>'
@@ -278,28 +317,33 @@ def _regions_html(
 
 def _method_comparison_html(
     breakdown: list[dict], methods_run: tuple[str, ...], per_major: dict[str, str],
-    lineage_map: LineageMap | None = None, methods_not_run: tuple[str, ...] = (),
-    not_run_reason: str = "",
+    lineage_map: LineageMap | None = None, not_run: dict[str, str] | None = None,
 ) -> str:
-    """A compact region x method agreement matrix; omitted for a single-method run."""
+    """A compact region x method agreement matrix; omitted for a single-method run.
+
+    ``not_run`` maps a caller (or ``PHI``) that gave no result to the reason; its
+    column reads "not run", never a negative.
+    """
     if len(methods_run) < 2:
         return ""
-    not_run_note = ""
-    if methods_not_run:
-        names = ", ".join(html.escape(m) for m in methods_not_run)
-        not_run_note = (
-            f'<p class="cap"><strong>Not run:</strong> {names}'
-            f'{" (" + html.escape(not_run_reason) + ")" if not_run_reason else ""}. '
-            f'It tested nothing; its column below is not a negative result.</p>'
-        )
+    not_run = not_run or {}
+    methods_not_run = tuple(m for m in methods_run if m in not_run)
+    phi_not_run = PHI in not_run
+    not_run_note = "".join(
+        f'<p class="cap"><strong>Not run:</strong> {html.escape(m)} '
+        f'({html.escape(not_run[m])}). It tested nothing; its column below is not a '
+        f'negative result.</p>'
+        for m in methods_not_run
+    )
     majors = ", ".join(
         f'<span class="mono">{html.escape(m)}</span> &rarr; '
         f'{html.escape(typed(per_major.get(m, "n/a"), lineage_map))}'
         for m in methods_run
     )
     intro = (
-        f'<p class="cap">Each caller ran independently on the same alignment; a region '
-        f'found by more than one is more trustworthy (and raises the confidence above). '
+        f'<p class="cap">Each caller ran on the same alignment; a region found by more '
+        f'than one is more trustworthy (and raises the confidence above), though 3SEQ '
+        f'and MaxChi score the same tract, so that pair alone adds little. '
         f'Backbone per method &mdash; {majors}.</p>{not_run_note}'
     )
     if not breakdown:
@@ -316,10 +360,17 @@ def _method_comparison_html(
             f'<td class="num">{"&check;" if m in b["per_method_support"] else "&middot;"}</td>'
             for m in methods_run
         )
-        phi = "&check;" if b["parent_free_support"] else "&middot;"
+        donor = (
+            "<em>missing</em> (donor absent)" if b.get("donor_absent")
+            else html.escape(typed(b["minor_parent"], lineage_map))
+        )
+        phi = (
+            "not run" if phi_not_run
+            else "&check;" if b["parent_free_support"] else "&middot;"
+        )
         rows += (
             "<tr>"
-            f'<td class="lbl">{html.escape(typed(b["minor_parent"], lineage_map))}</td>'
+            f'<td class="lbl">{donor}</td>'
             f'<td class="num">{_fmt_int(b["query_start"])}&ndash;{_fmt_int(b["query_end"])}</td>'
             f'{cells}<td class="num">{phi}</td>'
             "</tr>"
@@ -330,12 +381,11 @@ def _method_comparison_html(
 def _method_section(
     method_breakdown: list[dict] | None, methods_run: tuple[str, ...],
     per_major: dict[str, str] | None, lineage_map: LineageMap | None,
-    methods_not_run: tuple[str, ...] = (), not_run_reason: str = "",
+    not_run: dict[str, str] | None = None,
 ) -> str:
     """Wrap the method-comparison table in a report section (empty for one method)."""
     body = _method_comparison_html(
-        method_breakdown or [], methods_run, per_major or {}, lineage_map, methods_not_run,
-        not_run_reason,
+        method_breakdown or [], methods_run, per_major or {}, lineage_map, not_run,
     )
     if not body:
         return ""
@@ -399,8 +449,10 @@ def _methods_html(provenance: dict[str, str]) -> str:
         'panel (jpHMM-style), which reports a segment only when its donor beats the major '
         'parent on the sites that distinguish them (a one-sided sign test on discordant '
         'sites, with a posterior breakpoint interval); the 3SEQ triplet test; MaxChi; and '
-        'Bootscan. Each caller applies Benjamini-Hochberg correction within its own '
-        'candidates; nothing is corrected across callers or across the genome. This is an '
+        'Bootscan. Each caller with a significance test applies Benjamini-Hochberg '
+        'correction within its own candidates; the opt-in barcode caller has no '
+        'significance test. Nothing is corrected across callers or across the genome. '
+        'This is an '
         'indicative screen, not a full phylogenetic test (e.g. GARD) -- confirm strong '
         'candidates.</p>'
         f'<dl class="glossary">{glossary}</dl>'
@@ -448,15 +500,34 @@ def _caveat_html(gaps: list[CoverageGap], threshold: float) -> str:
     )
 
 
+def _low_information_html(gaps: list[CoverageGap]) -> str:
+    """A note for stretches with too few comparable bases: uncertain, not a gap in the panel."""
+    if not gaps:
+        return ""
+    n = len(gaps)
+    word = "stretch" if n == 1 else "stretches"
+    verb = "has" if n == 1 else "have"
+    total = sum(max(0, g.query_end - g.query_start) for g in gaps)
+    return (
+        f'<div class="caveat"><span class="ic">&#9888;</span><div>'
+        f'<strong>Too little sequence to judge.</strong> {n} {word} of the query '
+        f'(<span class="mono">{_fmt_kb(total)}</span>) {verb} too few comparable bases '
+        f'to compare with the references, for example an unsequenced or masked stretch. '
+        f'Recombination there could be neither called nor excluded; this is not evidence '
+        f'of a missing reference. See <em>Reference coverage</em> below.</div></div>'
+    )
+
+
 def _coverage_html(gaps: list[CoverageGap], threshold: float) -> str:
     intro = (
         f'<p class="cap">Stretches where even the closest reference is below the '
         f'<span class="mono">{threshold:.3f}</span> best-similarity threshold. '
         f'<strong>divergent</strong> = the query is genuinely far from every reference '
         f'(a likely missing reference); <strong>low information</strong> = too few comparable '
-        f'bases to judge; <strong>breakpoint</strong> = windows straddling a called '
-        f'breakpoint, where the two parents together explain the query (not a missing '
-        f'reference, and not counted in the caveat above).</p>'
+        f'bases to judge (not counted as a missing reference); <strong>breakpoint</strong> = '
+        f'windows beside a called breakpoint in which a single switch between that '
+        f'region\'s two parents reaches the threshold in every under-covered window (not a '
+        f'missing reference, and not counted in the caveat above).</p>'
     )
     if not gaps:
         return (
@@ -498,12 +569,23 @@ def _signal_profile_div(signal: RecombinationSignal) -> str:
     return fig.to_html(full_html=False, include_plotlyjs=False)
 
 
-def _signal_html(signal: RecombinationSignal | None, alpha: float = 0.05) -> str:
-    """The parent-free recombination-signal section: PHI p-value, Rmin, profile."""
+def _signal_html(
+    signal: RecombinationSignal | None, alpha: float = 0.05, not_run: str | None = None
+) -> str:
+    """The parent-free recombination-signal section: PHI p-value, Rmin, profile.
+
+    ``not_run`` is the run's reason when the test gave no result (``--no-phi``, or too
+    few informative sites). That is stated as such: a test that did not run is not a
+    negative, and the reason must be the real one -- ``--no-phi`` is not a poor alignment.
+    """
     if signal is None:
+        reason = not_run or "no result was recorded"
         return (
-            '<p class="cap">Too few informative sites in the alignment for a parent-free '
-            'recombination test.</p>'
+            f'<p class="cap">The parent-free recombination test was <strong>not run</strong>: '
+            f'{html.escape(reason)}. No region is corroborated or contradicted by it; the '
+            f'PHI/Rmin column of the method comparison and <span class="mono">'
+            f'parent_free_support</span> in the TSVs read <em>not run</em>. This is not '
+            f'evidence against recombination.</p>'
         )
     if signal.phi_p is None:
         # Every pair of informative sites is inside one window, so the permutation test
@@ -603,7 +685,8 @@ def write_html_report(
     # Colour every label a region names, not only the top-N: with --top-n 1 the donor
     # is outside the plotted datasets and its swatch and mosaic segment were grey.
     colors = _color_map(region_labels(datasets, regions))
-    s = _summary(result, regions, datasets)
+    s = _summary(result, regions, datasets, ctx.major_parent)
+    untested = bool(ctx.methods_run) and len(ctx.methods_not_run) == len(ctx.methods_run)
     organism_html = (
         f'<div class="organism">{html.escape(ctx.organism)}</div>' if ctx.organism else ""
     )
@@ -614,7 +697,7 @@ def write_html_report(
 
     method_section = _method_section(
         ctx.method_breakdown, ctx.methods_run, ctx.per_major, lineage_map,
-        ctx.methods_not_run, ctx.not_run_reason,
+        ctx.not_run,
     )
 
     doc = (
@@ -626,8 +709,10 @@ def write_html_report(
         '<header><div class="eyebrow">Tessera &middot; recombination report</div>'
         f'<h1 class="mono">{html.escape(result.query)}</h1>'
         f"{organism_html}"
-        f"{_verdict_html(s, result.query, colors, lineage_map, ctx.query_lineage)}"
-        f"{_caveat_html(caveat_gaps, threshold)}</header>"
+        f"{_verdict_html(s, result.query, colors, lineage_map, ctx.query_lineage, untested)}"
+        f"{_not_run_caveat(ctx.methods_run, ctx.not_run)}"
+        f"{_caveat_html(ctx.missing_reference_gaps, threshold)}"
+        f"{_low_information_html(ctx.low_information_gaps)}</header>"
         f"{_cards_html(s, colors, lineage_map)}"
         '<section class="section"><div class="eyebrow">Query mosaic</div>'
         f"{_mosaic_html(regions, colors, s, caveat_gaps, lineage_map)}</section>"
@@ -644,7 +729,7 @@ def write_html_report(
         f"{plot_div}</section>"
         f'{_site_track_html(ctx, datasets, regions, provenance.get("windowing", ""))}'
         '<section class="section"><div class="eyebrow">Recombination signal (parent-free)</div>'
-        f"{_signal_html(ctx.signal, ctx.alpha)}</section>"
+        f"{_signal_html(ctx.signal, ctx.alpha, ctx.phi_not_run)}</section>"
         '<section class="section"><div class="eyebrow">Window winners</div>'
         '<p class="cap">Windows in which each reference is the query\'s closest match '
         '(ties included).</p>'

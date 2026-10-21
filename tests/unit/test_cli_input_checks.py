@@ -316,3 +316,197 @@ def test_fill_references_refuses_a_candidate_pool_under_another_seed_source(
         "--candidate-pool", str(pool_dir),
     ])
     _rejected(result, "--seed-source local")
+
+
+# --- discover commands: coverage fractions and search counts (audit 4, E5) ---
+
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [("--coverage-floor", "50"), ("--coverage-rel-drop", "5"), ("--top-gaps", "0"),
+     ("--max-hits", "0"), ("--subtile", "-1")],
+)
+@pytest.mark.parametrize("command", ["fill-references", "find-references"])
+def test_discover_commands_reject_out_of_range_search_options(
+    tmp_path: Path, no_pipeline, command: str, option: str, value: str
+) -> None:
+    """recomb range-checked the coverage fractions; here --coverage-floor 50 made every
+    window a gap, and --top-gaps 0 searched nothing and exited cleanly."""
+    head = (["--msa", EXAMPLE, "--query", "query"] if command == "find-references"
+            else ["--query", str(_query(tmp_path))])
+    result = runner.invoke(app, [command, *head, "--output", str(tmp_path / "out"),
+                                 option, value])
+    _rejected(result, f"Invalid {option}")
+
+
+@pytest.mark.parametrize(("option", "value"), [("--seed-hits", "0"), ("--seed-window", "0")])
+def test_fill_references_rejects_empty_seed_searches(
+    tmp_path: Path, no_pipeline, option: str, value: str
+) -> None:
+    result = runner.invoke(app, [
+        "fill-references", "--query", str(_query(tmp_path)),
+        "--output", str(tmp_path / "out"), option, value,
+    ])
+    _rejected(result, f"Invalid {option}")
+
+
+@pytest.mark.parametrize("command", ["detect", "fill-references", "build-panel"])
+def test_panel_commands_reject_zero_threads(tmp_path: Path, no_pipeline, command: str) -> None:
+    result = runner.invoke(app, [
+        command, "--query", str(_query(tmp_path)), "--output", str(tmp_path / "out"),
+        "--threads", "0",
+    ])
+    _rejected(result, "Invalid --threads")
+
+
+def test_find_references_keeps_the_query_label_verbatim(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """-q is an alignment label, but was declared a path: 'sample/' became 'sample'."""
+    seen = {}
+
+    def capture(params, logger):
+        seen["query"] = params.query
+
+    monkeypatch.setattr("tessera.discover.run.find_references", capture)
+    result = runner.invoke(app, [
+        "find-references", "--msa", EXAMPLE, "--query", "sample/",
+        "--output", str(tmp_path / "out"),
+    ])
+    assert result.exit_code == 0, result.output
+    assert seen["query"] == "sample/"
+
+
+def test_build_panel_passes_the_panel_shaping_options(tmp_path: Path, monkeypatch) -> None:
+    """build-panel could not set three options that shape the panel it builds."""
+    seen = {}
+
+    def capture(params, logger):
+        seen.update(vars(params))
+
+    monkeypatch.setattr("tessera.discover.iterate.fill_references", capture)
+    result = runner.invoke(app, [
+        "build-panel", "--query", str(_query(tmp_path)), "--output", str(tmp_path / "out"),
+        # --nextclade: plan E Task 11 refuses --pool-consensus under any other seed
+        # source, so this is the one combination valid before and after plan E.
+        "--nextclade",
+        "--pool-consensus", "--keep-recombinant-lineages", "--deep-typing",
+    ])
+    assert result.exit_code == 0, result.output
+    assert seen["pool_consensus"] and seen["keep_recombinant"] and seen["deep_typing"]
+
+
+def test_seed_source_help_names_nextclade() -> None:
+    import typer
+
+    cmd = typer.main.get_command(app).commands["fill-references"]
+    param = next(p for p in cmd.params if "--seed-source" in getattr(p, "opts", []))
+    assert "'nextclade'" in (param.help or "")
+
+
+# --- msa: backbone choice and overwrite (audit 4, E5) ------------------------
+
+def test_msa_rejects_reference_with_query_as_backbone(tmp_path: Path, monkeypatch) -> None:
+    """--reference silently won, so the query was not the backbone the user asked for."""
+    monkeypatch.setattr("tessera.msa.build.build_msa", _must_not_run)
+    result = runner.invoke(app, [
+        "msa", "--query", str(_query(tmp_path)), "--collection", str(_collection(tmp_path)),
+        "--output", str(tmp_path / "aln.fasta"), "--aligner", "mafft",
+        "--reference", "ref", "--query-as-backbone",
+    ])
+    _rejected(result, "give one")
+
+
+def test_msa_says_when_it_overwrites_an_alignment(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("tessera.msa.build.build_msa", lambda params, logger: None)
+    existing = tmp_path / "aln.fasta"
+    existing.write_text(">old\nACGT\n")
+    result = runner.invoke(app, [
+        "msa", "--query", str(_query(tmp_path)), "--collection", str(_collection(tmp_path)),
+        "--output", str(existing), "--aligner", "mafft",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Overwriting the existing alignment" in result.output
+
+
+# --- reassort: margin and ANI units (audit 4, E2 and E5) ---------------------
+
+@pytest.mark.parametrize(
+    ("option", "value", "needle"),
+    [("--margin", "0", "Invalid --margin"),
+     ("--margin", "40", "Invalid --margin"),
+     ("--ani-floor", "0.8", "Did you mean --ani-floor 80?")],
+)
+def test_reassort_rejects_a_margin_or_floor_on_the_wrong_scale(
+    tmp_path: Path, no_reassort, option: str, value: str, needle: str
+) -> None:
+    """A margin of 40 made every query clonal and 0 made a 0.01-point tie-break a
+    reassortment; an ANI floor of 0.8 (meant as 80 %) accepted every tip."""
+    result = runner.invoke(app, [
+        "reassort", "--query", str(_segments(tmp_path)), "--output", str(tmp_path / "out"),
+        option, value,
+    ])
+    _rejected(result, needle)
+
+
+def test_reassort_accepts_the_margin_bound(tmp_path: Path, monkeypatch) -> None:
+    """Guard: 5 points is inside the range (the bound is inclusive)."""
+    from tessera.reassort.assign import ReassortmentResult
+
+    monkeypatch.setattr("tessera.cli.cmd_reassort.assign_segments",
+                        lambda query, **kwargs: ReassortmentResult())
+    result = runner.invoke(app, [
+        "reassort", "--query", str(_segments(tmp_path)), "--output", str(tmp_path / "out"),
+        "--margin", "5",
+    ])
+    assert result.exit_code == 0, result.output
+
+
+def test_reassort_writes_the_pairwise_evidence_for_a_reassortant_call(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The notes were logged only for an undetermined verdict, so a reassortant call
+    recorded nowhere which pair disagreed or on which strains."""
+    from tessera.reassort.assign import ReassortmentResult, SegmentAssignment
+    from tessera.reassort.constellation import call_constellation
+
+    call = call_constellation({"HA": [("S1", 99.0)], "NA": [("S3", 99.0)]},
+                              {"HA": {"S1", "S3"}, "NA": {"S1", "S3"}}, margin=0.5)
+
+    def fake_assign(query, **kwargs):
+        return ReassortmentResult(
+            segments=[SegmentAssignment("HA", "d", "S1", "c1", 99.0, "assigned"),
+                      SegmentAssignment("NA", "d", "S3", "c2", 99.0, "assigned")],
+            verdict=call.verdict, groups=call.groups, pair_notes=call.pair_notes,
+            pairs=call.pairs,
+        )
+
+    monkeypatch.setattr("tessera.cli.cmd_reassort.assign_segments", fake_assign)
+    out = tmp_path / "out"
+    result = runner.invoke(app, [
+        "reassort", "--query", str(_segments(tmp_path)), "--output", str(out),
+    ])
+    assert result.exit_code == 0, result.output
+    assert call.verdict == "reassortant"
+    lines = (out / "segment_pairs.tsv").read_text().splitlines()
+    assert lines[0] == "segment_a\tsegment_b\trelation\tnote"
+    assert lines[1].split("\t")[:3] == ["HA", "NA", "discordant"]
+    assert "S1 vs S3" in lines[1]
+    assert "Pairwise evidence" in result.output
+
+
+def test_reassort_passes_the_thread_count(tmp_path: Path, monkeypatch) -> None:
+    from tessera.reassort.assign import ReassortmentResult
+
+    seen = {}
+
+    def fake_assign(query, **kwargs):
+        seen.update(kwargs)
+        return ReassortmentResult()
+
+    monkeypatch.setattr("tessera.cli.cmd_reassort.assign_segments", fake_assign)
+    result = runner.invoke(app, [
+        "reassort", "--query", str(_segments(tmp_path)), "--output", str(tmp_path / "out"),
+        "--threads", "4",
+    ])
+    assert result.exit_code == 0, result.output
+    assert seen["threads"] == 4

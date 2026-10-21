@@ -16,6 +16,7 @@ Needs no aligner, network or downloaded data.
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import sys
 import tempfile
@@ -78,8 +79,24 @@ def false_region_rows(scenario: str, seed: int, seqs: dict[str, str], query: str
     return rows
 
 
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    """The harness options; ``--help`` exits before any simulation."""
+    parser = argparse.ArgumentParser(
+        allow_abbrev=False,
+        prog="characterise_false_regions.py",
+        description="List each false region the callers report on the specificity "
+        "harness's clonal data. Needs no aligner, network or data.",
+    )
+    parser.add_argument("--reps", type=int, default=10,
+                        help="replicates per scenario (default 10)")
+    args = parser.parse_args(argv)
+    if args.reps < 1:
+        parser.error("--reps must be at least 1")
+    return args
+
+
 def main(argv: list[str]) -> int:
-    reps = int(argv[argv.index("--reps") + 1]) if "--reps" in argv else 10
+    reps = parse_args(argv).reps
     rs = _load_specificity()
     print("\t".join(COLUMNS))
     total = 0

@@ -70,6 +70,24 @@ def build_panel(
         "names mined from genome headers; written into the panel's lineages.tsv.",
     ),
     threads: int = typer.Option(4, "-t", "--threads", help="Aligner worker threads."),
+    pool_consensus: bool = typer.Option(
+        False, "--pool-consensus/--no-pool-consensus",
+        help="With a Nextclade pool (--nextclade), use one denoised consensus genome per "
+        "clade (a stable per-lineage reference) instead of every tree tip.",
+    ),
+    keep_recombinant_lineages: bool = typer.Option(
+        False, "--keep-recombinant-lineages/--no-keep-recombinant-lineages",
+        help="Keep recombinant (CRF/URF/X) lineages in the panel. Off by default: "
+        "they carry both parents' segments and mask the true parents. Turn on to "
+        "recruit the best-matching genome even if it is a known hybrid. "
+        "Applies only when the references carry lineage labels.",
+    ),
+    deep_typing: bool = typer.Option(
+        False, "--deep-typing/--no-deep-typing",
+        help="Type the recruited panel with the full lineage ladder (Nextclade "
+        "nearest-neighbour + de-novo ANI clustering) instead of header mining alone. "
+        "Needs skani; off by default.",
+    ),
 ) -> None:
     """Recruit a donor panel for the query and stop before detection.
 
@@ -91,6 +109,7 @@ def build_panel(
         # after the panel has been recruited and aligned.
         _require_range(max_rounds, "--max-rounds", lo=1)
         _require_scan_windows(window_size, window_step)
+        _require_range(threads, "--threads", lo=1)
         _require_choice(aligner, set(aligner_registry.names()), "--aligner")
         params = FillParams(
             query=query, collection=collection, output=output,
@@ -105,5 +124,8 @@ def build_panel(
             seed_mode="parents", curate=True,
             auto_diversify=True, negative_lineage=True,
             report=False, lineage_map=lineage_map,
+            pool_consensus=pool_consensus,
+            keep_recombinant=keep_recombinant_lineages,
+            deep_typing=deep_typing,
         )
         fill_references(params, logger)

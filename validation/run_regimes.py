@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Opt-in harness: two regimes the other harnesses do not sample.
+"""Opt-in harness: regimes the other harnesses do not sample.
 
 ``run_specificity.py`` simulates clades ~16 % apart, so it always runs under base-pair
 windowing, and its positive control has parents that differ everywhere. Two situations
@@ -14,6 +14,11 @@ found by the post-1.2.0 audit fall outside it:
                      further than the query's. Against that sibling the query differs
                      only over those 600 bp; downstream of them the donor and the
                      backbone are identical, so nothing marks where the region ends.
+    redundant_*      a divergent panel (lineages ~6 % apart) in which the backbone
+                     lineage, or the donor lineage, is represented by three
+                     near-duplicates ~0.4 % apart, as on an untyped recruited panel.
+                     Is the tract found, is it one row, and are the HMM and Bootscan
+                     among its callers?
 
 Like ``run_specificity.py`` this needs no aligner, no network and no downloaded data:
 the simulated sequences are already aligned. It is opt-in because a full run is minutes
@@ -35,6 +40,7 @@ exists and roughly how large it is, not its magnitude on real panels.
 
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
 import tempfile
@@ -59,6 +65,17 @@ SIB_LENGTH = 30_000
 SIB_DISTANCE = 0.05
 SIB_QUERY_TRACT = (12_000, 18_000)
 SIB_EXTRA = 600
+
+# redundant: a divergent panel (lineages ~6 % apart) in which one lineage is represented
+# by several near-duplicates (~0.4 % apart), as on an untyped recruited panel. Either the
+# backbone lineage (a short tract from a single donor genome) or the donor lineage (a
+# longer tract, so Bootscan has windows to call) is the redundant one.
+RED_LENGTH = 12_000
+RED_DISTANCE = 0.03
+RED_COPY_DISTANCE = 0.002
+RED_COPIES = 3
+RED_BACKBONE_TRACT = (5_500, 6_500)
+RED_DONOR_TRACT = (4_000, 7_000)
 
 
 # --- simulation ------------------------------------------------------------------
@@ -124,6 +141,33 @@ def simulate_sibling_tract(
     return _as_text(seqs), (hi, hi + extra)
 
 
+def simulate_redundant(
+    seed: int, *, backbone_copies: int = 1, donor_copies: int = 1,
+    length: int = RED_LENGTH, distance: float = RED_DISTANCE,
+    tract: tuple[int, int] = RED_BACKBONE_TRACT,
+) -> tuple[dict[str, str], tuple[int, int]]:
+    """A query from backbone lineage ``A`` carrying lineage ``D`` over ``tract``.
+
+    Four lineages (``A``, ``D``, ``E``, ``F``) on a star tree, each ``distance`` from the
+    root. ``A`` is represented by ``backbone_copies`` genomes (``A0``, ``A1``, ...) and
+    ``D`` by ``donor_copies`` (``D0``, ...), each ``RED_COPY_DISTANCE`` from its lineage.
+    The query is ``RED_COPY_DISTANCE`` from ``A`` with ``D``'s sequence over ``tract``.
+    Returns ``(sequences, tract)``.
+    """
+    rng = np.random.default_rng(seed)
+    root = rng.integers(0, 4, size=length)
+    lineage_a, lineage_d, lineage_e, lineage_f = (_evolve(root, distance, rng) for _ in range(4))
+    query = _evolve(lineage_a, RED_COPY_DISTANCE, rng)
+    lo, hi = tract
+    query[lo:hi] = lineage_d[lo:hi]
+    seqs = {QUERY: query, "E": lineage_e, "F": lineage_f}
+    for i in range(backbone_copies):
+        seqs[f"A{i}"] = _evolve(lineage_a, RED_COPY_DISTANCE, rng)
+    for i in range(donor_copies):
+        seqs[f"D{i}"] = _evolve(lineage_d, RED_COPY_DISTANCE, rng)
+    return _as_text(seqs), tract
+
+
 # --- scoring ---------------------------------------------------------------------
 
 def _present(rows: list[dict]) -> list[dict]:
@@ -157,6 +201,35 @@ def score_tract(rows: list[dict], tract: tuple[int, int], *, donor: str) -> dict
         "breakpoint_error": (
             abs(int(best["query_start"]) - lo) + abs(int(best["query_end"]) - hi)
         ) // 2,
+    }
+
+
+def score_lineage_tract(rows: list[dict], tract: tuple[int, int], *, lineage: str) -> dict:
+    """Detection of a tract whose donor is any genome of ``lineage`` (a label prefix).
+
+    ``rows`` counts the reported regions overlapping the tract (one event should be one
+    row); ``donor_ok`` is true when every such row names a genome of the lineage.
+
+    Three limits to read the result with. ``hmm`` and ``bootscan`` are taken over every
+    overlapping row whatever its donor, so a row naming the wrong lineage still sets
+    them: read them together with ``donor_ok``, never alone. "Overlapping" accepts a
+    single base of overlap, so ``rows == 1`` means one row touches the tract, not that
+    its extent is right. The lineage test is a label prefix, which holds only while the
+    simulated labels are ``A*``, ``D*``, ``E`` and ``F``.
+    """
+    lo, hi = tract
+    overlapping = [
+        r for r in _present(rows)
+        if int(r["query_start"]) < hi and int(r["query_end"]) > lo
+    ]
+    methods = {m for r in overlapping for m in _methods(r)}
+    return {
+        "detected": bool(overlapping),
+        "rows": len(overlapping),
+        "donor_ok": bool(overlapping)
+        and all(r["minor_parent"].startswith(lineage) for r in overlapping),
+        "hmm": "hmm" in methods,
+        "bootscan": "bootscan" in methods,
     }
 
 
@@ -228,13 +301,29 @@ def _median(values: list[int]) -> str:
     return f"{int(np.median(values))} bp" if values else "n/a"
 
 
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    """The harness options; ``--help`` exits before any simulation."""
+    parser = argparse.ArgumentParser(
+        allow_abbrev=False,
+        prog="run_regimes.py",
+        description="Simulate the near-identical and sibling-tract regimes and score the "
+        "scan. Needs no aligner, network or data.",
+    )
+    parser.add_argument("--reps", type=int, default=10, help="replicates (default 10)")
+    parser.add_argument("--min-methods", type=int, default=1,
+                        help="agreement gate passed to the scan (default 1)")
+    parser.add_argument("--no-cluster-lineages", action="store_true",
+                        help="turn lineage clustering off")
+    args = parser.parse_args(argv)
+    if args.reps < 1 or args.min_methods < 1:
+        parser.error("--reps and --min-methods must be at least 1")
+    return args
+
+
 def main(argv: list[str]) -> int:
-    reps, min_methods = 10, 1
-    if "--reps" in argv:
-        reps = int(argv[argv.index("--reps") + 1])
-    if "--min-methods" in argv:
-        min_methods = int(argv[argv.index("--min-methods") + 1])
-    cluster = "--no-cluster-lineages" not in argv
+    args = parse_args(argv)
+    reps, min_methods = args.reps, args.min_methods
+    cluster = not args.no_cluster_lineages
 
     logger = logging.getLogger("tessera.regimes")
     logger.addHandler(logging.NullHandler())
@@ -286,6 +375,21 @@ def main(argv: list[str]) -> int:
     print(f"sibling_tract, true difference {SIB_EXTRA} bp:")
     print(f"  detected {found}/{reps} | median reported length {_median(reported)} | "
           f"median excess {_median(excess)}")
+
+    for name, kwargs, tract in (
+        ("redundant_backbone", {"backbone_copies": RED_COPIES}, RED_BACKBONE_TRACT),
+        ("redundant_donor", {"donor_copies": RED_COPIES}, RED_DONOR_TRACT),
+    ):
+        tally: Counter[str] = Counter()
+        for rep in range(reps):
+            seqs, _ = simulate_redundant(6000 + rep, tract=tract, **kwargs)
+            got = score_lineage_tract(run(seqs), tract, lineage="D")
+            tally.update(k for k in ("detected", "donor_ok", "hmm", "bootscan") if got[k])
+            tally["one_row"] += got["rows"] == 1
+        print(f"{name}, {RED_COPIES} near-duplicates, tract {tract[0]}-{tract[1]} from D:")
+        print(f"  detected {tally['detected']}/{reps} | one row {tally['one_row']}/{reps} | "
+              f"donor lineage {tally['donor_ok']}/{reps} | called by the HMM "
+              f"{tally['hmm']}/{reps} | Bootscan among callers {tally['bootscan']}/{reps}")
     return 0
 
 

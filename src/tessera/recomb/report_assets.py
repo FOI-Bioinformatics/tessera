@@ -97,7 +97,11 @@ summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 
 _GLOSSARY = [
     ("Major parent (backbone)",
-     "The reference the query matches in the most windows overall."),
+     "The reference the query follows over most of its length. When the HMM ran, it "
+     "is the HMM's majority state after the query's own-lineage siblings are set aside "
+     "and near-duplicate references are pooled into one lineage (named by one member); "
+     "otherwise the backbone most callers report. It is usually, but not always, the "
+     "reference that wins the most windows; run_provenance.json records it."),
     ("Minor parent (donor)",
      "A reference the query matches better than the backbone over a stretch of the "
      "alignment -- a candidate recombination donor."),
@@ -106,7 +110,11 @@ _GLOSSARY = [
      "no comparable position are ignored."),
     ("Window / step",
      "The scan slides a fixed-width window along the alignment in fixed steps; each "
-     "window is scored independently."),
+     "window is scored independently. On a near-identical panel the HMM instead uses "
+     "windows holding a fixed number of informative (polymorphic) columns; the "
+     "windowing line under Run parameters names the one used, and the window / step "
+     "line then describes the base-pair scan behind the similarity track, the coverage "
+     "diagnostic and the site callers."),
     ("Support",
      "The supporting statistic of the test behind the region; its meaning depends on "
      "the caller, and the statistic column of recombination_regions.tsv names it. For "
@@ -119,8 +127,11 @@ _GLOSSARY = [
      "caller). A region is reported when q <= alpha. For a region several callers "
      "found, the most significant caller's value is shown."),
     ("Breakpoint",
-     "The query position where the source switches, with a posterior-derived "
-     "uncertainty interval from the HMM."),
+     "An interval for the query position where the source switches. For a region the "
+     "HMM found it is derived from the HMM posterior. For a region only a site caller "
+     "found it is that caller's own estimate: the informative sites either side of the "
+     "tract start (3SEQ, MaxChi, GENECONV) or the region's own ends (Bootscan, "
+     "barcode)."),
     ("Region calling (HMM)",
      "An HMM segments the query against the reference panel (a jump rate penalises "
      "switching reference); a segment is reported as recombinant only when its donor "
@@ -128,7 +139,9 @@ _GLOSSARY = [
     ("Method(s) / ensemble",
      "By default several callers run and their regions are merged into one consensus. "
      "A region called by more than one method (agree) is more trustworthy and raises "
-     "the confidence; PHI marks regions corroborated by the parent-free Rmin signal."),
+     "the confidence, though 3SEQ and MaxChi score the same tract and corroborate "
+     "each other only weakly; PHI marks regions corroborated by the parent-free "
+     "Rmin signal."),
 ]
 
 

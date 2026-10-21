@@ -7,6 +7,7 @@ import math
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from tessera.recomb.analyze import analyze
 from tessera.recomb.regions import RegionParams, call_regions
@@ -187,3 +188,132 @@ def test_3seq_reports_the_more_significant_donor_among_tiny_exact_pvalues(
     )
     assert major == "A"
     assert [r.minor_parent for r in regions] == ["D2"]
+
+
+def _call(path: Path, method: str):
+    result = compute_similarity(str(path), "query", window_size=500, window_step=50)
+    return call_regions(result, analyze(result), 500,
+                        RegionParams.with_defaults(500, method=method))
+
+
+def test_descent_pvalue_switches_to_permutation_above_the_cell_cap(monkeypatch) -> None:
+    """Guard: which branch answered is reported, and the two branches agree numerically.
+
+    The drawdown is deliberately shallow. A deep one has an exact p-value far below the
+    permutation estimator's resolution of ``1 / (_PERMUTATIONS + 1)``, so the two cannot
+    be compared at all and any tolerance wide enough to pass is wide enough to hide a
+    broken fallback. Here the exact p-value is about 0.048, where 20 000 permutations
+    have a standard error of about 0.0015, so the tolerance below is four standard
+    errors: close agreement, not a formality.
+    """
+    from tessera.recomb import threeseq
+
+    steps = np.array([1] * 5 + [-1] * 2 + [1] * 35, dtype=np.int64)
+    d = max_descent(steps)
+    exact, kind = descent_pvalue(steps, d)
+    assert kind == "exact"
+    assert 0.01 < exact < 0.25, exact  # within the permutation estimator's resolution
+    monkeypatch.setattr(threeseq, "_MAX_EXACT_CELLS", d.m * d.n * d.depth - 1)
+    perm, kind = descent_pvalue(steps, d)
+    assert kind == "permutation"
+    standard_error = (exact * (1 - exact) / threeseq._PERMUTATIONS) ** 0.5
+    assert perm == pytest.approx(exact, abs=4 * standard_error)
+
+
+def test_a_tract_at_the_first_site_has_a_breakpoint_interval_from_the_start(tmp_path) -> None:
+    # The tract starts at the first discriminating site, so there is no site before it;
+    # the interval ran from that site to itself (zero width) instead of from column 0.
+    import random
+
+    from ..factories import _mutate
+
+    rng = random.Random(5)
+    a = "".join(rng.choice("ACGT") for _ in range(6000))
+    b, other = _mutate(a, 0.05, rng), _mutate(a, 0.15, rng)
+    query = b[:1500] + a[1500:]
+    path = write_fasta(tmp_path / "terminal.fasta",
+                       {"query": query, "A": a, "B": b, "other": other})
+    for method in ("3seq", "maxchi", "geneconv"):
+        regions, _, _ = _call(path, method)
+        terminal = [r for r in regions if r.minor_parent == "B"]
+        assert len(terminal) == 1, method
+        assert terminal[0].breakpoint_lo == 0, method
+        assert terminal[0].breakpoint_hi > 0, method
+
+
+# --- pre-test floors, the BH family, the exact/permutation switch ------------
+
+def _three_site_alignment(tmp_path: Path, *, decoy: bool = False, sites: int = 3) -> Path:
+    """Major P and minor Q differ at 189 columns; the query is P except at ``sites``
+    consecutive ones, where it carries Q. With ``decoy`` a third reference R differs from
+    P at 30 other columns, where the query matches P (a donor with no descent at all)."""
+    rng = np.random.default_rng(0)
+    width = 4000
+    p = rng.integers(0, 4, size=width)
+    q = p.copy()
+    q_cols = np.sort(rng.choice(np.arange(0, width, 2), size=189, replace=False))
+    q[q_cols] = (p[q_cols] + 1) % 4
+    query = p.copy()
+    query[q_cols[100:100 + sites]] = q[q_cols[100:100 + sites]]
+    seqs = {"query": query, "P": p, "Q": q}
+    if decoy:
+        r = p.copy()
+        r_cols = rng.choice(np.arange(1, width, 2), size=30, replace=False)  # not Q's
+        r[r_cols] = (p[r_cols] + 2) % 4
+        seqs["R"] = r
+    bases = np.frombuffer(b"ACGT", dtype=np.uint8)
+    text = {k: bases[v].tobytes().decode() for k, v in seqs.items()}
+    return write_fasta(tmp_path / "three.fasta", text)
+
+
+def test_a_three_site_tract_is_tested_not_discarded_before_the_p_value(tmp_path) -> None:
+    # Three consecutive donor matches among 189 sites: exact p = 187 / C(189, 3) = 1.7e-4.
+    # The depth floor of 4 discarded the triplet before any p-value was computed.
+    regions, major, _ = _call(_three_site_alignment(tmp_path), "3seq")
+    assert major == "P"
+    assert [r.minor_parent for r in regions] == ["Q"]
+    assert math.isclose(regions[0].pvalue, 187 / math.comb(189, 3), rel_tol=1e-9)
+
+
+def test_the_bh_family_counts_every_tested_donor(tmp_path) -> None:
+    # R has 30 discriminating sites and no descent (p = 1). It was pruned by the depth
+    # floor before Benjamini-Hochberg, so the family had one member and q equalled p.
+    path = _three_site_alignment(tmp_path, decoy=True, sites=8)
+    for method in ("3seq", "maxchi"):
+        regions, _, _ = _call(path, method)
+        donors = [r for r in regions if r.minor_parent == "Q"]
+        assert len(donors) == 1, method
+        assert math.isclose(donors[0].qvalue, 2 * donors[0].pvalue, rel_tol=1e-9), method
+
+
+def test_descent_pvalue_exact_agrees_with_the_permutation_null_on_a_long_shallow_walk() -> None:
+    """The anti-diagonal DP against the module's independent permutation estimator.
+
+    ``test_descent_pvalue_exact_matches_brute_force`` pins the DP against enumeration for
+    ``m, n <= 6``, which exercises every boundary row of the vectorised fill but only at
+    small ``t``. The rewrite exists for the opposite regime -- ``m`` in the thousands with
+    a shallow descent -- where an off-by-one in a boundary row would change the magnitude
+    and no enumeration can check it. The permutation estimator is a separate
+    implementation, so the two agreeing there is a real cross-check; the tolerance is four
+    standard errors of its 20 000 draws.
+    """
+    from tessera.recomb import threeseq
+
+    for m, n, depth in ((1217, 74, 3), (1795, 116, 3), (600, 40, 2)):
+        exact = descent_pvalue_exact(m, n, depth)
+        steps = np.array([1] * m + [-1] * n, dtype=np.int64)
+        perm = threeseq._descent_pvalue_perm(steps, depth)
+        standard_error = (perm * (1 - perm) / threeseq._PERMUTATIONS) ** 0.5
+        assert exact == pytest.approx(perm, abs=4 * standard_error), (m, n, depth, exact, perm)
+
+
+def test_descent_pvalue_exact_closed_forms_at_the_boundaries() -> None:
+    # Cases with an answer that can be written down, at a scale enumeration cannot reach.
+    assert descent_pvalue_exact(5000, 300, 1) == 1.0    # any down-step is a drawdown of 1
+    assert descent_pvalue_exact(5000, 0, 1) == 0.0      # no down-step, no drawdown
+    assert descent_pvalue_exact(0, 300, 300) == 1.0     # all down-steps: the drawdown is n
+    assert descent_pvalue_exact(0, 300, 301) == 0.0     # ... and cannot exceed n
+    assert descent_pvalue_exact(5000, 40, 41) == 0.0    # depth > n is unreachable
+    # depth == n at a scale the closed-form test above does not cover.
+    assert math.isclose(descent_pvalue_exact(3000, 4, 4), 3001 / math.comb(3004, 4),
+                        rel_tol=1e-9)

@@ -6,6 +6,121 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Validation: an offline false-positive control on real genomes
+
+- **`validation/run_pool_specificity.py`.** `run_specificity.py` has exact ground truth
+  but simulated sequences; this asks the same question of real ones. The query is a tip
+  from a cached Nextclade reference tree whose label is a clade in its own right, so it
+  is a single sampled genome and a region reported on it is a false positive. It needs no
+  network, and that is enforced rather than assumed: both proxies are pointed at a closed
+  local port, so an attempt to reach NCBI is refused in milliseconds instead of stalling.
+  Two findings made that necessary. `--nextclade-dataset` fetches the dataset index over
+  the network *before* consulting the cache, so the pool is passed as `--candidate-pool`
+  instead; and `--max-rounds 1` does not prevent the fill, because the search runs inside
+  round one whenever a coverage gap remains. A pool whose panel cannot cover its own query
+  is therefore reported as **not testable** -- an untested absence, neither a pass nor a
+  failure -- rather than being counted or quietly dropped.
+- **`pick_pool_query.py` exposes `choose_query`**, so the chooser is shared with the new
+  harness instead of duplicated; its command-line behaviour is unchanged.
+
+### Test data: the gap-degraded major parent
+
+- **A fixture for the false positive behind issues #81 and #82.**
+  `tests.factories.make_gap_degraded_msa` builds a clonal query on a near-identical,
+  clade-structured panel whose nearest reference is misaligned over one locus
+  (frame-shifted and gap-riddled at the rates measured on the mpox locus: ~9% gaps there
+  against ~2% genome-wide). Nothing is copied into the query, so every region a caller
+  reports on it is a false positive by construction. The suite covers what the data is
+  (clonal, locally degraded, the dip confined to the locus) and records the two open
+  defects as strict `xfail`: a region is called over the locus on all five seeds tried
+  (#81), and neither the coverage gaps nor `donor_undercovered` flag it (#82). Fixing
+  either issue turns its test red until the marker comes off.
+
+### Caller behaviour, plan C Task 6: pool clade labels
+
+Completes the one task of plan C
+(`docs/superpowers/plans/2026-10-01-audit-c-caller-behaviour.md`) that was held back when
+its end-to-end gate was not met, rebased onto the plan D-G work. The investigation behind
+the decision is `docs/superpowers/specs/2026-10-19-audit-c-task6-investigation.md`.
+
+- **Pool clade labels are read as written instead of mined.** Tessera writes pool genomes
+  with the defline `accession label`, then passed that defline to a miner built for
+  free-text GenBank titles, which wants a digit-bearing token of four or more characters.
+  Short and multi-word clades did not survive: on the cached pools every measles tip
+  (846), all but two mpox tips (1556) and 413 of 1052 HIV-1 tips came back untyped, and
+  128 recombinant-named SARS-CoV-2 tips were never excluded because they were never typed.
+  Those genomes fell back to clade-blind ANI dereplication. The label is now read verbatim
+  for pools Tessera built and carried to the panel's lineage table through a
+  `pool_labels.tsv` sidecar; a user's own `--candidate-pool` is still mined, since its
+  headers are free text. This changes panel composition: selection changed for 15 of the
+  33 cached pools.
+- **A label that is not a clade no longer seeds a lineage.** Selection takes one
+  representative per lineage, so every distinct label won a panel slot. Two kinds of label
+  do not deserve one. `unassigned` is what Nextclade writes for a tip it places in no
+  clade (mumps writes `unclassified`); it appears in nine of the 33 cached pools, 126 tips
+  in the H3N2 HA dataset, and on the mpox dataset it is the reconstructed ancestral
+  sequence, which reading it as a clade admitted to the panel as a donor. A label such as
+  `Ib/IIb` spans two clades the same pool also carries standalone; the one mpox tip
+  carrying it became the minor parent of a 2721 bp region called on a clonal clade-IIb
+  query. A composite is only recognised when every slash-separated part is itself a clade
+  of the same pool, because a slash also occurs inside ordinary clade names: enterovirus
+  D68 names a clade `A2/D` across 364 cached genomes while naming neither `A2` nor `D`,
+  and Ebola names `Ebov-2013/r2021`. Over the 33 cached pools the two rules drop 221 of
+  34027 typed genomes and no legitimate clade.
+
+The gate that originally failed rested on two premises that did not hold, and its
+criterion has been corrected. Its mpox baseline never scanned, because selection left it
+one reference and detection needs two, so "no regions before" was an untested absence
+rather than a negative. Its HIV-1 query was AY900575, typed CRF24_BG, a designated
+circulating recombinant form, so a region reported on it was not evidence of a false
+positive. The gate now chooses a query whose label is a clade in its own right and
+reports a dataset whose baseline could not scan as not testable rather than as a pass.
+
+Two defects the investigation uncovered are independent of this task and are filed rather
+than fixed here: a false positive where the major parent is locally gap-degraded on a
+low-divergence panel (#81), and the coverage guard that cannot see it, because its 0.95
+best-similarity threshold has no resolution on such a panel and its undercover flag
+describes the minor parent only (#82).
+
+### Fourth audit, plan F: reporting, CLI and reassortment
+
+From `docs/superpowers/specs/2026-10-12-audit-swot-gap.md` (B1, B3, B5, B7-B9, the smaller
+reporting items, E1-E4, E5 in part, E14, F1-F5; help text and documentation for B2, B4,
+B6, A4). None of these changes which regions are called or their coordinates. The
+specificity harness at the default gate (`run_specificity.py --reps 3`, `--min-methods 2`:
+0/12 runs with a false region) gives output byte-identical to the run before the branch,
+apart from its two header lines. With `--min-methods 1` it gave 7/12 runs with a false
+region, 8 regions, all HMM, and positive control 3/3 detected, 3/3 correct donor, 13 bp
+median breakpoint error; no byte-baseline was captured for that setting.
+
+- A test or caller that gave no result is reported as `not run`, with the reason, in the
+  report, the TSVs and `run_provenance.json`: the PHI test under `--no-phi` or with too few
+  informative sites, and an HMM that lineage clustering left with one state. A PHI test
+  that is not testable at the window used keeps `not testable` in `run_provenance.json`.
+  `parent_free_support` reads `not run` instead of `no` in all three PHI cases.
+- A `low_information` coverage gap is no longer announced as a possible missing
+  reference.
+- `run_provenance.json` gains `coordinates`; under informative-site windowing
+  `window / step` says it describes the base-pair scan.
+- The report headline names the run's reconciled major parent; the pair plot uses the
+  report's colours; `recombination_methods.tsv` has one row per row of
+  `recombination_regions.tsv`, donor-absent regions included.
+- Every command rejects an output path that is a file. The discover commands range-check
+  the coverage fractions and search counts (`--top-gaps 0` is an error). `msa` refuses
+  `--reference` with `--query-as-backbone` and warns before overwriting. `--threads` is
+  range-checked on `detect`, `build-panel`, `fill-references`, `msa` and `reassort`.
+  `find-references -q` is kept verbatim. `build-panel` takes `--pool-consensus`,
+  `--keep-recombinant-lineages` and `--deep-typing`.
+- `reassort --margin` must be above 0 and at most 5 ANI points, and an `--ani-floor`
+  above 0 and at most 1 is rejected as a likely fraction. A discordant pair inside one
+  parent group gives `undetermined` instead of `reassortant`, unless another discordant
+  pair crosses parent groups, which still gives `reassortant`; every pair's relation is
+  written to `segment_pairs.tsv`. `reassort` takes `--threads` for `--scan-segments`.
+- The help of `--min-region`, `--margin` and `--merge-gap` names the callers that read
+  them. `validation/run_specificity.py`, `run_regimes.py` and `characterise_false_regions.py`
+  parse their arguments with `argparse`; the other harnesses, including `run_hybrids.py`,
+  still parse them by hand, so `--help` there is not handled.
+
 Fixes from the post-1.2.0 audit
 (`docs/superpowers/specs/2026-10-01-post-1.2.0-audit-design.md`, items A1-A10, B1-B11 and
 C1-C5, C7, C8). The data-safety and reporting fixes (A, B) leave the callers alone: for a
@@ -263,8 +378,108 @@ references are recruited, not how the scan calls regions:
   was left out of the pool without notice. It now reads a pool as every other command
   reads a collection, and rejects a file that is not FASTA.
 
+Callers (audit 4). Caller-statistics fixes from the fourth audit
+(`docs/superpowers/specs/2026-10-12-audit-swot-gap.md`, items A1-A14, B2, B4). The
+lineage-cluster changes (A1, A2), the descent floor (A3, A6), the HMM segment padding
+(B4, A10), the last-window fix and the Bootscan null can change which regions are reported
+on panels with near-duplicate references, at the genome ends, or wherever a padded segment
+moves across the sign test's significance threshold; the others change reported values
+only. Measured
+effects on the offline harnesses are listed after the bullets.
+
+- **Near-duplicate references could silence the HMM.** A lineage cluster's per-window
+  evidence was summed over its members, so three copies of the backbone outweighed a
+  single-genome donor and the HMM lost a 1 kb tract (HMM among the callers in 3 of 10
+  simulated runs). The evidence is now the member mean (6 of 10). (A1)
+- **A redundant donor lineage was split into two regions and lost Bootscan.** Clusters are
+  now computed once and shared: the merge treats two members of one cluster as one donor,
+  and Bootscan counts support per cluster. One row in 10 of 10 runs against 7 of 10, and
+  Bootscan among the callers in 10 of 10 against 1 of 10. (A2)
+- **The HMM sign test returned p = 0 above 1000 discordant sites.** It is now exact at
+  every size, in log space, and never below the smallest normal double. (A9)
+- **3SEQ discarded short tracts before testing them, and both triplet callers pruned the
+  Benjamini-Hochberg family.** 3SEQ now tests every donor with at least 20 discriminating
+  sites, using an exact dynamic program; MaxChi counts shallow donors in its family with
+  p = 1 rather than dropping them. (A3, A6)
+- **A merged region reported one member's identity over the union span**, and its
+  `n_windows` was a maximum over different units. Both are restated over the merged span;
+  `n_windows` counts base-pair windows for every caller. (A11, A8)
+- **HMM `n_windows` and `posterior_support` described the untrimmed segment**; they now
+  describe the reported span. Segment ends are also padded by the median window step
+  rather than by the gap between the first two windows, which is not typical under
+  informative-site windowing. That padding moves the segment, and so can change whether
+  the HMM's sign test over it reaches significance -- it changes which HMM regions are
+  called, not only the values reported for them. Whether a segment widens or narrows
+  depends on which of the two gaps is larger, so neither direction is systematic. The
+  padded width is also what `--min-region` is compared against, so a segment near that
+  floor can cross it either way; on the curated datasets the shift was 1460 columns
+  against a default floor of 500, and no segment crossed. (B4, A10)
+- **Bootscan's permutation null dropped wins** when the window count was not a multiple of
+  the block, giving anti-conservative p-values. (A5)
+- **The last `(width - window) % step` columns were in no window**, so a tract or a
+  coverage gap there was invisible to Bootscan, the barcode caller and the coverage
+  diagnostic. A final window flush with the end of the alignment is added.
+- **A tract at the first discriminating site had a zero-width breakpoint interval**
+  (3SEQ, MaxChi, GENECONV). (A14)
+- **Memory:** the PHI gamete matrices, the Hudson-Kaplan pair list and GENECONV's
+  permutations no longer exceed the scaling caps (136 MB to 25 MB, 381 MB to 0.25 MB,
+  680 MB to 250 MB on the test inputs); MaxChi's null no longer overflows int64 at
+  bacterial scale. (A13, A7)
+
+What this measurably changed, on the simulated and curated harnesses (10 replicates):
+
+- False regions on the clonal specificity panels fell at both agreement settings once the
+  shallow donors entered the Benjamini-Hochberg family: 17 of 40 runs with a false region
+  (20 regions) to 16 of 40 (19 regions) at `--min-methods 1`, and 2 of 40 to 1 of 40 at
+  `--min-methods 2`. No new 3SEQ or MaxChi false region appeared.
+- On the `near_identical` clonal control the median-step segment padding added one HMM
+  false region at `--min-methods 1`: the same 1 run in 10 carries a false region before
+  and after, but that run now reports two rather than one. At `--min-methods 2` there is
+  none either way.
+- `n_windows` moves in 13 of the 21 curated regions and in both directions, and
+  `mean_sim_minor` in 4 of them -- two in the third decimal (0.8982 to 0.8996, 0.8347 to
+  0.8363) and two in the fourth -- both by design.
+- One curated region (`sarscov2_xbb`) loses its HMM vote and 406 bp of extent. The cause
+  is the segment padding above, not the restated statistics: reverting only the
+  median-step pad restores the HMM to the row's callers (`3seq,maxchi` becomes
+  `hmm,3seq,maxchi`) and the extent with it. The lost vote is a correction rather than a
+  regression. Over the segment's own window union (22000-29734) the sign test gives 9
+  against 7 discordant sites, p = 0.40, under either pad; the old pad reached p = 0.03
+  only by clipping five major-favouring sites out of that union, so the call it granted
+  was not supported by the segment's own evidence. The region is still called by three
+  callers and the dataset still passes.
+- The padding affects informative-site windowing only. Under base-pair windowing the
+  first inter-window gap, the median and the step are the same number, so all three of
+  its paths are no-ops: measured on this panel, 291 windows with a first gap of 100 and a
+  median of 100, against 12 windows with a first gap of 1577 and a median of 847 under
+  informative-site windowing, which is the 1460-column shift above. This is why the
+  simulated panels are byte-identical and only curated informative-site datasets moved.
+- No curated verdict changes, and `hcv_clonal_1b` fails before and after (a pre-existing
+  12 bp MaxChi region on a clonal control).
+
 ### Changed
 
+- **`--min-region`, when given, now bounds every reported region**, whichever caller found
+  it. It was read only by the HMM, and on the untrimmed segment, so a 175 bp 3SEQ region
+  and a 49 bp MaxChi region were reported under `--min-region 5000`. Left unset the
+  behaviour is unchanged: the HMM keeps its segment floor at the window size, the
+  heuristic caller keeps its own, and the site callers are not bounded, because finding
+  tracts shorter than a window is what they are for. The help text said otherwise.
+  (B2, A4)
+- **An HMM left a single state by lineage clustering no longer counts toward
+  `--min-methods`**, as an unrunnable barcode caller does not. When clustering pools every
+  reference into one lineage the HMM has no second state and cannot call a region whatever
+  the data, so a gate it could not help meet only suppressed what the other callers found:
+  `--method hmm,3seq --min-methods 2` on five references 0.25 % apart with a real 6 kb
+  tract reported nothing and read as a negative. The clamp, its warning and the provenance
+  line now treat it as the barcode caller is treated. With the default four callers and
+  `--min-methods 2` nothing changes. The record also says "could test" rather than "ran",
+  since a one-state HMM runs and cannot test. (B7)
+- **`--merge-gap` now also sets how far apart two coverage gaps may be and still be
+  merged**, and so shapes the donor-absent regions built from them. It was read only by
+  the heuristic caller, and the coverage diagnostic always merged within one window size
+  whatever the option said. The default is unchanged, so only a run that sets it is
+  affected. (B6)
 - **Some seed options that cannot act are refused.** `detect` and `build-panel` used
   `--candidate-pool` and ignored `--nextclade`/`--nextclade-dataset` when both were given;
   `--pool-consensus` did nothing without a Nextclade pool; and `fill-references` ignored
@@ -325,14 +540,22 @@ references are recruited, not how the scan calls regions:
 
 ### Added
 
-- `validation/run_regimes.py`: a self-contained harness for near-identical panels and
-  sibling tracts, the two regimes the specificity harness does not sample.
+- `validation/run_regimes.py`: a self-contained harness for near-identical panels,
+  sibling tracts, and panels carrying a redundant backbone or donor lineage -- the regimes
+  the specificity harness does not sample.
 - `validation/characterise_false_regions.py`, and a decision record on the false-positive
   rate at the default agreement gate
   (`docs/superpowers/specs/2026-10-01-min-methods-default-decision.md`).
 
 ### Documentation
 
+- 3SEQ and MaxChi are no longer described as independent votes. MaxChi scores the tract
+  3SEQ's maximum descent finds, so the two are one triplet signal tested twice: on 300
+  simulated clonal walks their p-values have a Spearman correlation of 0.95 (0.88 over
+  the walks MaxChi permutes), and at a nominal 5 % both reject in 3.0 % of walks where
+  independence would give 0.12 %. Each remains calibrated on its own. The open
+  `--min-methods` decision record gains these numbers and the options for the barcode
+  caller, which counts toward the agreement gate without a significance test. (A12, A14)
 - `docs/detection-methods.md` describes lineage clustering (including its limit on panels
   below about 1.5 % divergence under base-pair windowing), the `breakpoint` coverage kind,
   the reported span of an HMM region and the PHI window cap.

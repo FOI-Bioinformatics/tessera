@@ -16,7 +16,10 @@ library's :class:`statistics.NormalDist`, so no SciPy):
 from __future__ import annotations
 
 import math
+import sys
 from statistics import NormalDist
+
+import numpy as np
 
 _NORMAL = NormalDist()
 
@@ -64,19 +67,46 @@ def proportion_diff_significant(
     return (p1 - p2) / se >= _z_one_sided(alpha)
 
 
+# The smallest positive normal double. A sign-test p-value below it is reported as this
+# value rather than as 0.0: zero is a value no test can produce, and zeros tie.
+P_FLOOR = sys.float_info.min
+
+
+def sign_test_log_pvalue(a: int, b: int) -> float:
+    """Natural log of the one-sided sign-test p-value ``P(X >= a)``, ``X ~ Bin(a+b, 0.5)``.
+
+    Exact for every ``n``, computed in log space: ``log C(n, a)`` from ``lgamma``, the
+    following terms by the ratio ``C(n, i+1) / C(n, i) = (n - i) / (i + 1)``, summed with
+    log-sum-exp. Nothing is subtracted from one, so the value keeps its magnitude however
+    small it is.
+    """
+    n = a + b
+    if n == 0 or a <= 0:
+        return 0.0
+    if a > n:
+        return float("-inf")
+    i = np.arange(a, n, dtype=np.float64)  # ratios for i = a .. n-1 give terms a+1 .. n
+    first = math.lgamma(n + 1) - math.lgamma(a + 1) - math.lgamma(n - a + 1)
+    log_terms = np.concatenate(([first], first + np.cumsum(np.log((n - i) / (i + 1)))))
+    top = float(log_terms.max())
+    return top + math.log(float(np.exp(log_terms - top).sum())) - n * math.log(2.0)
+
+
 def sign_test_pvalue(a: int, b: int) -> float:
     """One-sided sign-test p-value: ``P(X >= a)`` for ``X ~ Binomial(a+b, 0.5)``.
 
     The probability of seeing at least ``a`` discordant sites favouring the donor
     if the two parents were equally good (the null). Small means a real preference.
+
+    Exact at every ``n`` (see :func:`sign_test_log_pvalue`). An earlier version switched
+    to a normal approximation above 1000 sites, whose ``1 - cdf`` is exactly ``0.0`` beyond
+    z of about 8.3, so the strongest regions were reported with p = 0. A value below
+    :data:`P_FLOOR` is returned as ``P_FLOOR``, never as zero.
     """
-    n = a + b
-    if n == 0:
+    if a + b == 0:
         return 1.0
-    if n <= 1000:  # exact upper tail
-        return sum(math.comb(n, i) for i in range(a, n + 1)) / (2.0**n)
-    z = (a - n / 2.0 - 0.5) / math.sqrt(n / 4.0)  # normal approx, continuity-corrected
-    return 1.0 - _NORMAL.cdf(z)
+    log_p = sign_test_log_pvalue(a, b)
+    return min(1.0, max(P_FLOOR, math.exp(log_p))) if log_p > float("-inf") else P_FLOOR
 
 
 def sign_test_greater(a: int, b: int, alpha: float = 0.05) -> bool:

@@ -110,7 +110,7 @@ State the query label to `recomb` as it appears in the MSA (for a FASTA you alig
 yourself, the query file name without extension). To build the alignment from
 unaligned genomes first, run `tessera msa --query q.fasta --collection refs/ --output
 msa.fasta` (see [docs/aligners.md](docs/aligners.md); `--query-as-backbone` uses a
-single-contig query as the backbone). The window, step, caller, and region-calling
+single-contig query as the backbone; it cannot be combined with `--reference`). The window, step, caller, and region-calling
 parameters are configurable -- see [docs/detection-methods.md](docs/detection-methods.md)
 and `tessera recomb --help`.
 
@@ -136,7 +136,9 @@ commands; regenerate with `python example_data/make_example.py`.
 
 ## How detection works
 
-The reference winning the most windows is the **major parent** (the backbone donor).
+The **major parent** (the backbone) is the reference the query follows over most of its
+length: for the HMM, its majority state after the query's own-lineage siblings are set
+aside and near-duplicate references pooled.
 By default Tessera runs an **ensemble** of four callers -- HMM segmentation, the 3SEQ
 triplet test, MaxChi, and Bootscan (`--method hmm,3seq,maxchi,bootscan`) -- and merges
 their regions into one consensus: the union raises recall (3SEQ recovers short
@@ -188,10 +190,29 @@ candidates with a dedicated method (3SEQ, GARD, RDP). When a region's donor is i
 poor match, the result flags a possible missing reference rather than a confident
 event.
 
+**False regions at the default setting.** In 10-replicate runs of
+`validation/run_specificity.py` on simulated clonal data -- four clades about 16 % apart,
+four tips per clade about 2.4 % apart and a non-recombinant query, so every reported region
+is false -- the default `--min-methods 1` reported at least one false region in 17 of 40
+runs (42 %, 95 % CI 29-58 %); most were HMM switches between two tips of the query's own
+clade. Requiring two agreeing callers (`--min-methods 2`) lowered this to 2 of 40 (5 %, CI
+1-17 %) and detected 9 of 10 simulated 3 kb tracts, against 10 of 10 at the default. On
+panels of near-identical references (about 0.2 % apart; 20 replicates of
+`validation/run_regimes.py`) the rates were 1 of 20 (CI 1-24 %) and 0 of 20 (CI 0-16 %). The
+default stays at 1 because an earlier, reverted attempt to default to a gate of two (PR #47)
+lost three true detections on the curated hybrid benchmark (`rsv_a`, `mpox`, `masksib_rsv`),
+where at very low divergence only the HMM has power; a rerun of `run_hybrids.py` at the
+present gate has not been done. For a panel holding several near-equidistant relatives of
+the query, consider `--min-methods 2`, and treat a region found by one caller as a candidate
+to confirm. These are simulation results with modest replicate counts; see
+`validation/README.md` and
+`docs/superpowers/specs/2026-10-01-min-methods-default-decision.md`.
+
 ## Development
 
 ```
 pip install -e ".[dev]"
-ruff check src tests
+ruff check src tests validation
+mypy
 pytest                       # add -m "not requires_binary" to skip aligner-dependent tests
 ```

@@ -83,9 +83,90 @@ replicate counts carry real sampling error -- hence the intervals. These numbers
 establish whether a failure mode exists and roughly how large it is, not its exact
 magnitude on real panels.
 
+## Specificity on real genomes, offline (`run_pool_specificity.py`)
+
+`run_specificity.py` has exact ground truth but simulated sequences. This harness asks
+the same question of real ones: the query is a tip taken from a cached Nextclade
+reference tree whose label is a clade in its own right -- not a sentinel meaning "no
+clade", not a composite of two other clades, not a recombinant-named lineage -- so it is
+a single sampled genome rather than a mosaic, and a region reported on it is a false
+positive. The tip is chosen by `pick_pool_query.py`, deterministically, so repeat runs
+compare.
+
+It needs **no network**, which is the point, and that is enforced rather than assumed:
+both proxies are pointed at a closed local port in the child environment, so an attempt
+to reach NCBI is refused in milliseconds instead of stalling. Two things make that
+necessary, both learned the hard way:
+
+- `--nextclade-dataset` fetches the dataset index over the network *before* it consults
+  the cache, so the pool is passed as `--candidate-pool <directory>` instead;
+- `--max-rounds 1` does **not** prevent the fill: the search runs inside round one
+  whenever a coverage gap remains. Only a panel that leaves no gap stays local.
+
+So a pool whose panel does not cover its own query cannot be scored, and is reported as
+**not testable** -- an untested absence, neither a pass nor a failure. That is a result
+in itself: it says selection could not build a covering panel from that pool.
+
+| verdict | meaning |
+|---|---|
+| `PASS` | converged offline, no region called on the clonal tip |
+| `CALL` | converged offline, but a region was called -- inspect it |
+| `NOT TESTABLE` | the panel left a coverage gap, so the run needed the network |
+| `SKIP` | no tip whose clade is its own and large enough (e.g. an all-recombinant pool such as `sars-cov-2/XBB`) |
+
+Exit status is 1 when a testable pool reports a region. A `CALL` is for inspection
+rather than proof of a defect: real populations do recombine, so a tip can carry a
+genuine event.
+
+```
+export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"   # append; mafft + skder
+python validation/run_pool_specificity.py
+python validation/run_pool_specificity.py --pools rubella,ebov    # a subset
+python validation/run_pool_specificity.py --keep /tmp/poolspec    # keep the outputs
+```
+
+Observed on eight cached pool entries (2026-10-21). A dataset can be cached more than
+once under different cache keys, and those entries differ in content, so they are listed
+separately:
+
+| pool entry | query | clade | refs | verdict |
+|---|---|---|---|---|
+| `enterovirus/ev-d68` | AB601884 | C | 2 | PASS |
+| `enterovirus/ev-d68` (2nd entry) | AB601882 | C | 5 | PASS |
+| `rubella/genome` | AB285129 | 1J | 5 | PASS |
+| `orthoebolavirus/ebov` | PP_000LDGG | Ebov-2007 | 6 | PASS |
+| `mpox/all-clades` | NC_063383 | IIb | 4 | **CALL, 2 regions** |
+| `mpox/all-clades` (2nd entry) | PP_000SPJP | Ia | 1 | NOT TESTABLE |
+| `measles/genome/WHO-2012` | AB481087 | D3 | 1 | NOT TESTABLE |
+| `mumps/genome` | AB000386 | B | 1 | NOT TESTABLE |
+| `sars-cov-2/XBB` | -- | -- | -- | SKIP |
+
+The `CALL` is tracked as issue \#84. Both regions are long (27.4 kbp and 12.4 kbp) but
+rest on a very small margin: the minor parent matches at 0.9998 and 0.9999 against the
+major parent's 0.9995 and 0.9993, a separation in the fourth decimal, which on 27 kbp is
+a handful of sites. The parent-free diagnostic on the same alignment reports no signal at
+all (PHI p=1, Rmin=0), so it contradicts the callers outright.
+
+It is **not** issues \#81 or \#82, which concern a locally gap-degraded major parent.
+Measured on the run's `panel.msa.fasta`, the major parent carries 0.00 % gaps inside both
+loci against 0.06 % genome-wide, and `donor_undercovered` and `donor_absent` are both
+`no` -- there is no degradation to find. The likelier contributors are a redundant panel
+(all four references are 2022-outbreak genomes, so near-equidistant from the query) and
+bootscan, which has no null and backs one of the two regions.
+
+The verdict is `CALL` and not `FAIL` because mpox does recombine, so a tip can carry a
+genuine event; the harness flags it for inspection rather than asserting a defect.
+
+The three NOT TESTABLE entries all seeded a **single reference**, which cannot cover a
+query, so round one went to the fill. That is a selection result, not a scan result.
+
+Runtime is seconds to a minute per testable pool; a not-testable one costs minutes of
+refused retries before it gives up, and an mpox entry spends roughly 13 minutes in
+selection alone.
+
 ## Regimes the other harnesses do not sample
 
-`run_regimes.py` simulates two situations that fall outside `run_specificity.py`, whose
+`run_regimes.py` simulates situations that fall outside `run_specificity.py`, whose
 clades are about 16 % apart and so always run under base-pair windowing:
 
 | regime | what it asks |
@@ -93,6 +174,8 @@ clades are about 16 % apart and so always run under base-pair windowing:
 | `near_identical` with a tract | references about 0.2 % apart (the mpox / VZV regime, analysed under informative-site windowing): is the tract found, and is the HMM among the callers? |
 | `near_identical` clonal | the same panel with nothing recombined: every region is a false positive |
 | `sibling_tract` | the panel holds a sibling recombinant whose tract runs 600 bp past the query's; downstream of those 600 bp the donor and the backbone are identical, so nothing marks where the region ends |
+| `redundant_backbone` | the backbone lineage is three near-duplicates (~0.4 % apart) and a 1 kb tract comes from a single donor genome: is the HMM still among the callers? (audit 4, item A1) |
+| `redundant_donor` | the donor lineage is three near-duplicates and the tract is 3 kb: is the event one row, and are the HMM and Bootscan among its callers? (audit 4, item A2) |
 
 It defaults to `--min-methods 1`, the CLI default, so it reports what a user gets; pass
 `--min-methods 2` for the agreement gate and `--no-cluster-lineages` to switch lineage
@@ -112,7 +195,7 @@ practical setup is a dedicated env:
 
 ```
 conda create -n recomfi-aln -c bioconda -c conda-forge minimap2 sibeliaz mafft
-export PATH="$HOME/miniforge3/envs/recomfi-aln/bin:$PATH"
+export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"
 ```
 
 `fetch.py` additionally needs Entrez Direct: `conda install -c bioconda
@@ -234,7 +317,7 @@ higher confidence). The ensemble's union does not lower the documented PASS/FAIL
 it can only add 3SEQ-recovered regions the HMM alone would miss.
 
 ```
-export PATH="$HOME/miniforge3/envs/recomfi-aln/bin:$PATH"
+export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"
 python validation/run_hybrids.py            # all cases
 python validation/run_hybrids.py hiv1 dengue   # only named cases
 ```
@@ -255,7 +338,7 @@ the nearest-neighbour tier), calls `assign_lineages`, and checks that every geno
 typed via source `nextclade-nn` with a non-empty label.
 
 ```
-export PATH="$HOME/miniforge3/envs/recomfi-aln/bin:$PATH"   # skani on PATH
+export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"   # skani on PATH
 python validation/run_deep_typing.py
 ```
 
@@ -476,7 +559,7 @@ callers on the left of the `|` divider and OpenRDP's methods on the right, both 
 Columns left of the `|` are Tessera's callers; right of it are OpenRDP's methods (`maxchi`/`bootscan`
 appear on both sides -- the same algorithm family in each tool).
 
-On these well-characterised real recombinants Tessera's four callers each fire independently, so no
+On these well-characterised real recombinants Tessera's four callers each fire, so no
 single method carries the ensemble here; the ensemble earns its keep on the harder cases -- short
 tracts, low divergence, multi-breakpoint mosaics -- where the callers disagree (see the synthetic
 hybrid harness `--compare` table below). OpenRDP concurs on the recombination in every case -- at
@@ -564,9 +647,10 @@ So the miss was **candidate selection, not windowing dilution or statistical pow
 these tracts because its all-vs-all scan tests every pair, so the donor is always a candidate.
 
 The fix (`src/tessera/recomb/{threeseq,maxchi,geneconv}.py`): draw candidates from `rank_datasets`
-(window winners first, then the remaining references), so a zero-win donor is still tested. The
-pre-Benjamini-Hochberg floors (`_MIN_DISCRIMINATING` / `_MIN_DESCENT` / min run) drop candidates
-without a real signal, so the extra donors cost little power. Re-measured:
+(window winners first, then the remaining references), so a zero-win donor is still tested.
+Candidates with fewer than 20 discriminating sites (`_MIN_DISCRIMINATING`) are not tested; since
+audit 4, 3SEQ tests every other donor and MaxChi counts shallow ones in its family with p = 1, so
+the extra donors enlarge the Benjamini-Hochberg family rather than escape it. Re-measured:
 
 | tract (x window) | dataset | before fix | after fix (default ensemble) |
 |---|---|---|---|
@@ -743,7 +827,7 @@ decide PASS / FAIL / SKIP:
 MaxChi and Bootscan are part of the default ensemble because they raise confidence at no
 cost: on the earlier 18-run set, restricting to `hmm,3seq` (`HARNESS_METHODS=hmm,3seq`) gave
 the same verdicts but corroborated the donor in only 12 of 18 cases, whereas the four-caller
-default reached 17 -- the two extra independent callers add agreement with no regression and
+default reached 17 -- the two extra callers add agreement with no regression and
 no new false positives. Adding the legacy heuristic (`HARNESS_METHODS=all`) does not change
 either number. `--method hmm,3seq` is the lighter option for large genomes (Bootscan's
 bootstrap is the main added cost).

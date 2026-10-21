@@ -17,10 +17,11 @@ drive a segmentation.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
+from .clusters import median_window_step
 from .similarity import WindowSimilarity
 
 # Defaults, both from first principles rather than fit to any dataset.
@@ -43,6 +44,9 @@ class Segment:
     # first segment); the window band around the switch where neither side is sure.
     breakpoint_lo: int | None
     breakpoint_hi: int | None
+    # Posterior of this segment's state at each of its windows (start_window ..
+    # end_window), so a statistic can be restated over part of the segment.
+    window_posteriors: list[float] = field(default_factory=list)
 
 
 def _logsumexp(a: np.ndarray, axis: int) -> np.ndarray:
@@ -179,7 +183,10 @@ def _posterior(emission: np.ndarray, trans: np.ndarray) -> np.ndarray:
 def _path_to_segments(
     path: np.ndarray, post: np.ndarray, labels: list[str], result: WindowSimilarity
 ) -> list[Segment]:
-    half = (result.positions[1] - result.positions[0]) if len(result.positions) > 1 else 0
+    # A segment's ends are padded by the typical window spacing. Under informative-site
+    # windowing the gap between the first two windows is not typical (it tracks local
+    # site density), so the median gap is used, as everywhere else that needs the step.
+    half = median_window_step(result) if len(result.positions) > 1 else 0
     boundaries: list[int] = [0]
     for i in range(1, len(path)):
         if path[i] != path[i - 1]:
@@ -207,6 +214,7 @@ def _path_to_segments(
             n_windows=hi_i - lo_i + 1,
             mean_posterior=round(mean_post, 4),
             breakpoint_lo=bp_lo, breakpoint_hi=bp_hi,
+            window_posteriors=[float(x) for x in post[lo_i : hi_i + 1, state_idx]],
         ))
     return segments
 

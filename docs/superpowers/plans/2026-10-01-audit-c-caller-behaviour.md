@@ -1640,7 +1640,10 @@ For measles, mpox and HIV-1, take one genome from the cached pool as a stand-in 
 export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"
 for ds in nextstrain/measles/genome/WHO-2012 nextstrain/mpox/all-clades community/neherlab/hiv-1/hxb2; do
   name=$(echo "$ds" | tr '/-' '__')
-  query=$(ls ~/.cache/tessera/nextclade/${name}_*/*.fasta | head -200 | tail -1)
+  # Not the Nth file in the directory: that picked AY900575 for HIV-1, typed CRF24_BG,
+  # a designated circulating recombinant form, so the premise below did not hold.
+  read -r query clade _ < <(python validation/pick_pool_query.py "$pool")
+  echo "$name query $query clade $clade"
   mkdir -p validation/data/audit-c/task6
   tessera detect --query "$query" --nextclade --nextclade-dataset "$ds" \
       --output "validation/data/audit-c/task6/$name" 2>&1 | tee "validation/data/audit-c/task6/$name.log" \
@@ -1651,11 +1654,30 @@ done
 Run the same loop against `main` first, writing to `validation/data/audit-c/baseline-task6/` instead: `git stash`, run the loop with that output directory, `git stash pop`. (The package is installed editable, so the checked-out source is what runs.)
 
 Acceptance:
-- Each query is an unrecombined tree tip. This branch must not report a present-donor region (a row with `donor_absent = no` in `recombination_regions.tsv`) that `main` does not report. A new region here is a false positive introduced by the panel change.
-- The `Lineage selection:` log line shows at least as many lineages represented as on `main`.
-- `lineages.tsv` names the seeded references by clade with source `pool-header`.
+- The query must be an unrecombined tree tip, and the gate must show that it is rather
+  than assume it. `pick_query.py` takes a tip whose label is a clade of the pool in its
+  own right: not a sentinel, not a composite of two other clades of the same pool, and
+  not a recombinant-named lineage. The chosen clade is echoed so the premise is on the
+  record. The first version of this gate took the 200th file in the pool directory, which
+  for HIV-1 was a CRF24_BG genome, and a region called on a recombinant query is not
+  evidence of a false positive.
+- A dataset whose baseline run did not scan is **not testable**, not a pass and not a
+  failure. Check each baseline log for `detection needs at least 2`; mpox hit exactly
+  this, with selection leaving one reference, so its "no regions before" was an untested
+  absence. Report such a dataset as not testable and leave it out of the comparison.
+- For every dataset that both sides scanned, this branch must not report a present-donor
+  region (a row with `donor_absent = no` in `recombination_regions.tsv`) that the baseline
+  does not report. Compare only against a baseline that scanned the same query.
+- The `Lineage selection:` log line shows at least as many lineages represented as on the
+  baseline.
+- `lineages.tsv` names the seeded references by clade with source `pool-header`, and no
+  seeded reference carries a sentinel or composite label.
 
-If a query gains a region: revert the commit, record the three logs, and report it. Do not adjust `select_regional`.
+If a testable query gains a region: do not revert on that alone and do not adjust
+`select_regional`. Establish first whether the region is attributable to the panel change,
+by checking whether its minor parent is a genome the change admitted, and whether the
+locus is sound: a locally gap-degraded major parent produces the same signature without
+any panel change (issues #81 and #82). Record the logs and report which of the two it is.
 
 If there is no network, this step cannot run. Record "Task 6 end-to-end gate: not run" in the PR and leave the commit in place only if the maintainer agrees; the unit tests and Step 10 alone do not validate a panel-composition change.
 

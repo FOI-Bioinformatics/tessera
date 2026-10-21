@@ -6,7 +6,16 @@ from pathlib import Path
 
 import typer
 
-from .main import DEFAULT_THREADS, _parse_key_values, _require_choice, app, get_logger, stage_errors
+from ..core.errors import UserInputError
+from .main import (
+    DEFAULT_THREADS,
+    _parse_key_values,
+    _require_choice,
+    _require_range,
+    app,
+    get_logger,
+    stage_errors,
+)
 
 
 @app.command()
@@ -44,6 +53,15 @@ def msa(
     logger = get_logger()
     with stage_errors(logger):
         _require_choice(aligner, set(aligner_registry.names()), "--aligner")
+        _require_range(threads, "--threads", lo=1)
+        # Both name the backbone. --reference used to win silently, so a user who asked
+        # for the query as backbone got a different coordinate system without a word.
+        if reference is not None and query_as_backbone:
+            raise UserInputError(
+                "--reference and --query-as-backbone both choose the backbone; give one."
+            )
+        if output.exists():
+            logger.warning("Overwriting the existing alignment %s.", output)
         params = MsaParams(
             query=query,
             collection=collection,

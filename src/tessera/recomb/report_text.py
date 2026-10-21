@@ -12,7 +12,7 @@ from math import isnan
 from pathlib import Path
 
 from .analyze import AnalysisResult, stats_sort_key, winner_label
-from .coverage import BREAKPOINT_KIND, CoverageGap
+from .coverage import BREAKPOINT_KIND, DIVERGENT_KIND, LOW_INFORMATION_KIND, CoverageGap
 from .diagnostics import RecombinationSignal
 from .regions import Region
 from .similarity import WindowSimilarity
@@ -150,12 +150,15 @@ def print_coverage(gaps: list[CoverageGap], threshold: float, echo=print) -> Non
         for g in gaps
     ]
     print_formatted_table(rows, header=COVERAGE_HEADER, echo=echo)
-    if any(g.kind != BREAKPOINT_KIND for g in gaps):
-        echo("  ^ the closest reference here is poor; the true source may be missing. "
-             "Run 'tessera find-references' to search NCBI.")
+    if any(g.kind == DIVERGENT_KIND for g in gaps):
+        echo("  divergent = the closest reference here is poor; the true source may be "
+             "missing. Run 'tessera find-references' to search NCBI.")
+    if any(g.kind == LOW_INFORMATION_KIND for g in gaps):
+        echo("  low_information = too few comparable bases to judge (e.g. an unsequenced "
+             "stretch); not evidence of a missing reference.")
     if any(g.kind == BREAKPOINT_KIND for g in gaps):
-        echo("  breakpoint = windows straddling a called breakpoint; the two parents "
-             "together explain the query there (not a missing reference).")
+        echo("  breakpoint = windows beside a called breakpoint that a single switch "
+             "between the region's two parents explains (not a missing reference).")
     echo("")
 
 
@@ -237,7 +240,21 @@ def write_winners_tsv(analysis: AnalysisResult, output_dir: Path, logger: loggin
             fo.write(f"{dataset}\t{num}\n")
 
 
-def write_regions_tsv(regions: list[Region], output_dir: Path, logger: logging.Logger) -> None:
+def _parent_free_cell(flag: bool, phi_not_run: bool) -> str:
+    """``parent_free_support`` for one row: ``not run`` when the PHI test gave no result.
+
+    Without a PHI result no region can be corroborated, so ``no`` would read as a test
+    that looked and found nothing.
+    """
+    if phi_not_run:
+        return "not run"
+    return "yes" if flag else "no"
+
+
+def write_regions_tsv(
+    regions: list[Region], output_dir: Path, logger: logging.Logger,
+    phi_not_run: bool = False,
+) -> None:
     path = output_dir / "recombination_regions.tsv"
     logger.info("Writing recombination regions: %s", path)
     header = [
@@ -251,8 +268,9 @@ def write_regions_tsv(regions: list[Region], output_dir: Path, logger: logging.L
     # No comment preamble here, deliberately. The `test` and `statistic` columns make
     # each row self-describing, which is what a consumer actually needs, and this is the
     # most widely parsed of the outputs -- a leading `#` line would break every reader
-    # that does not know to skip it. The FDR method and coordinate conventions go in
-    # run_provenance.json and the documentation instead.
+    # that does not know to skip it. The FDR method ("multiple testing") and the
+    # coordinate convention ("coordinates") are in run_provenance.json and the
+    # documentation instead.
     with open(path, "w") as fo:
         fo.write("\t".join(header) + "\n")
         for r in regions:
@@ -272,7 +290,7 @@ def write_regions_tsv(regions: list[Region], output_dir: Path, logger: logging.L
                     "yes" if r.donor_undercovered else "no",
                     "yes" if r.donor_absent else "no",
                     ",".join(r.methods) if r.methods else "NA",
-                    "yes" if r.parent_free_support else "no",
+                    _parent_free_cell(r.parent_free_support, phi_not_run),
                 ])) + "\n"
             )
 
@@ -280,12 +298,14 @@ def write_regions_tsv(regions: list[Region], output_dir: Path, logger: logging.L
 def write_methods_tsv(
     breakdown: list[dict], methods_run: tuple[str, ...], output_dir: Path,
     logger: logging.Logger, methods_not_run: tuple[str, ...] = (),
+    phi_not_run: bool = False,
 ) -> None:
     """Write the per-region x per-method agreement matrix (the ensemble breakdown).
 
     A cell is ``yes`` / ``no`` for a caller that ran, and ``not run`` for one that was
     selected but could not run -- a ``no`` there would read as a caller that looked and
-    found nothing.
+    found nothing. ``parent_free_support`` is ``not run`` for the same reason when the PHI
+    test gave no result.
     """
     path = output_dir / "recombination_methods.tsv"
     logger.info("Writing method comparison: %s", path)
@@ -300,7 +320,7 @@ def write_methods_tsv(
             ]
             fo.write("\t".join(map(str, [
                 b["minor_parent"], b["query_start"], b["query_end"], *cells,
-                "yes" if b["parent_free_support"] else "no",
+                _parent_free_cell(b["parent_free_support"], phi_not_run),
             ])) + "\n")
 
 

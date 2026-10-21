@@ -31,6 +31,8 @@ _PERMUTATIONS = 20_000
 # not blow up; permutations are scaled down (never below this floor) to stay under it.
 _MAX_PERM_CELLS = 40_000_000
 _MIN_PERMUTATIONS = 2_000
+# Cells per permutation batch; bounds peak memory without changing the permutation count.
+_BATCH_CELLS = 10_000_000
 
 
 def longest_minor_run(steps: np.ndarray) -> tuple[int, int, int]:
@@ -59,14 +61,26 @@ def run_pvalue_perm(steps: np.ndarray, run_len: int, *, seed: int = 0) -> float:
     if n_steps * perms > _MAX_PERM_CELLS:
         perms = max(_MIN_PERMUTATIONS, _MAX_PERM_CELLS // max(1, n_steps))
     rng = np.random.default_rng(seed)
-    order = np.argsort(rng.random((perms, n_steps)), axis=1)
-    is_minor = steps[order] == -1
-    longest = np.zeros(perms, dtype=np.int32)
-    cur = np.zeros(perms, dtype=np.int32)
-    for j in range(n_steps):  # vectorised over permutations; reset-cumulative run length
-        cur = np.where(is_minor[:, j], cur + 1, 0)
-        longest = np.maximum(longest, cur)
-    return float((np.count_nonzero(longest >= run_len) + 1) / (perms + 1))
+    # Batched, as in MaxChi: the full (perms, n_steps) draw is up to 40 million cells,
+    # about 680 MB across its random, order and mask arrays (320 MB float64 + 320 MB
+    # int64 argsort + 40 MB bool), per candidate donor. The
+    # batches draw the same random stream in the same order, so the p-value is identical
+    # to the unbatched one; only the peak memory changes.
+    batch = max(1, min(perms, _BATCH_CELLS // max(1, n_steps)))
+    exceed = 0
+    remaining = perms
+    while remaining > 0:
+        k = min(batch, remaining)
+        order = np.argsort(rng.random((k, n_steps)), axis=1)
+        is_minor = steps[order] == -1
+        longest = np.zeros(k, dtype=np.int32)
+        cur = np.zeros(k, dtype=np.int32)
+        for j in range(n_steps):  # vectorised over permutations; reset-cumulative run
+            cur = np.where(is_minor[:, j], cur + 1, 0)
+            longest = np.maximum(longest, cur)
+        exceed += int(np.count_nonzero(longest >= run_len))
+        remaining -= k
+    return float((exceed + 1) / (perms + 1))
 
 
 def call_regions_geneconv(result: WindowSimilarity, analysis, params):
@@ -118,7 +132,10 @@ def call_regions_geneconv(result: WindowSimilarity, analysis, params):
             continue  # keep the most significant donor for each fragment
         sim_minor = _region_similarity(result.rows, result.query, minor, msa_start, msa_end)
         sim_major = _region_similarity(result.rows, result.query, major, msa_start, msa_end)
-        bp_lo = result.column_to_query(int(cols[max(0, start - 1)]))
+        # The breakpoint lies between the last site before the tract and its first
+        # site. A tract starting at the first discriminating site has no site before
+        # it, so the interval runs from the alignment start, not zero-width.
+        bp_lo = result.column_to_query(int(cols[start - 1])) if start > 0 else 0
         bp_hi = result.column_to_query(int(cols[start]))
         regions.append(Region(
             minor_parent=minor, major_parent=major,

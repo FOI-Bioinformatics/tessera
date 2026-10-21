@@ -13,7 +13,10 @@ from ..core.errors import UserInputError
 from ..core.io import strip_sequence_extension
 from ..msa.build import read_provenance
 from .analyze import analyze, winners_per_window
+from .clusters import lineage_clusters
 from .coverage import (
+    DIVERGENT_KIND,
+    LOW_INFORMATION_KIND,
     CoverageParams,
     call_coverage_gaps,
     flag_undercovered_regions,
@@ -21,12 +24,18 @@ from .coverage import (
     mark_breakpoint_gaps,
     reconcile_gaps,
 )
-from .diagnostics import corroborating_intervals, recombination_signal
-from .ensemble import consensus_regions, filter_by_agreement, reconcile_major
+from .diagnostics import MIN_INFORMATIVE, corroborating_intervals, recombination_signal
+from .ensemble import (
+    consensus_regions,
+    filter_by_agreement,
+    filter_by_length,
+    reconcile_major,
+)
 from .hmm import DEFAULT_JUMP_RATE
 from .reattribute import reattribute_donors
-from .regions import DEFAULT_METHODS, RegionParams, call_regions
+from .regions import DEFAULT_METHODS, Region, RegionParams, call_regions
 from .report import (
+    PHI,
     ReportContext,
     print_coverage,
     print_regions,
@@ -56,7 +65,7 @@ class RecombParams:
     # Region calling. The default ensemble runs the hmm and 3seq callers and merges
     # their regions into a consensus; a single-method tuple reproduces one caller.
     methods: tuple[str, ...] = DEFAULT_METHODS
-    # Callers that must independently find a region before it is reported; clamped to the
+    # Callers that must each find a region before it is reported; clamped to the
     # number of callers actually run. Raising it to 2 is a real precision/recall trade and
     # the right setting depends on the panel, so the default reports the union.
     #
@@ -88,8 +97,13 @@ class RecombParams:
     # base-pair window dilutes the few discriminating sites). 8% sits below the
     # genotype-level panels that work in base-pair mode (measles ~10%, HIV ~37%).
     informative_max_fraction: float = 0.08
-    # Heuristic-only thresholds (None -> derive from the window size).
+    # Region-length floor. When given, every merged region shorter than it is removed
+    # (donor_absent coverage rows are not callers' regions and are not bounded; removing
+    # a short region can leave a coverage gap uncaveated, so a bounded run can report a
+    # donor-absent row an unbounded one did not); when None, the HMM and the heuristic
+    # caller use the window size and the site callers are not bounded.
     min_region: int | None = None
+    # Heuristic-only thresholds. merge_gap also merges coverage gaps.
     margin: float = 0.0
     merge_gap: int | None = None
     # Reference-coverage diagnostic.
@@ -243,6 +257,23 @@ def _msa_provenance_lines(record: dict | None) -> dict[str, str]:
     return lines
 
 
+def _absent_breakdown_row(region: Region) -> dict:
+    """The method-table row of a donor-absent region: no caller called it.
+
+    A donor-absent region comes from the coverage diagnostic, not from a caller, so every
+    caller that ran reads ``no`` for it (and one that could not run, ``not run``).
+    """
+    return {
+        "minor_parent": region.minor_parent,
+        "query_start": region.query_start,
+        "query_end": region.query_end,
+        "methods": (),
+        "per_method_support": {},
+        "parent_free_support": region.parent_free_support,
+        "donor_absent": True,
+    }
+
+
 def _write_run_provenance(
     output_dir: Path, provenance: dict, msa_record: dict | None, logger: logging.Logger
 ) -> Path:
@@ -317,20 +348,36 @@ def run_recomb(
     # Parent-free recombination signal: does the alignment carry recombination at all,
     # and where -- computed once from every sequence, independent of the caller. Most
     # informative where divergence is low or the true donor is absent from the panel.
+    # A test or caller that gives no result is recorded here, with the reason, and
+    # reported as "not run" -- never as a negative. The report, the TSVs and the
+    # provenance all read this one mapping.
+    not_run: dict[str, str] = {}
     signal = None
-    if params.phi:
+    if not params.phi:
+        not_run[PHI] = "disabled with --no-phi"
+    else:
         signal = recombination_signal(
             bp_result.rows, query_label, bp_result.column_to_query,
             window=params.phi_window,
         )
-        if signal is not None and signal.phi_p is None:
+        if signal is None:
+            not_run[PHI] = (
+                f"fewer than {MIN_INFORMATIVE} informative sites in the alignment, too few "
+                "for the test"
+            )
+            logger.info("Recombination signal (parent-free): not run (%s).", not_run[PHI])
+        elif signal.phi_p is None:
+            not_run[PHI] = (
+                f"not testable: every pair of the {signal.n_informative} informative sites "
+                f"lies within the window of {signal.phi_window} ranks"
+            )
             logger.info(
                 "Recombination signal (parent-free): PHI not testable (every pair of the "
                 "%d informative site(s) lies within the window of %d ranks; lower "
                 "--phi-window), Rmin=%d.",
                 signal.n_informative, signal.phi_window, signal.rmin,
             )
-        elif signal is not None:
+        else:
             logger.info(
                 "Recombination signal (parent-free): PHI p=%.4g, Rmin=%d (%d informative "
                 "sites).", signal.phi_p, signal.rmin, signal.n_informative,
@@ -342,7 +389,7 @@ def run_recomb(
     # (possibly informative-site) result. Reuse the same analysis when they coincide.
     analysis_bp = analysis if result is bp_result else analyze(bp_result)
 
-    def _region_params(method: str) -> RegionParams:
+    def _region_params(method: str, clusters: list[list[str]] | None = None) -> RegionParams:
         return RegionParams.with_defaults(
             params.window_size,
             min_region=params.min_region,
@@ -354,7 +401,23 @@ def run_recomb(
             exclude_siblings=params.exclude_siblings,
             cluster_lineages=params.cluster_lineages,
             lineage_map=lineage_map,
+            reference_clusters=clusters,
         )
+
+    # Lineage clusters (near-duplicate references), computed once on the HMM's scan and
+    # shared: the HMM pools them, Bootscan counts their support together, and the merge
+    # treats two members of one cluster as the same donor.
+    reference_clusters = lineage_clusters(result, params.window_size, _region_params("hmm"))
+    # One exception, the case documented in docs/detection-methods.md: on a panel where
+    # every pair of references clears the pooling floor the whole panel becomes one
+    # cluster. The HMM must still see it -- that is the one-state case it reports as "not
+    # run" -- but the other callers go on competing genomes, and for them a cluster
+    # holding the entire panel says nothing. Shared, it would leave Bootscan no group
+    # able to beat the backbone's, and it would make the merge treat every pair of
+    # references as one donor, so two callers naming different donors would be reported
+    # as one row listing both: agreement read off a disagreement.
+    n_refs = len(result.similarities)
+    shared_clusters = [c for c in reference_clusters if len(c) < n_refs]
 
     # Run each selected caller (sharing the one similarity scan + analysis), then merge
     # their regions into a single consensus that records per-region method agreement.
@@ -363,7 +426,11 @@ def run_recomb(
     excluded_siblings: list = []
     for method in params.methods:
         res, ana = (result, analysis) if method == "hmm" else (bp_result, analysis_bp)
-        regs, major_m, sibs = call_regions(res, ana, params.window_size, _region_params(method))
+        clusters = reference_clusters if method == "hmm" else shared_clusters
+        regs, major_m, sibs = call_regions(
+            res, ana, params.window_size, _region_params(method, clusters),
+            not_run=not_run,
+        )
         per_method[method] = regs
         majors[method] = major_m
         if method == "hmm":
@@ -372,16 +439,19 @@ def run_recomb(
     # The barcode caller needs typed references and returns no major parent when it
     # cannot run. That is "could not test", which must not be reported as "tested and
     # found nothing": refuse a run that selected nothing else, and say so otherwise.
-    not_run = tuple(m for m in params.methods if m == "barcode" and majors[m] is None)
-    not_run_reason = ""
-    if not_run:
-        reason = not_run_reason = (
+    callers_not_run = tuple(
+        m for m in params.methods if m == "barcode" and majors[m] is None
+    )
+    if callers_not_run:
+        reason = (
             "fewer than two typed clades carry enough characteristic markers"
             if lineage_map else
             "it needs typed references (a lineage map: --lineage-map, or a lineages.tsv "
             "beside the output or the MSA) and none was found"
         )
-        if len(not_run) == len(params.methods):
+        for m in callers_not_run:
+            not_run[m] = reason
+        if len(callers_not_run) == len(params.methods):
             raise UserInputError(
                 f"The barcode caller could not run: {reason}. No other caller was "
                 "selected, so this scan could not test for recombination. Supply typed "
@@ -391,7 +461,20 @@ def run_recomb(
             "The barcode caller could not run (%s); it is reported as 'not run', not as "
             "a negative.", reason,
         )
-    n_ran = len(params.methods) - len(not_run)
+    if "hmm" in not_run:
+        logger.warning(
+            "The hmm caller could not test (%s); it is reported as 'not run', not as a "
+            "negative.", not_run["hmm"],
+        )
+    n_ran = len(params.methods) - len(callers_not_run)
+    # A one-state HMM: lineage clustering pooled every reference into one lineage, so the
+    # HMM had no second state and could not call a region whatever the data (it is
+    # reported as "not run" above). Like an unrunnable barcode caller it does not count
+    # toward the agreement gate: a gate it cannot help meet would only suppress what the
+    # callers that did test found.
+    hmm_one_state = "hmm" in not_run
+    if hmm_one_state:
+        n_ran -= 1
 
     major_parent, per_major = reconcile_major(majors, window_wins=analysis_bp.winners_with_ties)
     # Parent-free corroboration needs both halves of the diagnostic: PHI to establish
@@ -401,7 +484,21 @@ def run_recomb(
         per_method, major=major_parent,
         rmin_intervals=corroborating_intervals(signal, alpha=params.alpha),
         lineage_map=lineage_map,
+        scan=(bp_result, params.window_size),
+        clusters=shared_clusters,
     )
+    # --min-region, when given, bounds the length of every reported region. Left unset,
+    # only the HMM applies a floor (to its segments, before trimming); the site callers
+    # exist to find tracts shorter than a window and are not bounded by default.
+    if params.min_region is not None:
+        regions, method_breakdown, too_short = filter_by_length(
+            regions, method_breakdown, params.min_region
+        )
+        if too_short:
+            logger.info(
+                "Removed %d region(s) shorter than --min-region %d bp.",
+                too_short, params.min_region,
+            )
     # Agreement gate: a region resting on a single caller is the weakest thing the
     # ensemble can report, so require corroboration when enough callers ran to give
     # it (clamped, so selecting one caller is not silently self-suppressing). This runs
@@ -411,11 +508,12 @@ def run_recomb(
     # The clamp is silent when the user simply selected fewer callers than --min-methods.
     # It is not when a selected caller could not run: the user asked for corroboration
     # the run cannot give, and the regions reported are then weaker than requested.
-    gate_lowered = bool(not_run) and min_agree < params.min_methods
+    gate_lowered = (bool(callers_not_run) or hmm_one_state) and min_agree < params.min_methods
     if gate_lowered:
         logger.warning(
-            "--min-methods %d cannot be met: %d caller(s) ran. The agreement gate used "
-            "is %d, so regions found by fewer callers than requested are reported.",
+            "--min-methods %d cannot be met: %d caller(s) could test. The agreement "
+            "gate used is %d, so regions found by fewer callers than requested are "
+            "reported.",
             params.min_methods, n_ran, min_agree,
         )
     regions, method_breakdown, suppressed = filter_by_agreement(
@@ -460,6 +558,8 @@ def run_recomb(
         params.window_size,
         floor=params.coverage_floor,
         rel_drop=params.coverage_rel_drop,
+        # --merge-gap merges coverage gaps too (None -> the window size, as before).
+        merge_gap=params.merge_gap,
     )
     coverage_gaps, coverage_threshold = call_coverage_gaps(
         bp_result, params.window_size, coverage_params
@@ -473,12 +573,18 @@ def run_recomb(
     n_breakpoint = mark_breakpoint_gaps(
         coverage_gaps, regions, bp_result, params.window_size, coverage_threshold,
     )
-    n_poor = len(coverage_gaps) - n_breakpoint
+    n_poor = sum(1 for g in coverage_gaps if g.kind == DIVERGENT_KIND)
+    n_low_info = sum(1 for g in coverage_gaps if g.kind == LOW_INFORMATION_KIND)
     if n_poor:
         logger.info(
             "Reference coverage: %d region(s) where the closest reference is below "
             "%.3f -- a better reference may be missing.",
             n_poor, coverage_threshold,
+        )
+    if n_low_info:
+        logger.info(
+            "Reference coverage: %d stretch(es) with too few comparable bases to judge "
+            "(e.g. unsequenced); not treated as a missing reference.", n_low_info,
         )
     if n_breakpoint:
         logger.info(
@@ -498,7 +604,15 @@ def run_recomb(
     absent = reconcile_gaps(
         regions, gaps_as_regions(coverage_gaps, bp_result, major_parent)
     )
-    regions = sorted(regions + absent, key=lambda r: r.msa_start)
+    # One method-table row per region, donor-absent ones included, sorted together so
+    # recombination_methods.tsv stays row-for-row with recombination_regions.tsv.
+    paired = sorted(
+        zip(regions + absent, method_breakdown + [_absent_breakdown_row(r) for r in absent],
+            strict=True),
+        key=lambda pair: pair[0].msa_start,
+    )
+    regions = [region for region, _ in paired]
+    method_breakdown = [row for _, row in paired]
     if absent:
         logger.info("Added %d donor-absent region(s) (likely a missing reference).",
                     len(absent))
@@ -517,7 +631,15 @@ def run_recomb(
         "MSA": str(params.msa),
         **_msa_provenance_lines(msa_record),
         "datasets": str(len(result.similarities)),
-        "window / step": f"{params.window_size} / {params.window_step}",
+        # Under informative-site windowing the HMM did not use this geometry: the
+        # base-pair scan still drives the similarity track, the coverage diagnostic and
+        # the site callers, so the line says which scan it describes.
+        "window / step": (
+            f"{params.window_size} / {params.window_step}" if result is bp_result else
+            f"{params.window_size} / {params.window_step} (base-pair scan: similarity "
+            "track, coverage and the site callers; the HMM used informative-site windows)"
+        ),
+        "coordinates": "0-based, end-exclusive; MSA columns and query bases",
         "metric": params.metric,
         "caller": f"ensemble: {caller_desc}" if len(params.methods) > 1 else caller_desc,
         "windowing": windowing,
@@ -525,8 +647,10 @@ def run_recomb(
         # --min-methods 2 or --no-cluster-lineages is indistinguishable from a default
         # run in the record.
         "min methods (agreement gate)": (
+            # "could test", not "ran": a one-state HMM executed but could not call a
+            # region, so counting it as having run would overstate the corroboration.
             f"{min_agree} (requested {params.min_methods}; {n_ran} caller"
-            f"{'' if n_ran == 1 else 's'} ran)" if gate_lowered else str(min_agree)
+            f"{'' if n_ran == 1 else 's'} could test)" if gate_lowered else str(min_agree)
         ),
         "sibling exclusion": "on" if params.exclude_siblings else "off",
         "lineage clustering": "on" if params.cluster_lineages else "off",
@@ -536,8 +660,11 @@ def run_recomb(
         "major parent": major_parent or "n/a",
         "coverage threshold / gaps": f"{coverage_threshold:.3f} / {len(coverage_gaps)}",
     }
-    if not_run:
-        provenance["callers not run"] = f"{', '.join(not_run)} ({not_run_reason})"
+    reported_not_run = [m for m in params.methods if m in not_run]
+    if reported_not_run:
+        provenance["callers not run"] = "; ".join(
+            f"{m} ({not_run[m]})" for m in reported_not_run
+        )
     if excluded_siblings:
         provenance["excluded siblings (query's own lineage)"] = ", ".join(
             ev.label for ev in excluded_siblings
@@ -549,6 +676,8 @@ def run_recomb(
             f"window {signal.phi_window})"
         )
         provenance["min recombination events (Rmin)"] = str(signal.rmin)
+    else:
+        provenance["recombination signal (PHI)"] = f"not run ({not_run[PHI]})"
     # The four permutation callers seed their own RNG per call from a fixed value, so a
     # rerun on the same input reproduces the same p-values. Say so: a reader cannot
     # otherwise tell a deterministic result from one that happened to land twice.
@@ -578,7 +707,8 @@ def run_recomb(
             extra_sections=extra_sections, lineage_map=lineage_map,
             query_lineage=query_lineage, signal=signal, organism=params.organism,
             methods_run=params.methods, method_breakdown=method_breakdown, per_major=per_major,
-            methods_not_run=not_run, not_run_reason=not_run_reason, alpha=params.alpha,
+            major_parent=major_parent,
+            not_run=not_run, alpha=params.alpha,
         ),
     )
     logger.info("All done.")

@@ -1,7 +1,15 @@
-"""Realistic reference-anchored MSA factory for tests.
+"""Realistic reference-anchored MSA factories for tests.
 
-Builds a deterministic (seeded) MSA shaped like the real orthopoxvirus example
-dataset rather than uniform-random noise:
+Two deterministic (seeded) generators, both shaped after real runs rather than
+uniform-random noise.
+
+:func:`make_recombination_msa` is the positive case, shaped like the orthopoxvirus
+example dataset; :func:`make_gap_degraded_msa` is the negative case behind issues
+#81 and #82 -- a clonal query on a near-identical, clade-structured panel whose
+nearest reference is misaligned over one locus, where any region reported is a
+false positive.
+
+The orthopoxvirus-shaped MSA carries:
 
 - a backbone reference the query matches closely (``cowpox_KC813504`` in the real
   data, median similarity ~1.0);
@@ -122,3 +130,123 @@ def make_recombination_msa(
 
 def _with_gap(seq: str, start: int, gap_len: int) -> str:
     return seq[:start] + "-" * gap_len + seq[start + gap_len:]
+
+
+# Default gap rates for the gap-degraded fixture below, taken from the mpox locus
+# that prompted issues #81 and #82: 8.65% gaps in the major parent at the locus
+# against 1.64% genome-wide.
+LOCUS_GAP_RATE = 0.087
+BACKGROUND_GAP_RATE = 0.016
+
+
+@dataclass
+class GapDegradedMSA:
+    records: dict[str, str]
+    nearest: str  # the query's sister tip: nearest reference, degraded at the locus
+    locus: tuple[int, int]  # MSA columns over which that reference is misaligned
+    locus_gap_rate: float  # its realized gap rate inside the locus
+    background_gap_rate: float  # its realized gap rate genome-wide
+    length: int
+    donor_block: None = None  # the query is clonal: nothing was copied into it
+
+
+def _sprinkle_gaps(
+    seq: str, rate: float, rng: random.Random, span: tuple[int, int] | None = None
+) -> str:
+    """Gap out individual columns at ``rate``, modelling an ordinary indel load."""
+    chars = list(seq)
+    lo, hi = span if span is not None else (0, len(chars))
+    for i in range(lo, hi):
+        if rng.random() < rate:
+            chars[i] = "-"
+    return "".join(chars)
+
+
+def _misalign(
+    seq: str, locus: tuple[int, int], gap_rate: float, shift: int, rng: random.Random
+) -> str:
+    """Rewrite ``locus`` as a frame-shifted, gap-riddled copy of itself.
+
+    A locally poor alignment is not a clean deletion: the residues placed in those
+    columns come from elsewhere in the same sequence, so they mismatch the query at
+    roughly the background base composition while the gap rate rises. Shifting
+    rather than randomizing keeps the row's own composition intact, so the record
+    still looks like the organism it came from.
+    """
+    lo, hi = locus
+    donor = seq[lo + shift:hi + shift] or seq[lo:hi]
+    chars = list(seq)
+    for offset, col in enumerate(range(lo, hi)):
+        chars[col] = "-" if rng.random() < gap_rate else donor[offset % len(donor)]
+    return "".join(chars)
+
+
+def _gap_rate(seq: str, span: tuple[int, int] | None = None) -> float:
+    lo, hi = span if span is not None else (0, len(seq))
+    window = seq[lo:hi]
+    return window.count("-") / len(window) if window else 0.0
+
+
+def make_gap_degraded_msa(
+    *,
+    seed: int = 1,
+    length: int = 20000,
+    locus: tuple[int, int] = (8000, 9500),
+    locus_gap_rate: float = LOCUS_GAP_RATE,
+    background_gap_rate: float = BACKGROUND_GAP_RATE,
+    shift: int = 37,
+    tip_divergence: float = 0.0015,
+    clade_divergence: float = 0.004,
+    deep_divergence: float = 0.012,
+) -> GapDegradedMSA:
+    """A clonal query on a low-divergence panel whose nearest reference is locally
+    misaligned -- the geometry behind issues #81 and #82.
+
+    Unlike :func:`make_recombination_msa` this is clade-structured rather than a
+    star: ``query`` and ``sister`` are tips inside one clade, so ``sister`` wins the
+    scan genome-wide on the derived sites they share. ``cousin`` sits in the same
+    clade one step further out, three ``outclade`` tips sit in a second clade and
+    ``distant`` is an outgroup, putting the whole panel within ~1% of the query --
+    the near-identical regime where single columns decide a window.
+
+    Nothing is copied into the query from anywhere, so **every region a caller
+    reports on this MSA is a false positive**. The one defect planted is in
+    ``sister``'s row over ``locus``, which is frame-shifted and extra-gapped as a
+    locally poor alignment would be. The intended reading is that the locus is badly
+    aligned; the reading a caller currently reaches is that the query is a mosaic of
+    ``sister`` and whichever reference stayed intact there.
+    """
+    rng = random.Random(seed)
+    ancestor = "".join(rng.choice(_BASES) for _ in range(length))
+
+    # Clade A: the query and the two references that share its derived sites.
+    stem_a = _mutate(ancestor, clade_divergence, rng)
+    query = _mutate(stem_a, tip_divergence, rng)
+    records = {
+        "sister": _mutate(stem_a, tip_divergence, rng),
+        "cousin": _mutate(stem_a, tip_divergence * 2, rng),
+    }
+    # Clade B plus an outgroup, so the panel has somewhere else to place a window.
+    stem_b = _mutate(ancestor, clade_divergence, rng)
+    for i in range(3):
+        records[f"outclade{i}"] = _mutate(stem_b, tip_divergence * (i + 1), rng)
+    records["distant"] = _mutate(ancestor, deep_divergence, rng)
+
+    # The ordinary indel load every row in a real MSA carries, so the locus has to
+    # stand out against a background rather than against a gap-free alignment.
+    query = _sprinkle_gaps(query, background_gap_rate, rng)
+    records = {
+        label: _sprinkle_gaps(seq, background_gap_rate, rng)
+        for label, seq in records.items()
+    }
+    background = _gap_rate(records["sister"])
+    records["sister"] = _misalign(records["sister"], locus, locus_gap_rate, shift, rng)
+
+    return GapDegradedMSA(
+        records={"query": query, **records},
+        nearest="sister",
+        locus=locus,
+        locus_gap_rate=_gap_rate(records["sister"], locus),
+        background_gap_rate=background,
+        length=length,
+    )

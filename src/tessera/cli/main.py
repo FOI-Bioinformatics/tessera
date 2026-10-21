@@ -114,6 +114,32 @@ def _require_scan_windows(window_size: int, window_step: int) -> None:
     _require_range(window_step, "--window-step", lo=1)
 
 
+def _require_coverage_fractions(coverage_floor: float | None, coverage_rel_drop: float) -> None:
+    """The two coverage options are similarities on a 0-1 scale on every command.
+
+    ``recomb`` checked them; on the discover commands ``--coverage-floor 50`` (a
+    percentage) made every window a gap and the run searched the whole genome.
+    """
+    _require_range(coverage_rel_drop, "--coverage-rel-drop", lo=0.0, hi=1.0)
+    if coverage_floor is not None:
+        _require_range(coverage_floor, "--coverage-floor", lo=0.0, hi=1.0)
+
+
+def _require_search_counts(
+    *, max_hits: int, top_gaps: int, subtile: int, threads: int | None = None,
+) -> None:
+    """The per-round search sizes the discover commands share.
+
+    ``--top-gaps 0`` searched nothing and exited cleanly, which reads as "no reference
+    is missing"; a zero hit count does the same per gap.
+    """
+    _require_range(max_hits, "--max-hits", lo=1)
+    _require_range(top_gaps, "--top-gaps", lo=1)
+    _require_range(subtile, "--subtile", lo=0)
+    if threads is not None:
+        _require_range(threads, "--threads", lo=1)
+
+
 def _parse_key_values(items: list[str], label: str) -> dict[str, str]:
     """Parse repeated ``key=value`` options into a dict (used for tool extras)."""
     out: dict[str, str] = {}
@@ -129,8 +155,21 @@ def _parse_key_values(items: list[str], label: str) -> dict[str, str]:
 
 
 def get_logger(output_dir: Path | None = None) -> logging.Logger:
-    """Return the configured logger; with ``output_dir`` also persist a run log there."""
-    return configure_logging(output_dir=output_dir, level=_RUN_STATE["log_level"])  # type: ignore[arg-type]
+    """Return the configured logger; with ``output_dir`` also persist a run log there.
+
+    The run log is opened before a command enters :func:`stage_errors`, so an output
+    path that is an existing file is checked here. It is rejected with the message every
+    other command gives (:func:`_require_output_directory`) instead of a raw
+    ``FileExistsError`` traceback.
+    """
+    level: int = _RUN_STATE["log_level"]  # type: ignore[assignment]
+    if output_dir is not None:
+        try:
+            _require_output_directory(output_dir)
+        except UserInputError as exc:
+            configure_logging(level=level).error("%s", exc)
+            raise typer.Exit(code=1) from exc
+    return configure_logging(output_dir=output_dir, level=level)
 
 
 @contextmanager

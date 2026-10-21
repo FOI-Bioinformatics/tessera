@@ -42,6 +42,8 @@ from .similarity import CANONICAL_BASES
 
 # Below this many informative columns the statistics are not meaningful.
 _MIN_INFORMATIVE = 10
+# Public name for the reporting layer, which states the floor when the test cannot run.
+MIN_INFORMATIVE = _MIN_INFORMATIVE
 _PERMUTATIONS = 1000
 # The PHI window is capped at 1/_WINDOW_FRACTION of the informative sites; see
 # effective_phi_window.
@@ -133,12 +135,19 @@ def incompatibility_matrix(allele1: np.ndarray, allele0: np.ndarray) -> np.ndarr
 
     Gamete counts come from indicator dot products, so sequences missing at either
     column never contribute a gamete. The diagonal is False.
+
+    The four gamete-count matrices are formed one at a time, in float32, and each is
+    reduced to a boolean before the next is built. Holding all four float64 matrices at
+    once peaked at about 900 MB at the column cap (z = 5000), four times what the cap was
+    meant to allow. float32 represents every count exactly: a count is at most the number
+    of sequences, far below 2**24.
     """
-    n11 = allele1 @ allele1.T
-    n10 = allele1 @ allele0.T
-    n01 = allele0 @ allele1.T
-    n00 = allele0 @ allele0.T
-    incompatible = (n11 > 0) & (n10 > 0) & (n01 > 0) & (n00 > 0)
+    a1 = allele1.astype(np.float32, copy=False)
+    a0 = allele0.astype(np.float32, copy=False)
+    incompatible = (a1 @ a1.T) > 0
+    incompatible &= (a1 @ a0.T) > 0
+    incompatible &= (a0 @ a1.T) > 0
+    incompatible &= (a0 @ a0.T) > 0
     np.fill_diagonal(incompatible, False)
     return incompatible
 
@@ -209,16 +218,21 @@ def hudson_kaplan_rmin(
     Each incompatible column pair ``(i, j)`` requires a recombination in the rank
     interval ``[i, j]``; the greedy maximum set of non-overlapping intervals (by right
     endpoint) is Rmin. ``intervals`` are the chosen ones in MSA column coordinates.
+
+    The greedy walks the right endpoint ``j`` in order and, at each, selects the pair
+    with the smallest left endpoint ``i >= last_right`` if there is one -- the same
+    choice as sorting every incompatible pair by ``(j, i)``, without materialising the
+    pairs. A dense matrix at the column cap holds millions of them, and a list of Python
+    tuples cost hundreds of megabytes on top of the matrix itself.
     """
-    pairs = [(int(i), int(j)) for i, j in zip(*np.where(np.triu(incompatible, 1)), strict=True)]
-    if not pairs:
-        return 0, []
-    pairs.sort(key=lambda p: (p[1], p[0]))  # by right endpoint
+    z = incompatible.shape[0]
     rmin = 0
     intervals: list[tuple[int, int]] = []
-    last_right = -1
-    for i, j in pairs:
-        if i >= last_right:  # disjoint from the last selected interval
+    last_right = 0  # left endpoints are >= 0, so 0 admits every first interval
+    for j in range(1, z):
+        hits = np.flatnonzero(incompatible[last_right:j, j])
+        if hits.size:
+            i = last_right + int(hits[0])
             rmin += 1
             intervals.append((int(positions[i]), int(positions[j])))
             last_right = j

@@ -65,7 +65,7 @@ checks detection across ~24 pathogens; `validation/run_validation.py` runs curat
 published-recombination datasets. Both need an aligner env on `PATH`:
 
 ```
-export PATH="$HOME/miniforge3/envs/recomfi-aln/bin:$PATH"   # mafft/minimap2/skani/skDER
+export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"   # append; prepending swaps the Python
 python validation/run_hybrids.py
 ```
 

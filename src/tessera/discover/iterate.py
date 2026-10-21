@@ -43,6 +43,7 @@ from ..recomb.typing import (
     genotype_from_title,
     lineage_map_from_rows,
     organism_from_title,
+    pool_labels,
     titles_from_collection,
     write_lineage_map,
 )
@@ -65,6 +66,8 @@ from .run import (
     _is_self_hit,
     collect_candidates,
 )
+
+POOL_LABELS_TSV = "pool_labels.tsv"  # sidecar: label<TAB>clade of pool-seeded genomes
 
 
 @dataclass
@@ -591,6 +594,36 @@ def _read_ncbi_lineages(output: Path) -> list[tuple[str, str]] | None:
     return rows
 
 
+def _record_pool_labels(output: Path, genomes: list[Path]) -> None:
+    """Add the pool labels of ``genomes`` to ``<output>/pool_labels.tsv``.
+
+    Seeded genomes are copied into the collection next to downloaded ones whose headers
+    are GenBank titles; once there, nothing says which header holds a structured label.
+    The sidecar carries that across to :func:`_type_panel`.
+    """
+    merged = _read_pool_labels(output)
+    merged.update(pool_labels(genomes))
+    if not merged:
+        return
+    output.mkdir(parents=True, exist_ok=True)
+    with open(output / POOL_LABELS_TSV, "w") as fo:
+        for label, clade in sorted(merged.items()):
+            fo.write(f"{label}\t{clade}\n")
+
+
+def _read_pool_labels(output: Path) -> dict[str, str]:
+    """``label -> clade`` from ``<output>/pool_labels.tsv`` (empty when absent)."""
+    path = output / POOL_LABELS_TSV
+    if not path.exists():
+        return {}
+    labels: dict[str, str] = {}
+    for line in path.read_text().splitlines():
+        label, _, clade = line.partition("\t")
+        if label and clade:
+            labels[label] = clade
+    return labels
+
+
 def _type_panel(
     params: FillParams, collection: Path, query_label: str, logger: logging.Logger,
 ) -> tuple[dict[str, str], str | None]:
@@ -625,11 +658,17 @@ def _type_panel(
             logger=logger,
         )
     else:
+        panel_labels = {strip_sequence_extension(p.name) for p in coll_files}
         lineage_rows = build_lineage_map(
             user_tsv=params.lineage_map,
             datasets_rows=datasets_rows,
             title_by_label=titles_from_collection(coll_files),
             organism=params.taxon,
+            pool_labels={
+                label: clade
+                for label, clade in _read_pool_labels(params.output).items()
+                if label in panel_labels
+            },
         )
     # Type the query itself from its own header so the verdict can name its lineage
     # (and a recombinant query can be cross-checked against its designated parents).
@@ -815,7 +854,13 @@ def _seed_from_pool(
             if _record_key(strip_sequence_extension(g.name)) not in excluded]
     if len(kept) < len(genomes):
         logger.info("Leaving %d excluded genome(s) out of the pool.", len(genomes) - len(kept))
-    _copy_into(_select_from(params, kept, logger).selected, collection, logger)
+    # A pool Tessera built carries each genome's clade in its header; a user's own
+    # --candidate-pool carries whatever titles its files happen to have.
+    structured = force_ncbi or params.seed_source != "local"
+    selected = _select_from(params, kept, logger, pool_headers=structured).selected
+    if structured:
+        _record_pool_labels(params.output, selected)
+    _copy_into(selected, collection, logger)
 
 
 def _fetch_nextclade(params: FillParams, logger: logging.Logger) -> list[Path]:
@@ -914,16 +959,23 @@ def _fetch_diverse(params: FillParams, logger: logging.Logger) -> list[Path]:
     return genomes
 
 
-def _select_from(params: FillParams, genomes: list[Path], logger: logging.Logger):
+def _select_from(
+    params: FillParams, genomes: list[Path], logger: logging.Logger,
+    *, pool_headers: bool = False,
+):
     from .pool import select_regional
 
-    # Type the pool from its headers (user map > NCBI datasets lineage > mined title
-    # token) so the panel is reduced by lineage rather than clade-blind ANI. An empty
-    # map (untyped pool) yields the pre-lineage global behaviour.
+    # Type the pool from its headers (user map > pool label > mined title token) so the
+    # panel is reduced by lineage rather than clade-blind ANI. With ``pool_headers`` the
+    # header's label is read as written; mining it as free text loses short clades
+    # (B.1, XBB, D8, IIb, the HIV pure subtypes), which then skip lineage selection and
+    # the recombinant-lineage exclusion. An empty map (untyped pool) yields the
+    # pre-lineage global behaviour.
     rows = build_lineage_map(
         user_tsv=params.lineage_map,
         title_by_label=titles_from_collection(genomes),
         organism=params.taxon,
+        pool_labels=pool_labels(genomes) if pool_headers else None,
     )
     lineage_of = lineage_map_from_rows(rows)
     return select_regional(

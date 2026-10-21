@@ -38,6 +38,11 @@ from .similarity import WindowSimilarity, _canonical_mask
 # The kind given to a gap that a called breakpoint explains. See mark_breakpoint_gaps.
 BREAKPOINT_KIND = "breakpoint"
 
+# The two kinds call_coverage_gaps assigns. Only a divergent gap suggests a missing
+# reference; a low-information gap has too few comparable bases to say anything.
+DIVERGENT_KIND = "divergent"
+LOW_INFORMATION_KIND = "low_information"
+
 
 @dataclass
 class CoverageParams:
@@ -46,7 +51,7 @@ class CoverageParams:
     floor: float | None  # absolute best-similarity floor; None -> adaptive baseline
     rel_drop: float  # adaptive: flag below (90th percentile of best_sim - rel_drop)
     min_gap: int  # drop gaps shorter than this many bp
-    merge_gap: int  # merge gaps separated by at most this many bp
+    merge_gap: int  # merge gaps separated by at most this many alignment columns
 
     @classmethod
     def with_defaults(

@@ -109,7 +109,7 @@ def unique_scan_dirs(segments: list[str]) -> dict[str, str]:
 def scan_segment(
     segment: str, seq: str, dataset, out_dir: Path, *,
     aligner: str, cache_dir: Path | None, logger: logging.Logger,
-    dir_name: str | None = None,
+    dir_name: str | None = None, threads: int = 1,
 ) -> SegmentScan:
     """Scan one segment for intragenic recombination. Never raises: a failure is recorded as
     ``scanned=False`` so the caller can continue with the other segments.
@@ -154,7 +154,10 @@ def scan_segment(
         window, step, _sel = window_params(len(seq))
         msa = seg_dir / "panel.msa.fasta"
         build_msa(
-            MsaParams(query=query, collection=collection, output=msa, aligner=aligner), logger)
+            MsaParams(query=query, collection=collection, output=msa, aligner=aligner,
+                      threads=threads),
+            logger,
+        )
         run_recomb(RecombParams(msa=msa, output=seg_dir, query=seg_name,
                                 window_size=window, window_step=step, organism=segment,
                                 methods=DEFAULT_METHODS, lineage_map=lineage_map), logger)

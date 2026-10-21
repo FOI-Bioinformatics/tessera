@@ -34,7 +34,9 @@ The result that organises this whole analysis: **there are no detection failures
 recombinant that runs is detected. The Hudson-Kaplan Rmin lower bound is non-zero for all of
 them (23-785 events) across the full divergence range tested, from 33% (dengue x DENV4) down
 to 0.5% (mpox) and 0.2% (vzv). Seventeen of the eighteen running cases reach a recombinant
-region whose donor is corroborated by more than one independent caller.
+region whose donor is corroborated by more than one caller (3SEQ and MaxChi score the
+same tract, so this is not always independent evidence; which pairs supplied the
+corroboration was not re-measured).
 
 Every non-PASS is one of two things, neither of which is a missed event:
 
@@ -53,8 +55,9 @@ cover enough?"
 free PHI/Rmin track and the four-caller ensemble both fire. Below roughly 8% column
 divergence, base-pair windowing loses contrast and Tessera switches automatically to
 informative-site windowing (`docs/detection-methods.md`), which is why mpox (0.5%) and vzv
-(0.2%) still detect. Ensemble agreement -- a region independently called by two or more of
-HMM, 3SEQ, MaxChi, Bootscan -- is treated as a first-class confidence signal, and restricting
+(0.2%) still detect. Ensemble agreement -- a region called by two or more of
+HMM, 3SEQ, MaxChi, Bootscan (3SEQ and MaxChi score the same tract, so they are not
+independent of each other) -- is treated as a first-class confidence signal, and restricting
 the ensemble to `hmm,3seq` alone drops corroboration from 17/18 to 12/18 without changing the
 verdict set. That is direct evidence the added callers buy confidence, not just verdicts.
 

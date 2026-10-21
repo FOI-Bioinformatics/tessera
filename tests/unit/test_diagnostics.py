@@ -101,11 +101,15 @@ def _block_alignment(*, recombinant: bool, n_seq: int = 6, per_block: int = 12) 
 
 def test_phi_clonal_not_significant_recombinant_significant() -> None:
     identity = lambda c: c  # noqa: E731
+    # 24 informative sites: effective_phi_window caps any request at 24 // 10 = 2, so
+    # ask for the window the test actually runs with (it used to ask for 8 and get 2).
     clonal = recombination_signal(_block_alignment(recombinant=False), "s0", identity,
-                                  window=8, seed=1)
+                                  window=2, seed=1)
     recomb = recombination_signal(_block_alignment(recombinant=True), "s0", identity,
-                                  window=8, seed=1)
+                                  window=2, seed=1)
     assert clonal is not None and recomb is not None
+    assert clonal.n_informative == recomb.n_informative == 24
+    assert clonal.phi_window == recomb.phi_window == 2
     assert clonal.phi_p > 0.05  # no cross-block incompatibility -> nothing to detect
     assert recomb.phi_p < 0.05  # local sites compatible, distant ones not -> low PHI
     assert recomb.rmin >= 1  # at least one recombination event is forced
