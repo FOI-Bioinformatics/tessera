@@ -9,7 +9,7 @@ name = "tessera"
 dynamic = ["version"]
 description = "Tessera: identify recombination events in a query sequence against a collection of reference sequences"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "jaclew" }, { name = "FOI-Bioinformatics" }]
@@ -19,7 +19,6 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS :: MacOS X",
-    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Typing :: Typed",
@@ -102,11 +101,11 @@ exclude_lines = [
 ]
 
 [tool.mypy]
-# No `python_version`: each CI job checks under its own interpreter. Pinning a version
-# made mypy reject the stubs of any dependency that had moved on (numpy 2.5 uses the
-# 3.12 `type` statement), which stopped the run before it looked at Tessera at all --
-# on the newer interpreters the check had been failing unnoticed while it was
-# non-blocking. The oldest supported version is guarded by its own CI job.
+# No `python_version`: the check runs under whichever interpreter invoked it, which in
+# CI is the single supported one. Pinning a version made mypy reject the stubs of any
+# dependency that had moved on (numpy 2.5 uses the `type` statement), which stopped the
+# run before it looked at Tessera at all -- the check had been failing unnoticed while
+# it was non-blocking.
 files = ["src/tessera"]
 ignore_missing_imports = true
 # Deliberately permissive: this catches contradictions in what is already declared
@@ -118,7 +117,7 @@ no_implicit_optional = true
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

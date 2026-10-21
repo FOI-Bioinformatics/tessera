@@ -2,18 +2,19 @@
 
 ## Setup
 
-Tessera needs **Python 3.12 or newer** (`requires-python` in `pyproject.toml`). The
-package uses 3.12 syntax, so an older interpreter fails at import with a `SyntaxError`
-rather than with a dependency message.
+Tessera needs **Python 3.13 or newer** (`requires-python` in `pyproject.toml`), which
+is the one version CI tests. The package uses 3.12 syntax, so 3.11 and older fail at
+import with a `SyntaxError` rather than with a dependency message; 3.12 itself will
+still import, but it is neither supported nor tested, and nothing keeps it working.
 
 ```
-python3.12 -m venv .venv            # or any interpreter >= 3.12
+python3.13 -m venv .venv            # or any interpreter >= 3.13
 .venv/bin/pip install -e ".[dev]"
 .venv/bin/ruff check src tests validation
 .venv/bin/pytest -m "not requires_binary"   # fast suite, no aligner binaries needed
 ```
 
-`.venv` is git-ignored. If `python` on your PATH is already 3.12 or newer, the plain
+`.venv` is git-ignored. If `python` on your PATH is already 3.13 or newer, the plain
 forms work as before:
 
 ```

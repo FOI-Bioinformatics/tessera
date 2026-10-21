@@ -80,16 +80,26 @@ All notable changes to Tessera are recorded here. The format follows
   the major parent rather than the donor, and the false region of issue #81 itself. The
   strict `xfail` for the first half comes off; the one for #81 stays red.
 
-### Python 3.12 is the floor
+### Python 3.13 is the floor, and CI tests one interpreter
 
-- **`requires-python` is now `>=3.12`** (it was `>=3.11`), with the 3.11 classifier
-  removed, `environment.yml` and the README install line raised to match, and the CI
-  matrix reduced to 3.12 and 3.13. `ruff`'s `target-version` moves to `py312`, which
-  enables the PEP 695 rewrites: `core/ncbi.py`, `core/plugins.py` and
-  `core/executors.py` now declare their type parameters inline (`def f[T](...)`,
-  `class Registry[T]`) instead of through module-level `TypeVar`s. That is 3.12-only
-  syntax, so an older interpreter now fails at import with a `SyntaxError` rather than
-  with a dependency message; `CONTRIBUTING.md` says how to set up a 3.12 environment.
+- **`requires-python` is now `>=3.13`** (it was `>=3.11`), with the older classifiers
+  removed and `environment.yml`, the README install line and `CONTRIBUTING.md` raised to
+  match. The container already pinned 3.13. The practical effect is narrower than the
+  version jump suggests: the code uses 3.12 syntax, so 3.11 and older fail at import
+  with a `SyntaxError`, while 3.12 still imports and is simply no longer supported or
+  tested. Declaring the floor is what keeps that honest.
+- **PEP 695 type parameters.** `ruff`'s `target-version` moves to `py313`, which keeps
+  the PEP 695 rewrites: `core/ncbi.py`, `core/plugins.py` and `core/executors.py`
+  declare their type parameters inline (`def f[T](...)`, `class Registry[T]`) rather
+  than through module-level `TypeVar`s. Raising the target from `py312` to `py313`
+  surfaced no further rewrites.
+- **CI is four jobs and no matrix.** With one supported interpreter the version matrix
+  has nothing left to vary, so `test` runs lint, types and both test steps in a single
+  job on Linux; `test-macos`, `container` and `build` are unchanged in what they check.
+  Lint and types had been split into a job of their own only to stop the matrix paying
+  for the same answer in every entry, and lint is the first step of the job that
+  replaces it, so a style error still surfaces about as early. `mypy` no longer needs
+  its note about guarding the oldest supported version by a separate job.
 
 ### Validation: an offline false-positive control on real genomes
 
