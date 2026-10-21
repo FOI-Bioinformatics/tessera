@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..core.errors import OutputError
 from ..core.io import read_fasta
 
 
@@ -24,7 +25,10 @@ def merge_added_fragments(aligned_path: str | Path) -> tuple[str, str]:
     """
     records = read_fasta(aligned_path)
     if not records:
-        raise ValueError(f"Empty MAFFT alignment: {aligned_path}")
+        raise OutputError(
+            f"MAFFT wrote an empty alignment at {aligned_path}. Check that mafft "
+            "completed and that the genome being added is a nucleotide FASTA."
+        )
     reference_row = records[0][1]
     width = len(reference_row)
     merged = bytearray(b"-" * width)

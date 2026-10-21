@@ -4,7 +4,9 @@ Each round rebuilds the MSA from the (growing) collection, scans it for coverage
 gaps, BLASTs the worst gaps against NCBI, and downloads the best new reference per
 gap into the collection. The loop stops when the gaps close, when no new reference
 can be found, when coverage stops improving (a stubborn residual is reported, not
-chased forever), or at ``max_rounds``.
+chased forever), or at ``max_rounds``. If the last round downloaded references, one
+further MSA is built from them, so the published panel always contains every
+reference the run reports.
 
 Because every round rebuilds the alignment, this needs an aligner binary and
 Entrez Direct, and it contacts NCBI over the network.
@@ -23,6 +25,7 @@ from ..core.errors import UserInputError
 from ..core.io import (
     collection_genomes,
     copy_collection,
+    new_working_collection,
     read_fasta,
     strip_sequence_extension,
 )
@@ -209,9 +212,7 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
     if params.collection is not None:
         copy_collection(params.collection, collection)
     else:
-        if collection.exists():
-            shutil.rmtree(collection)
-        collection.mkdir(parents=True)
+        new_working_collection(collection)
 
     exclude = {_base_accession(e) for e in params.exclude}
     # The query's own GenBank record matches itself almost perfectly and would be
@@ -279,6 +280,76 @@ def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundRes
     return trace
 
 
+def _curation_backbone(
+    params: FillParams, collection: Path, logger: logging.Logger
+) -> Path | None:
+    """The genome curation is anchored on: the query's closest whole-genome relative.
+
+    ``--reference`` is deliberately not the anchor. It is the alignment's coordinate
+    reference and may be far from the query; the sibling test is relative to its anchor,
+    so anchored there every genome closer to the query than the reference would be
+    dropped as a sibling. The reference is protected from removal instead
+    (:func:`_user_reference`).
+    """
+    backbone = pick_backbone(
+        params.query, collection_genomes(collection), af_min=params.af_min, logger=logger
+    )
+    if backbone is not None:
+        logger.info("Curation backbone (the query's closest whole-genome relative): %s",
+                    strip_sequence_extension(backbone.name))
+    return backbone
+
+
+def _user_reference(params: FillParams, collection: Path) -> list[Path]:
+    """The genome named by ``--reference`` in ``collection`` (``[]`` if none or absent).
+
+    The next MSA build resolves the same name, so curation must never remove it. An
+    absent reference is left for ``build_msa`` to report with its own message.
+    """
+    if not params.reference:
+        return []
+    wanted = strip_sequence_extension(Path(params.reference).name)
+    return [
+        genome for genome in collection_genomes(collection)
+        if strip_sequence_extension(genome.name) == wanted
+    ]
+
+
+def _curate_round(
+    params: FillParams,
+    collection: Path,
+    backbone: Path | None,
+    panel_rows: dict[str, dict],
+    logger: logging.Logger,
+) -> None:
+    """Drop siblings and near-duplicates from ``collection`` in place, recording roles."""
+    if backbone is None or not backbone.exists():
+        backbone = _curation_backbone(params, collection, logger)
+    if backbone is None:
+        return
+    curation = curate_collection_dir(
+        params.query, collection, backbone,
+        ani_margin=params.sibling_margin, af_min=params.af_min,
+        derep_ani=params.derep_ani, protect=_user_reference(params, collection),
+        logger=logger,
+    )
+    for row in curation.table:
+        panel_rows[row["genome"]] = row
+    remaining = len(collection_genomes(collection))
+    if remaining < 2:
+        logger.warning(
+            "Curation left %d reference(s) in the panel; detection needs at least 2. "
+            "Every other genome was classed as a sibling of the query or a near-duplicate "
+            "of the backbone (see panel_lineages.tsv). If the panel is meant to be this "
+            "close to the query, run without --curate.",
+            remaining,
+        )
+
+
+def _labels(collection: Path) -> set[str]:
+    return {strip_sequence_extension(p.name) for p in collection_genomes(collection)}
+
+
 def _grow_collection(
     params: FillParams,
     collection: Path,
@@ -286,13 +357,22 @@ def _grow_collection(
     exclude: set[str],
     logger: logging.Logger,
 ) -> tuple[list[RoundResult], dict[str, dict], Path | None]:
-    """Run the build -> scan -> find -> download (-> curate) loop.
+    """Run the (curate ->) build -> scan -> find -> download loop.
 
     Each round rebuilds the MSA from the (growing) collection, scans for coverage
-    gaps, downloads the best new reference per gap, and (when ``--curate``)
-    dereplicates. Stops when the gaps close, when coverage stops improving, when
-    no new reference is found, or at ``max_rounds``. Mutates ``collection``;
-    returns the per-round trace, the curated panel-role table, and the last MSA.
+    gaps and downloads the best new reference per gap. Stops when the gaps close, when
+    coverage stops improving, when no new reference is found, or at ``max_rounds``.
+
+    With ``--curate`` the collection is dereplicated and cleared of the query's siblings
+    *before* a build whenever it holds genomes that have not been through that filter: a
+    collection the user supplied (before round 1), and anything a round downloaded
+    (before the next build). A freshly seeded collection is not curated before round 1 --
+    seeding applies its own sibling filter.
+
+    Whatever the exit, the alignment returned was built from the collection as it stands:
+    if the last round downloaded references, one more MSA (``final.msa.fasta``) is built
+    from them without a further search. Mutates ``collection``; returns the per-round
+    trace, the curated panel-role table, and the last MSA.
     """
     cov = CoverageParams.with_defaults(
         params.window_size, floor=params.coverage_floor, rel_drop=params.coverage_rel_drop,
@@ -303,8 +383,25 @@ def _grow_collection(
     # dropped genome keeps the role it had when removed, even after later rounds).
     panel_rows: dict[str, dict] = {}
     last_msa: Path | None = None
+    built_from: set[str] = set()  # labels the last MSA was built from
     prev_worst: float | None = None
+    # Curation owed before the next build, and the backbone to anchor it on.
+    curate_pending = params.curate and params.collection is not None
+    backbone: Path | None = None
+    pending_round: RoundResult | None = None  # the round whose downloads await curation
+
+    def curate_if_pending() -> None:
+        nonlocal curate_pending, pending_round
+        if not curate_pending:
+            return
+        _curate_round(params, collection, backbone, panel_rows, logger)
+        if pending_round is not None:
+            kept = _labels(collection)
+            pending_round.added = [a for a in pending_round.added if a in kept]
+        curate_pending, pending_round = False, None
+
     for rnd in range(1, params.max_rounds + 1):
+        curate_if_pending()
         msa = params.output / f"round{rnd}.msa.fasta"
         logger.info("=== Round %d: building MSA from %d reference(s) ===",
                     rnd, len(collection_genomes(collection)))
@@ -316,6 +413,7 @@ def _grow_collection(
             logger,
         )
         last_msa = msa
+        built_from = _labels(collection)
         result = compute_similarity(
             str(msa), query_label,
             window_size=params.window_size, window_step=params.window_step,
@@ -353,31 +451,33 @@ def _grow_collection(
         )
         # Pick the backbone from the pre-download (curated, sibling-free) collection
         # so a freshly-downloaded sibling cannot be mistaken for it.
-        backbone = None
         if params.curate:
-            backbone = pick_backbone(
-                params.query, collection_genomes(collection),
-                af_min=params.af_min, logger=logger,
-            )
+            backbone = _curation_backbone(params, collection, logger)
         downloaded = _download(candidates, collection, logger)
         rr.added = [c.hit.accession for c in downloaded]
         if not downloaded:
             logger.info("Stopping: no new references available to add.")
             break
-        if params.curate and backbone is not None:
-            curation = curate_collection_dir(
-                params.query, collection, backbone,
-                ani_margin=params.sibling_margin, af_min=params.af_min,
-                derep_ani=params.derep_ani, logger=logger,
-            )
-            for row in curation.table:
-                panel_rows[row["genome"]] = row
-            dropped = {c.hit.accession for c in downloaded} - {
-                strip_sequence_extension(p.name) for p in collection_genomes(collection)
-            }
-            rr.added = [a for a in rr.added if a not in dropped]
+        curate_pending, pending_round = params.curate, rr
     else:
         logger.info("Reached the maximum of %d round(s).", params.max_rounds)
+
+    # The last round may have downloaded references after its own MSA was built. Curate
+    # them like any other round's, then align whatever the collection now holds, so the
+    # published panel and the reported reference count describe the same set.
+    curate_if_pending()
+    if last_msa is not None and _labels(collection) != built_from:
+        final_msa = params.output / "final.msa.fasta"
+        logger.info("=== Final build: aligning %d reference(s) (no further search) ===",
+                    len(collection_genomes(collection)))
+        build_msa(
+            MsaParams(
+                query=params.query, collection=collection, output=final_msa,
+                aligner=params.aligner, reference=params.reference, threads=params.threads,
+            ),
+            logger,
+        )
+        last_msa = final_msa
 
     return trace, panel_rows, last_msa
 

@@ -128,6 +128,40 @@ def test_curate_panel_table_roles(monkeypatch, tmp_path, logger):
     assert roles == {"A1": "backbone", "AE_rel": "sibling-dropped", "C": "representative"}
 
 
+def test_curate_collection_dir_never_deletes_protected_files(monkeypatch, tmp_path, logger):
+    """Files the caller marks as protected take part in the comparison but stay on disk."""
+    coll = tmp_path / "coll"
+    coll.mkdir()
+    backbone, own_sibling, new_sibling, parent = _genomes(
+        coll, ["A1", "user_rel", "downloaded_rel", "C"]
+    )
+    ani = {
+        backbone: (92.0, 81.0), own_sibling: (97.0, 94.0),
+        new_sibling: (97.5, 95.0), parent: (89.0, 94.0),
+    }
+    monkeypatch.setattr(panel, "skani_available", lambda: True)
+    monkeypatch.setattr(panel, "skder_available", lambda: False)
+    monkeypatch.setattr(panel, "skani_query_ani", lambda *a, **k: ani)
+
+    result = panel.curate_collection_dir(
+        tmp_path / "q.fasta", coll, backbone, protect=[own_sibling], logger=logger,
+    )
+
+    assert sorted(p.name for p in coll.iterdir()) == ["A1.fasta", "C.fasta", "user_rel.fasta"]
+    roles = {r["genome"]: r["role"] for r in result.table}
+    assert roles == {
+        "A1": "backbone", "C": "representative",
+        "user_rel": "sibling-kept", "downloaded_rel": "sibling-dropped",
+    }
+    assert own_sibling in result.kept
+    assert result.siblings == [new_sibling]
+
+
+def test_panel_html_labels_a_kept_sibling():
+    html = panel.panel_table_html([_panel_row("user_rel", role="sibling-kept")])
+    assert "kept (sibling, pre-existing)" in html
+
+
 # --- typed Lineage column (conditional) ----------------------------------------
 
 def _panel_row(genome: str, role: str = "representative") -> dict:

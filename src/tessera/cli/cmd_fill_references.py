@@ -121,7 +121,9 @@ def fill_references(
     ),
     curate: bool = typer.Option(
         False, "--curate",
-        help="Drop the query's siblings and dereplicate each round (needs skani/skDER).",
+        help="Drop the query's siblings and dereplicate before each alignment build: the "
+        "supplied collection, then each round's downloads (needs skani/skDER). "
+        "--reference, when given, is the curation backbone and is never removed.",
     ),
     sibling_margin: float = typer.Option(
         3.0, "--sibling-margin",

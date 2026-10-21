@@ -98,3 +98,56 @@ def test_sibeliaz_forwards_kmer_and_filtermemory(monkeypatch, tmp_path: Path) ->
     assert cmd[cmd.index("-k") + 1] == "15"
     assert cmd[cmd.index("-f") + 1] == "12"
     assert cmd[cmd.index("-t") + 1] == "4"
+
+
+def test_sibeliaz_lays_out_the_backbone_as_its_file_and_keeps_every_genome(
+    monkeypatch, tmp_path: Path, caplog
+) -> None:
+    # Backbone: three contigs in the order contig_2, contig_10, contig_3. SibeliaZ gives
+    # contig_10 no block (nothing is homologous to it) and gives the panel genome
+    # `far` no block at all.
+    ref = tmp_path / "ref.fasta"
+    ref.write_text(">contig_2\nAAAA\n>contig_10\nGGGG\n>contig_3\nCCCC\n")
+    qry = tmp_path / "qry.fasta"
+    qry.write_text(">q1\nAAAACCCC\n")
+    far = tmp_path / "far.fasta"
+    far.write_text(">f1\nTTTTTTTT\n")
+
+    def fake_run(caps, cmd, **kw):
+        out_dir = Path(cmd[cmd.index("-o") + 1])
+        (out_dir / "alignment.maf").write_text(
+            "a\n"
+            "s contig_3 0 4 + 4 CCCC\n"
+            "s q1 4 4 + 8 CCCC\n"
+            "\n"
+            "a\n"
+            "s contig_2 0 4 + 4 AAAA\n"
+            "s q1 0 4 + 8 AAAA\n"
+        )
+        return ""
+
+    monkeypatch.setattr(sz, "run_tool", fake_run)
+    monkeypatch.setattr(sz, "_sibeliaz_invocation", lambda out_dir, logger: ["sibeliaz"])
+
+    # Not under the "tessera" logger: the CLI tests switch its propagation off, and
+    # caplog only sees records that reach the root logger.
+    log = logging.getLogger("sibeliaz_adapter_test")
+    with caplog.at_level(logging.WARNING, logger="sibeliaz_adapter_test"):
+        result = sz.SibeliazAligner().align(
+            [ref, qry, far], ref, tmp_path / "out", AlignParams(threads=1), log
+        )
+
+    rows: dict[str, str] = {}
+    name = ""
+    for line in result.msa_fasta.read_text().splitlines():
+        if line.startswith(">"):
+            name = line[1:]
+            rows[name] = ""
+        else:
+            rows[name] += line
+    assert rows == {
+        "ref": "AAAA----CCCC",   # file order; the uncovered contig keeps its columns
+        "far": "------------",   # placed in no block, but still a row
+        "qry": "AAAA----CCCC",
+    }
+    assert "far" in caplog.text

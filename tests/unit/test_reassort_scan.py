@@ -139,3 +139,58 @@ def test_scan_segment_failure_is_non_fatal(tmp_path, monkeypatch):
                           cache_dir=None, logger=LOG)
     assert result.scanned is False
     assert "scan failed" in result.note
+
+
+def _two_clade_pool(tmp_path, monkeypatch):
+    pool = tmp_path / "pool"
+    pool.mkdir()
+    tips = []
+    for c in ("A", "B"):
+        t = pool / f"{c}_consensus.fasta"
+        t.write_text(f">{c}_consensus {c}\nACGTACGT\n")
+        tips.append(t)
+    _stub_pool(monkeypatch, tips)
+    monkeypatch.setattr(scan, "build_msa", lambda params, logger: params.output)
+    monkeypatch.setattr(scan, "run_recomb", lambda params, logger: "bp")
+
+
+def test_scan_segment_name_cannot_leave_the_output_directory(tmp_path, monkeypatch):
+    # The segment name is a FASTA header. ".." used to resolve the scan directory to the
+    # parent of the output, whose `collection/` was then removed and rebuilt.
+    _two_clade_pool(tmp_path, monkeypatch)
+    out = tmp_path / "parent" / "out"
+    out.mkdir(parents=True)
+    precious = tmp_path / "parent" / "collection" / "precious.fasta"
+    precious.parent.mkdir()
+    precious.write_text(">x\nACGT\n")
+
+    for name in ("..", ".", "../../escaped", "A/California/07/2009|HA"):
+        scan_segment(name, "ACGTACGT", _DS(), out, aligner="mafft", cache_dir=None, logger=LOG)
+
+    assert precious.exists()
+    outside = [p for p in (tmp_path / "parent").rglob("*")
+               if p.is_file() and out not in p.parents and p != precious]
+    assert outside == []
+    # Nothing is written into the output root itself: every segment has its own directory.
+    assert [p for p in out.iterdir() if p.is_file()] == []
+
+
+def test_safe_filename_stem():
+    from tessera.core.io import safe_filename_stem
+
+    assert safe_filename_stem("HA") == "HA"
+    assert safe_filename_stem("A/California/07/2009|HA") == "A_California_07_2009_HA"
+    assert safe_filename_stem("..", fallback="segment") == "segment"
+    assert safe_filename_stem(".", fallback="segment") == "segment"
+    assert safe_filename_stem("../x") == "_x"
+    assert safe_filename_stem("", fallback="segment") == "segment"
+
+
+def test_unique_scan_dirs_separates_names_that_sanitise_alike():
+    from tessera.reassort.scan import unique_scan_dirs
+
+    assert unique_scan_dirs(["HA", "NA"]) == {"HA": "HA", "NA": "NA"}
+    # "seg/1" and "seg_1" both sanitise to "seg_1"; they must not share a directory.
+    dirs = unique_scan_dirs(["seg/1", "seg_1", "seg 1"])
+    assert dirs == {"seg/1": "seg_1", "seg_1": "seg_1_2", "seg 1": "seg_1_3"}
+    assert len(set(dirs.values())) == 3

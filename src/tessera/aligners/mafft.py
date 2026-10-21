@@ -7,8 +7,10 @@ contract each genome is added onto the backbone with
 ``mafft --addfragments <genome> --keeplength <reference>``: ``--keeplength``
 keeps the output in reference coordinates (insertions relative to the backbone
 are dropped) and ``--addfragments`` is designed for fragmented assemblies, so a
-multi-contig query is handled cleanly. A genome's contigs are then merged into a
-single reference-anchored row.
+multi-contig query is handled cleanly. ``--adjustdirection`` lets MAFFT reverse-
+complement an added sequence that is on the opposite strand to the backbone (it renames
+such a record ``_R_<name>``; the merge below is positional and ignores names). A genome's
+contigs are then merged into a single reference-anchored row.
 """
 
 from __future__ import annotations
@@ -76,8 +78,8 @@ class MafftAligner(Aligner):
             aligned = out_dir / f"{genome.stem}.aln.fasta"
             run_tool(
                 self.capabilities,
-                ["mafft", "--thread", threads, "--keeplength", *tuning,
-                 "--addfragments", str(genome.resolve()), str(ref_fasta.resolve())],
+                ["mafft", "--thread", threads, "--keeplength", "--adjustdirection",
+                 *tuning, "--addfragments", str(genome.resolve()), str(ref_fasta.resolve())],
                 logger=logger,
                 log_prefix=f"mafft:{genome.stem}",
                 stdout_path=aligned,

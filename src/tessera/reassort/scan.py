@@ -10,14 +10,13 @@ asks whether a single segment is itself a within-segment mosaic of two lineages.
 from __future__ import annotations
 
 import logging
-import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
 from ..core.cache import nextclade_cache
 from ..core.errors import UserInputError
-from ..core.io import strip_sequence_extension, write_fasta_record
+from ..core.io import safe_filename_stem, strip_sequence_extension, write_fasta_record
 from ..discover.nextclade import NON_CLADE_MARKERS, build_pool
 from ..msa.build import MsaParams, build_msa
 from ..recomb.regions import DEFAULT_METHODS
@@ -87,13 +86,40 @@ def _summarize_regions(path: Path) -> tuple[int, bool]:
     return n, n > 0
 
 
+def unique_scan_dirs(segments: list[str]) -> dict[str, str]:
+    """Map each segment name to its own scan-directory name.
+
+    Segment names are FASTA headers, so two different names can sanitise to the same
+    string (``seg/1`` and ``seg_1``); their scans would then overwrite each other. Later
+    duplicates get a numeric suffix, in input order.
+    """
+    out: dict[str, str] = {}
+    used: set[str] = set()
+    for segment in segments:
+        base = safe_filename_stem(segment, fallback="segment")
+        name, n = base, 1
+        while name in used:
+            n += 1
+            name = f"{base}_{n}"
+        used.add(name)
+        out[segment] = name
+    return out
+
+
 def scan_segment(
     segment: str, seq: str, dataset, out_dir: Path, *,
     aligner: str, cache_dir: Path | None, logger: logging.Logger,
+    dir_name: str | None = None,
 ) -> SegmentScan:
     """Scan one segment for intragenic recombination. Never raises: a failure is recorded as
-    ``scanned=False`` so the caller can continue with the other segments."""
-    seg_name = re.sub(r"[^\w.-]+", "_", segment)
+    ``scanned=False`` so the caller can continue with the other segments.
+
+    ``dir_name`` is the scan directory under ``out_dir`` (see :func:`unique_scan_dirs`);
+    by default it is derived from the segment name. Either way it is a sanitised single
+    path component: the segment name comes from a FASTA header and must not be able to
+    name ``..`` or the output root itself.
+    """
+    seg_name = safe_filename_stem(dir_name or segment, fallback="segment")
     seg_dir = out_dir / seg_name
     try:
         pool = build_pool(

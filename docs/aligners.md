@@ -8,7 +8,7 @@ with `--aligner` and tune with repeatable `--aligner-arg key=value`.
 | Backend | Best for | Notes |
 |---|---|---|
 | `sibeliaz` (default) | Moderately divergent genomes, including rearrangements | Installs cleanly via conda; `kmer`, `abundance`, `bubble`, `filtermemory` |
-| `mafft` | Similar, largely collinear genomes | True base-level alignment, the canonical input for the window method; adds a fragmented query with `--addfragments`. `maxiterate`, `retree`, `op`, `ep`, `sixmerpair` |
+| `mafft` | Similar, largely collinear genomes | True base-level alignment, the canonical input for the window method; adds a fragmented query with `--addfragments` and reorients reverse-strand genomes or contigs (`--adjustdirection`). `maxiterate`, `retree`, `op`, `ep`, `sixmerpair` |
 | `minimap2` | Speed and assembly/contig queries | Fast assembly-to-reference projection; `preset` (default `asm20`, e.g. `asm10` for closer genomes) |
 | `progressivemauve` | Genomes with large rearrangements/inversions | Tolerant but slow, heavy, and not available as a conda build on all platforms; `seed_weight`, `single` |
 | `cactus` | Same-species pangenomes | Resource heavy (Toil/containers) |
@@ -17,8 +17,19 @@ with `--aligner` and tune with repeatable `--aligner-arg key=value`.
 data, reproduces `progressivemauve`'s recombination coordinates. For very similar,
 collinear genomes `mafft` gives the most faithful base-level signal and `minimap2`
 the fastest run (and the best fit for a fragmented query); `progressivemauve` remains
-an option for genomes with large rearrangements. Reference-anchored backends drop
-material inserted relative to the backbone; `mafft` keeps it as a true alignment.
+an option for genomes with large rearrangements. Every backend reports the alignment in
+backbone coordinates, so material inserted relative to the backbone is dropped -- `mafft`
+included, which runs with `--keeplength`.
+
+A multi-contig backbone is laid out as the concatenation of its contigs in the order of
+its FASTA file (`sibeliaz`, `mafft`, `minimap2`, `progressivemauve`); a contig that nothing
+aligns to keeps its columns, as gaps. The `cactus` backend lays contigs out in sorted-name
+order. A genome the aligner cannot place against the backbone at all is kept as an all-gap
+row and named in a warning, so the alignment always has one row per input genome.
+
+Genomes are staged before alignment. A FASTA with whitespace inside its sequence lines
+(trailing spaces, tabs, Windows line endings) is aligned from a cleaned copy and reported
+in a warning; the input file itself is not modified.
 
 Examples:
 
