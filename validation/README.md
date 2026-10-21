@@ -141,11 +141,21 @@ separately:
 | `mumps/genome` | AB000386 | B | 1 | NOT TESTABLE |
 | `sars-cov-2/XBB` | -- | -- | -- | SKIP |
 
-The `CALL` is worth reading closely rather than filing. Both regions are long (27.4 kbp
-and 12.4 kbp) but rest on a very small margin on a near-identical panel: the minor parent
-matches at 0.9998 and 0.9999 against the major parent's 0.9995 and 0.9993, a separation
-in the fourth decimal, which on 27 kbp is a handful of sites. That is the regime issues
-\#81 and \#82 concern, and it is why the verdict is `CALL` and not `FAIL`.
+The `CALL` is tracked as issue \#84. Both regions are long (27.4 kbp and 12.4 kbp) but
+rest on a very small margin: the minor parent matches at 0.9998 and 0.9999 against the
+major parent's 0.9995 and 0.9993, a separation in the fourth decimal, which on 27 kbp is
+a handful of sites. The parent-free diagnostic on the same alignment reports no signal at
+all (PHI p=1, Rmin=0), so it contradicts the callers outright.
+
+It is **not** issues \#81 or \#82, which concern a locally gap-degraded major parent.
+Measured on the run's `panel.msa.fasta`, the major parent carries 0.00 % gaps inside both
+loci against 0.06 % genome-wide, and `donor_undercovered` and `donor_absent` are both
+`no` -- there is no degradation to find. The likelier contributors are a redundant panel
+(all four references are 2022-outbreak genomes, so near-equidistant from the query) and
+bootscan, which has no null and backs one of the two regions.
+
+The verdict is `CALL` and not `FAIL` because mpox does recombine, so a tip can carry a
+genuine event; the harness flags it for inspection rather than asserting a defect.
 
 The three NOT TESTABLE entries all seeded a **single reference**, which cannot cover a
 query, so round one went to the fill. That is a selection result, not a scan result.
