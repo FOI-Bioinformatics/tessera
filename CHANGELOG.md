@@ -6,6 +6,19 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Test data: the gap-degraded major parent
+
+- **A fixture for the false positive behind issues #81 and #82.**
+  `tests.factories.make_gap_degraded_msa` builds a clonal query on a near-identical,
+  clade-structured panel whose nearest reference is misaligned over one locus
+  (frame-shifted and gap-riddled at the rates measured on the mpox locus: ~9% gaps there
+  against ~2% genome-wide). Nothing is copied into the query, so every region a caller
+  reports on it is a false positive by construction. The suite covers what the data is
+  (clonal, locally degraded, the dip confined to the locus) and records the two open
+  defects as strict `xfail`: a region is called over the locus on all five seeds tried
+  (#81), and neither the coverage gaps nor `donor_undercovered` flag it (#82). Fixing
+  either issue turns its test red until the marker comes off.
+
 ### Caller behaviour, plan C Task 6: pool clade labels
 
 Completes the one task of plan C
