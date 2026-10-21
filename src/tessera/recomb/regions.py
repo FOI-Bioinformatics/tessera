@@ -25,12 +25,14 @@ from dataclasses import dataclass
 from math import isnan
 from statistics import mean
 
+import numpy as np
+
 from ..core.errors import UserInputError
 from .analyze import AnalysisResult, rank_datasets
 from .clusters import _window_bounds, clustered_view, lineage_clusters
 from .hmm import DEFAULT_JUMP_RATE, Segment, segment_query
 from .siblings import SiblingEvidence, sibling_aware_states
-from .similarity import WindowSimilarity, discordant_counts, region_identity
+from .similarity import GAP, WindowSimilarity, discordant_counts, region_identity
 from .stats import benjamini_hochberg, sign_test_pvalue
 from .threeseq import triplet_steps
 
@@ -230,6 +232,62 @@ def _window_minor(
     if best_label is None or (best_sim - sim_major) < margin:
         return None
     return best_label
+
+
+# A region is withheld only when the backbone's gap rate over it is both this many
+# times its own genome-wide rate and this high in absolute terms. Measured over the
+# five seeds of the gap-degraded fixture, the mpox panel of issue #81 and every
+# region of the eight curated datasets in validation/: a backbone locally degraded
+# enough to lose the comparison sits at 2.27x to 19.06x its genome-wide rate with a
+# local rate of 5.02 % to 31.21 %, while the backbone under a real recombinant region
+# stays at or below 0.74x and 3.09 %. Both conditions are required, so a backbone
+# with no gaps at all elsewhere is not withheld for a single gap column, and a draft
+# assembly gappy everywhere is not withheld for being uniformly gappy.
+MIN_LOCAL_GAP_RATE = 0.05
+
+
+def withhold_misaligned_backbone(
+    regions: list[Region],
+    result: WindowSimilarity,
+    max_ratio: float,
+    min_local_gap: float = MIN_LOCAL_GAP_RATE,
+) -> tuple[list[Region], list[Region]]:
+    """Split ``regions`` into those to report and those resting on a misaligned
+    backbone; returns ``(kept, withheld)``.
+
+    Region calling is a comparison between the backbone and a candidate donor over
+    the same columns. Where the backbone is locally gap-degraded that comparison is
+    not between comparably aligned genomes: the backbone loses the columns it was
+    misaligned over, any reference that stayed intact matches the query better
+    there, and the callers read the switch as a minor parent (issue #81).
+
+    The test is local and relative to the backbone itself -- its gap rate over the
+    region against its genome-wide rate -- so a uniformly gappy backbone is not
+    penalised for being gappy, only for being worse here than it is elsewhere.
+    ``max_ratio`` of 0 disables it.
+
+    A donor-absent row is exempt. It says the query is far from every reference, so
+    the true donor is likely missing, which is not a comparison the backbone can
+    lose; one curated dataset carries such a row at twice its backbone's
+    genome-wide rate.
+    """
+    if max_ratio <= 0:
+        return list(regions), []
+    kept: list[Region] = []
+    withheld: list[Region] = []
+    for region in regions:
+        row = result.rows.get(region.major_parent)
+        if region.donor_absent or row is None or row.size == 0:
+            kept.append(region)
+            continue
+        genome = float(np.count_nonzero(row == GAP)) / row.size
+        span = row[region.msa_start:region.msa_end]
+        local = float(np.count_nonzero(span == GAP)) / span.size if span.size else 0.0
+        degraded = local >= min_local_gap and (
+            genome <= 0.0 or local / genome >= max_ratio
+        )
+        (withheld if degraded else kept).append(region)
+    return kept, withheld
 
 
 def call_regions(

@@ -6,6 +6,40 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### A region resting on a locally misaligned backbone is withheld (issue #81)
+
+- **The defect.** Region calling asks whether some reference beats the backbone over a
+  stretch of columns. Where the backbone is locally gap-degraded it loses that comparison
+  to any reference that stayed intact, and the callers read the switch as a minor parent.
+  On the mpox panel behind the issue the backbone carried 31.2 % gaps over the called
+  locus against 1.64 % genome-wide, and three method families converged on the same locus
+  naming three different donors, which points at the locus rather than at any one donor.
+- **The test, and where its numbers come from.** A region is withheld when the backbone's
+  gap rate over it is at least `--backbone-gap-ratio` times its own genome-wide rate (2.0
+  by default) and at least 5 % in absolute terms. Measured across the five seeds of
+  `make_gap_degraded_msa`, the mpox panel and every region of the eight curated datasets
+  in `validation/`: a backbone degraded enough to lose the comparison sits at 2.27x to
+  19.06x its genome-wide rate with a local rate of 5.02 % to 31.21 %, while the backbone
+  under a real recombinant region stays at or below 0.74x and 3.09 %. Both conditions are
+  required, so a backbone with no gaps elsewhere is not withheld for a single gap column
+  and a draft assembly gappy throughout is not withheld for being uniformly gappy. The
+  test is applied per caller, since the defect drew several callers to the same locus.
+- **A donor-absent coverage row is exempt.** It states that the true donor is likely
+  missing, which is not a comparison the backbone can lose; one curated dataset carries
+  such a row at twice its backbone's genome-wide rate.
+- **Nothing is dropped silently.** Each withheld locus is logged, the count goes into
+  `run_provenance.json`, and the report carries a note naming the columns.
+  `--backbone-gap-ratio 0` reports the regions anyway.
+- **What this does not fix, now issue #86.** The same degradation also drags the
+  backbone's genome-wide score. On one fixture seed that hands the crown to a reference
+  of the other clade and the flanks are reported as a mosaic with the query's own sister
+  cast as the donor -- the mosaic inverted. The reported backbone is aligned normally
+  over those regions, so no region is withheld, and the remedy is a ranking statistic a
+  local stretch cannot move: the mean picks the wrong reference on all five seeds and the
+  median picks the right one on all five. The same two regions are reported on the
+  previous release, so this is not new. The strict `xfail` for issue #81's own symptom
+  comes off; a strict `xfail` for #86 goes in.
+
 ### Reference coverage on a panel that is nearly identical to the query (issue #82)
 
 - **The best-similarity threshold could not resolve a low-divergence panel.** It is the

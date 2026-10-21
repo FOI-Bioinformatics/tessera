@@ -14,6 +14,9 @@ flag. Issue #81 is the false region; issue #82 is that nothing flags it.
 
 from __future__ import annotations
 
+import csv
+import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -25,12 +28,18 @@ from tessera.recomb.coverage import (
     call_coverage_gaps,
 )
 from tessera.recomb.regions import RegionParams, call_regions
+from tessera.recomb.run import RecombParams, run_recomb
 from tessera.recomb.similarity import compute_similarity
 
 from ..conftest import write_fasta
 from ..factories import make_gap_degraded_msa
 
 WINDOW, STEP = 1000, 100
+
+
+def _read_tsv(path: Path) -> list[dict[str, str]]:
+    lines = [x for x in path.read_text().splitlines() if x and not x.startswith("#")]
+    return list(csv.DictReader(lines, delimiter="\t"))
 
 
 def _scan(tmp_path: Path, msa):
@@ -83,23 +92,89 @@ def test_nearest_reference_matches_the_query_everywhere_but_the_locus(tmp_path: 
     assert max(inside) < min(outside)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="issue #81: a locally gap-degraded major parent is called as a recombinant",
-)
-@pytest.mark.parametrize("seed", [1, 2, 3, 4, 5])
-def test_clonal_query_yields_no_region(tmp_path: Path, seed: int) -> None:
-    """A query that is a clade tip has no recombinant region to find.
+def _present_regions(out: Path) -> list[dict[str, str]]:
+    return [r for r in _read_tsv(out / "recombination_regions.tsv")
+            if r["donor_absent"] == "no"]
 
-    Fails today: the locally misaligned major parent loses the locus to an intact
-    competitor, which reads as a mosaic. Parametrized because the call is systematic
-    rather than one seed's luck, and strict, so fixing #81 turns these red until the
-    marker comes off.
+
+def _run(tmp_path: Path, msa, name: str = "msa.fasta") -> Path:
+    path = write_fasta(tmp_path / name, msa.records)
+    out = tmp_path / "out"
+    run_recomb(
+        RecombParams(msa=path, output=out, query="query", window_size=WINDOW,
+                     window_step=STEP, plot_format="png"),
+        logging.getLogger("tessera.test"),
+    )
+    return out
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3, 4, 5])
+def test_no_region_is_reported_over_the_degraded_locus(tmp_path: Path, seed: int) -> None:
+    """The locus itself is no longer called, which is the symptom issue #81 reports.
+
+    End to end, because what the reader sees is the regions table and the scan sets
+    such a region aside on the way there rather than inside a caller. Parametrized
+    because the false call was systematic rather than one seed's luck: on the main
+    branch every seed reports a region overlapping the locus.
     """
     msa = make_gap_degraded_msa(seed=seed)
-    _, regions, _ = _scan(tmp_path, msa)
+    lo, hi = msa.locus
+    out = _run(tmp_path, msa)
 
-    assert regions == []
+    overlapping = [
+        r for r in _present_regions(out)
+        if int(r["msa_start"]) < hi and int(r["msa_end"]) > lo
+    ]
+    assert overlapping == []
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="issue #86: the degraded locus also corrupts the genome-wide statistics, "
+           "so the flanks are reported as a mosaic of the wrong backbone",
+)
+def test_a_clonal_query_yields_no_region_at_all(tmp_path: Path) -> None:
+    """The locus is not the only thing its degradation breaks.
+
+    On seed 4 the scan reports two regions that do not overlap the locus at all: it
+    names ``outclade0``, of the other clade, as the backbone and the query's own
+    sister as a donor across the flanks, which is the mosaic read the wrong way
+    round. Ranking the references by their mean similarity lets the degraded locus
+    drag the sister's genome-wide score below a competitor's, and the median picks
+    the sister on all five seeds where the mean does not. That is a second mechanism
+    with the same cause, it predates this fix (the same two regions are on main),
+    and it needs the genome-wide statistics to be robust rather than one locus to be
+    withheld, so it is filed separately as #86.
+    """
+    msa = make_gap_degraded_msa(seed=4)
+    out = _run(tmp_path, msa)
+
+    assert _present_regions(out) == []
+
+
+def test_the_withheld_region_is_reported_not_silently_dropped(tmp_path: Path) -> None:
+    """A region removed from the table is still accounted for.
+
+    Reported numbers have to be faithful, so the run records how many regions it
+    set aside and why, rather than leaving the reader with a table that is shorter
+    for no stated reason. The assertions name a provenance key and a phrase of the
+    report: the input path carries this test's own name, so matching a bare word
+    anywhere in the output would pass on the path alone.
+    """
+    msa = make_gap_degraded_msa(seed=1)
+    path = write_fasta(tmp_path / "msa.fasta", msa.records)
+    out = tmp_path / "out"
+    run_recomb(
+        RecombParams(msa=path, output=out, query="query", window_size=WINDOW,
+                     window_step=STEP, plot_format="png"),
+        logging.getLogger("tessera.test"),
+    )
+
+    run = json.loads((out / "run_provenance.json").read_text())["run"]
+    key = "regions withheld (misaligned backbone)"
+    assert key in run
+    assert int(str(run[key]).split()[0]) >= 1
+    assert "locally gap-degraded" in (out / "report.html").read_text()
 
 
 def test_the_degraded_locus_is_flagged(tmp_path: Path) -> None:

@@ -429,6 +429,38 @@ The practical readings:
 - Panels assembled by `build-panel` / `curate-panel` are dereplicated and typically sit
   inside the usable window; a hand-assembled panel spanning very distant taxa may not.
 
+## A region the alignment cannot support
+
+Region calling compares the backbone and a candidate donor over the same columns. Where
+the backbone is locally gap-degraded that comparison is not between comparably aligned
+genomes: the backbone lost the columns it was misaligned over, any reference that stayed
+intact matches the query better there, and the callers read the switch as a minor parent
+whether or not anything recombined (issue #81).
+
+Such a region is **withheld**. The test is local and relative to the backbone itself --
+its gap rate over the region against its own genome-wide rate, at or above
+`--backbone-gap-ratio` (2.0 by default), and at least 5 % in absolute terms -- so a
+uniformly gappy backbone is not penalised for being gappy, only for being worse here
+than it is elsewhere. Both conditions were set from measurement: across the five seeds of
+the gap-degraded fixture, the mpox panel behind the issue and every region of the eight
+curated datasets in `validation/`, a backbone degraded enough to lose the comparison sits
+at 2.27x to 19.06x its genome-wide rate with a local rate of 5.02 % to 31.21 %, while the
+backbone under a real recombinant region stays at or below 0.74x and 3.09 %.
+
+A donor-absent coverage row is exempt: it states that the query is far from every
+reference, so the true donor is likely missing, which is not a comparison the backbone
+can lose. One curated dataset carries such a row at twice its backbone's genome-wide
+rate.
+
+Nothing is dropped silently. The run logs each withheld locus, records the count in
+`run_provenance.json`, and the report carries a note naming the columns. Pass
+`--backbone-gap-ratio 0` to report the regions anyway.
+
+One thing this does **not** reach: a locus degraded this way also drags the backbone's
+genome-wide score, which can hand the crown to a different reference and invert the
+mosaic across the rest of the genome. The reported backbone is then aligned normally
+everywhere it is used, so no region is withheld. That is issue #86, and it is open.
+
 ## Output files
 
 | File | Contents |
