@@ -220,7 +220,77 @@ Callers:
   the callers disagreed on the backbone, and could report one donor lineage as two
   overlapping regions on a typed panel.
 
+Panel recruitment, from the fourth audit
+(`docs/superpowers/specs/2026-10-12-audit-swot-gap.md`, section 1.4). These change which
+references are recruited, not how the scan calls regions:
+
+- `fill-references` stopped after round 2 whenever there were more coverage gaps than
+  `--top-gaps`: the stop test watched the worst gap, while the search reached only the
+  longest ones, so an unsearched short gap held the measure still.
+- The fill loop re-downloaded, every round, the genomes curation had just removed, because
+  they were never added to the exclusion list. They now are.
+- Windowed BLAST seeding reported that the query's lineage saturates NCBI when every hit
+  had been filtered out (the query's own record, or `--exclude` accessions), and then ran
+  the negative-lineage search and the NCBI Virus download on that false explanation. It
+  now needs a kept hit, as whole-query seeding already did.
+- A taxon with no RefSeq genome stopped the run with "NCBI Virus returned no genomes"
+  instead of broadening to complete genomes, which it did for a taxon with one or two
+  RefSeq genomes. It now broadens; the error remains for a taxon with no genome at all.
+- Without `--deep-typing`, the panel was typed by mining headers again, ignoring the exact
+  NCBI Virus lineages recorded during recruitment in `ncbi_lineages.tsv`; names without a
+  digit-bearing token of four or more characters (`B.1`, `A`, `XBB`) were lost and those
+  genomes skipped lineage-aware handling. Both typing paths now read the sidecar.
+- When `--curate` was requested (always, for `detect` and `build-panel`) but never ran --
+  a seeded panel with no coverage gap downloads nothing for it to curate -- the run wrote
+  no panel table and no log line. The log and the report's "Reference panel" section now
+  state that curation did not run.
+- Pool selection kept every genome without comment when all of them were siblings of the
+  query, and returned a normal-looking panel. It now logs a warning, as BLAST seeding
+  already did for the same situation.
+- Regional pool selection treated a query between one and two selection windows long
+  (1.5-3 kb at the default) as a single window, which is whole-genome selection. Such a
+  query is now cut into two halves, with the whole-genome ranking as a fallback if neither
+  half matches. Longer queries are unaffected.
+- `--fetch-limit` was part of the NCBI Virus cache key although it does not change what
+  is fetched (it only sets when a notice is logged), so changing it re-downloaded an
+  identical genome set. It no longer is. A cache written by an earlier version is keyed
+  differently and is fetched once more on first use.
+- Nearest-reference typing took a Nextclade tip labelled `?` for a clade named `?`; it
+  now uses the shared set of "no clade" markers. The per-clade consensus step in the
+  Nextclade pool builder skipped only `NA`, so tips labelled `?` or `example` each got a
+  consensus genome for a clade that does not exist; it uses the same set.
+- The candidate-pool reader accepted four file extensions, so a `.fas` or `.fsa` genome
+  was left out of the pool without notice. It now reads a pool as every other command
+  reads a collection, and rejects a file that is not FASTA.
+
 ### Changed
+
+- **Some seed options that cannot act are refused.** `detect` and `build-panel` used
+  `--candidate-pool` and ignored `--nextclade`/`--nextclade-dataset` when both were given;
+  `--pool-consensus` did nothing without a Nextclade pool; and `fill-references` ignored
+  `--candidate-pool` without `--seed-source local`. Each of these three combinations is now
+  a usage error. Seed options are still inert when `--collection` is given, because
+  seeding then does not run; they are not refused in that case.
+- **A candidate pool directory must hold only FASTA files.** A samtools `.fai` index, a
+  README or a checksum file in the pool directory used to be skipped because the reader
+  filtered by extension; it now stops the run with an error naming the file. Move such a
+  file out of the pool directory.
+- **One new reference is downloaded per coverage gap**, as documented. Every sub-interval
+  search contributed all of its hits, so at the defaults one round could add up to 20
+  genomes for a 1000 bp gap and 145 for a 6 kb gap, all of which went into the next
+  alignment. The best candidate is the one with the highest identity over the searched
+  sub-interval. `find-references` writes the full candidate list to
+  `candidate_references.tsv`; the fill loop (`fill-references`, `detect` and `build-panel`)
+  does not record the candidates it did not take. This applies to
+  `find-references --download`, `fill-references`, `detect` and `build-panel`. With
+  `--curate`, a gap whose best candidate is a sibling of the query gets its next
+  candidate in the following round rather than in the same one; `find-references`, which
+  runs once, leaves such a gap without a download.
+- **The fill loop stops on the coverage shortfall.** A round must reduce the under-covered
+  length, weighted by how far each gap falls below the threshold, by at least
+  `--min-improvement` of the previous round's value. **`--min-improvement` is now a
+  fraction (0-1, default unchanged at 0.01)**, where it was an absolute gain in the worst
+  gap's best similarity. `fill_summary.tsv` gains a last column, `coverage_shortfall`.
 
 - **HMM region coordinates are the span the donor explains, not the HMM segment.** A
   segment ran on through columns where donor and major are identical (a 600 bp difference

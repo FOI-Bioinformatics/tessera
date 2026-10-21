@@ -52,3 +52,14 @@ def test_fill_references_accepts_nextclade_seed_source(monkeypatch, tmp_path):
                                  "--seed-source", "nextclade"])
     assert result.exit_code == 0, result.output
     assert captured["params"].seed_source == "nextclade"
+
+
+def test_detect_accepts_pool_consensus_with_nextclade(monkeypatch, tmp_path):
+    """Guard (passes before and after): the one combination --pool-consensus is for."""
+    captured = _capture(monkeypatch)
+    q = tmp_path / "q.fasta"
+    q.write_text(">q\nACGT\n")
+    result = runner.invoke(app, ["detect", "-q", str(q), "-o", str(tmp_path / "o"),
+                                 "--nextclade", "--pool-consensus"])
+    assert result.exit_code == 0, result.output
+    assert captured["params"].pool_consensus is True

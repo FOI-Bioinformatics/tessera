@@ -382,3 +382,31 @@ def test_build_pool_uses_a_pool_cached_before_manifests_existed(monkeypatch, tmp
     monkeypatch.setattr(nc, "_download_text", boom)
     pool = nc.build_pool(_dataset(), cache_dir=cache, logger=logger)
     assert pool == [genome]
+
+
+def test_build_pool_consensus_skips_every_non_clade_marker(monkeypatch, tmp_path, logger):
+    """The consensus step skipped only "NA" and empty clades, so tips labelled "?" or
+    "example" each got a consensus genome named for a clade that does not exist."""
+    from urllib.error import URLError as _URLError
+
+    def tip(name, clade):
+        return {"name": name, "branch_attrs": {"mutations": {"nuc": []}},
+                "node_attrs": {"accession": name, "clade_membership": clade},
+                "children": []}
+
+    tree = {"tree": {"name": "root", "branch_attrs": {"mutations": {"nuc": []}},
+                     "children": [tip("T1", "Z"), tip("T2", "?"), tip("T3", "example")]}}
+    payloads = {"reference.fasta": _REF.encode(), "tree.json": _json.dumps(tree).encode()}
+
+    def fake_urlopen(url, timeout=0):
+        for name, data in payloads.items():
+            if url.endswith(name):
+                return _Resp(data)
+        if url.endswith("sequences.fasta"):
+            raise _URLError("no examples")
+        raise AssertionError(f"unexpected url {url}")
+
+    monkeypatch.setattr(nc, "urlopen", fake_urlopen)
+    genomes = nc.build_pool(_dataset(), cache_dir=tmp_path / "c", logger=logger,
+                            per_clade_consensus=True)
+    assert [g.stem for g in genomes] == ["Z_consensus"]

@@ -1,7 +1,7 @@
 """`tessera fill-references`: iteratively add missing references until coverage stops improving.
 
 Each round rebuilds the MSA from the (growing) collection, scans it for coverage
-gaps, BLASTs the worst gaps against NCBI, and downloads the best new reference per
+gaps, BLASTs the longest gaps against NCBI, and downloads the best new reference per
 gap into the collection. The loop stops when the gaps close, when no new reference
 can be found, when coverage stops improving (a stubborn residual is reported, not
 chased forever), or at ``max_rounds``. If the last round downloaded references, one
@@ -30,7 +30,7 @@ from ..core.io import (
     strip_sequence_extension,
 )
 from ..msa.build import MsaParams, build_msa, provenance_path
-from ..recomb.coverage import CoverageParams, call_coverage_gaps
+from ..recomb.coverage import CoverageGap, CoverageParams, call_coverage_gaps
 from ..recomb.pango import crosscheck_html, expand_recombinant, load_alias_key
 from ..recomb.regions import DEFAULT_METHODS
 from ..recomb.run import RecombParams, run_recomb
@@ -89,7 +89,7 @@ class FillParams:
     # by NCBI Virus taxonomy diversity instead, so the parental lineages are present.
     auto_diversify: bool = True
     negative_lineage: bool = True  # on saturation, re-BLAST excluding the query's lineage
-    fetch_limit: int = 2000  # cap a broad NCBI Virus fetch (complete genomes)
+    fetch_limit: int = 2000  # log a notice when a broad NCBI Virus fetch exceeds this
     derep_diverse_ani: float = 95.0  # aggressive one-per-lineage dereplication of a pool
     cache_dir: Path | None = None  # where to cache fetched NCBI Virus panels (None = default)
     window_size: int = 1000
@@ -103,7 +103,9 @@ class FillParams:
     exclude: tuple[str, ...] = ()
     keep_self_hits: bool = False
     threads: int = 4
-    min_improvement: float = 0.01  # stop if the worst gap's best-sim gains less than this
+    # Stop once a round reduces the coverage shortfall by less than this fraction of the
+    # previous round's shortfall (see coverage_shortfall).
+    min_improvement: float = 0.01
     curate: bool = False  # drop the query's siblings and dereplicate each round (skani/skDER)
     sibling_margin: float = 3.0  # query-ANI must beat the backbone's by this many % to be a sibling
     af_min: float = 80.0  # ... over at least this % of the query (whole-genome match)
@@ -118,6 +120,24 @@ class FillParams:
     reattribute_donors: bool = False  # opt-in donor re-attribution in the detection step
     keep_recombinant: bool = False  # keep recombinant (CRF/URF/X) lineages in a typed panel
     deep_typing: bool = False  # type the recruited panel with the full ladder, not just headers
+
+    def __post_init__(self) -> None:
+        # Options that act through one seed source are refused under another rather than
+        # ignored: a run that dropped a requested pool or consensus in silence reads like
+        # one that used it.
+        if self.pool_consensus and self.seed_source != "nextclade":
+            raise UserInputError(
+                "--pool-consensus builds one consensus genome per clade of a Nextclade "
+                f"pool, but the seed source here is '{self.seed_source}'. Add --nextclade "
+                "(detect, build-panel) or --seed-source nextclade (fill-references), or "
+                "leave out --pool-consensus."
+            )
+        if self.candidate_pool is not None and self.seed_source != "local":
+            raise UserInputError(
+                "--candidate-pool is read only with --seed-source local, but the seed "
+                f"source here is '{self.seed_source}'. Add --seed-source local, or leave "
+                "out --candidate-pool."
+            )
 
     @classmethod
     def for_detection(
@@ -149,17 +169,11 @@ class FillParams:
 
         Recruit the parental lineages (drop the query's siblings, curate the
         panel) so a recombinant query whose own lineage is common in NCBI is
-        not masked. The seed source follows the supplied input: a local pool
-        wins, then a Nextclade dataset, then the default BLAST recruitment.
-        This is the single home for the preset so ``tessera detect`` does not
-        duplicate (and drift from) the field list.
+        not masked. The seed source follows the supplied input
+        (:func:`seed_source_for`). This is the single home for the preset so
+        ``tessera detect`` does not duplicate (and drift from) the field list.
         """
-        if candidate_pool:
-            seed_source = "local"
-        elif nextclade or nextclade_dataset:
-            seed_source = "nextclade"
-        else:
-            seed_source = "blast"
+        seed_source = seed_source_for(candidate_pool, nextclade, nextclade_dataset)
         return cls(
             query=query, collection=None, output=output,
             aligner=aligner, max_rounds=max_rounds,
@@ -177,6 +191,27 @@ class FillParams:
         )
 
 
+def seed_source_for(
+    candidate_pool: Path | None, nextclade: bool, nextclade_dataset: str | None
+) -> str:
+    """The seed source ``detect`` and ``build-panel`` take from their inputs.
+
+    A local pool gives ``local``, a Nextclade flag or dataset ``nextclade``, and neither
+    the default BLAST recruitment. A pool together with a Nextclade request names two
+    seed sources; the pool used to win in silence, so it is refused instead.
+    """
+    if candidate_pool and (nextclade or nextclade_dataset):
+        raise UserInputError(
+            "--candidate-pool and --nextclade/--nextclade-dataset each choose where the "
+            "panel is recruited from; give one of them."
+        )
+    if candidate_pool:
+        return "local"
+    if nextclade or nextclade_dataset:
+        return "nextclade"
+    return "blast"
+
+
 @dataclass
 class RoundResult:
     round: int
@@ -184,7 +219,20 @@ class RoundResult:
     undercovered_bp: int
     worst_best_sim: float
     threshold: float
+    shortfall: float = 0.0  # coverage_shortfall of this round's gaps
     added: list[str] = field(default_factory=list)
+
+
+def coverage_shortfall(gaps: list[CoverageGap], threshold: float) -> float:
+    """Under-covered length weighted by how far each gap falls below the threshold.
+
+    The sum over gaps of ``length_bp * (threshold - mean_best)``. It falls when a gap
+    closes and also when a gap's best match improves without yet clearing the threshold,
+    which an under-covered base count does not register. A gap that no search reaches
+    adds the same amount every round, so it cannot hold the measure still the way it
+    held the worst-gap similarity still.
+    """
+    return sum(g.length_bp * max(0.0, threshold - g.mean_best) for g in gaps)
 
 
 def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundResult]:
@@ -384,20 +432,33 @@ def _grow_collection(
     panel_rows: dict[str, dict] = {}
     last_msa: Path | None = None
     built_from: set[str] = set()  # labels the last MSA was built from
-    prev_worst: float | None = None
+    prev_shortfall: float | None = None
     # Curation owed before the next build, and the backbone to anchor it on.
     curate_pending = params.curate and params.collection is not None
     backbone: Path | None = None
     pending_round: RoundResult | None = None  # the round whose downloads await curation
+    # Set to the number of references curation removed from the previous round's downloads
+    # (zero when none): the next build then lacks the replacement for each searched gap
+    # whose download was removed, so its shortfall says little about whether a further
+    # search could help.
+    n_curated_away = 0
 
     def curate_if_pending() -> None:
-        nonlocal curate_pending, pending_round
+        nonlocal curate_pending, pending_round, n_curated_away
         if not curate_pending:
             return
         _curate_round(params, collection, backbone, panel_rows, logger)
+        # A genome curation removed would otherwise be found and downloaded again by
+        # every later search, in place of the gap's next candidate.
+        exclude.update(
+            _base_accession(row["genome"]) for row in panel_rows.values()
+            if row["role"].endswith("-dropped")
+        )
         if pending_round is not None:
             kept = _labels(collection)
-            pending_round.added = [a for a in pending_round.added if a in kept]
+            downloaded = pending_round.added
+            pending_round.added = [a for a in downloaded if a in kept]
+            n_curated_away = len(downloaded) - len(pending_round.added)
         curate_pending, pending_round = False, None
 
     for rnd in range(1, params.max_rounds + 1):
@@ -421,23 +482,41 @@ def _grow_collection(
         gaps, threshold = call_coverage_gaps(result, params.window_size, cov)
         undercovered = sum(max(0, g.query_end - g.query_start) for g in gaps)
         worst = min((g.mean_best for g in gaps), default=1.0)
-        rr = RoundResult(rnd, len(gaps), undercovered, round(worst, 4), round(threshold, 4))
+        shortfall = coverage_shortfall(gaps, threshold)
+        rr = RoundResult(
+            rnd, len(gaps), undercovered, round(worst, 4), round(threshold, 4),
+            round(shortfall, 1),
+        )
         trace.append(rr)
         logger.info(
-            "Round %d: %d gap(s), %d bp under-covered, worst best-similarity %.3f.",
-            rnd, len(gaps), undercovered, worst,
+            "Round %d: %d gap(s), %d bp under-covered, coverage shortfall %.1f, "
+            "worst best-similarity %.3f.",
+            rnd, len(gaps), undercovered, shortfall, worst,
         )
 
         if not gaps:
             logger.info("Converged: no coverage gaps remain.")
             break
-        if prev_worst is not None and (worst - prev_worst) < params.min_improvement:
+        # Judged on the shortfall, not on the worst gap: only the --top-gaps longest gaps
+        # are searched, so a short gap outside that set held the worst-gap similarity
+        # still and stopped the loop while the searched gaps were improving.
+        if n_curated_away:
             logger.info(
-                "Stopping: coverage stopped improving (worst best-sim %.3f vs %.3f last round).",
-                worst, prev_worst,
+                "Curation removed %d reference(s) the last round added; searching again "
+                "with them excluded.", n_curated_away,
+            )
+            n_curated_away = 0
+        elif (
+            prev_shortfall is not None
+            and (prev_shortfall - shortfall) < params.min_improvement * prev_shortfall
+        ):
+            logger.info(
+                "Stopping: coverage stopped improving (shortfall %.1f against %.1f last "
+                "round; a reduction below %g of it).",
+                shortfall, prev_shortfall, params.min_improvement,
             )
             break
-        prev_worst = worst
+        prev_shortfall = shortfall
 
         records = dict(read_fasta(str(msa)))
         query_row = records[query_label]
@@ -518,21 +597,23 @@ def _type_panel(
     """Type the recruited references and the query, and persist ``lineages.tsv``.
 
     Mine a genotype from each genome's header (NCBI lineage note or GenBank
-    title), overlaid by a user-supplied ``--lineage-map``, so the report and a
+    title) and from the NCBI datasets sidecar, overlaid by a user-supplied
+    ``--lineage-map``, so the report and a
     later standalone recomb can name parents by lineage instead of bare
     accession. Returns the resolved lineage map and the query's own lineage.
     """
     coll_files = collection_genomes(collection)
+    # The consolidated sidecar records the full fetched NCBI-Virus set; restrict the
+    # datasets rows to accessions that survived selection so lineages.tsv describes the
+    # panel, not the download. Both branches read it: mining the headers again loses
+    # every lineage name without a digit-bearing token of four or more characters.
+    panel_accessions = {strip_sequence_extension(p.name) for p in coll_files}
+    recorded = _read_ncbi_lineages(params.output)
+    datasets_rows = (
+        [(acc, lin) for acc, lin in recorded if acc in panel_accessions]
+        if recorded else None
+    )
     if params.deep_typing:
-        # The consolidated sidecar records the full fetched NCBI-Virus set; restrict the
-        # datasets rows to accessions that survived selection so lineages.tsv describes the
-        # panel, not the download.
-        panel_accessions = {strip_sequence_extension(p.name) for p in coll_files}
-        recorded = _read_ncbi_lineages(params.output)
-        datasets_rows = (
-            [(acc, lin) for acc, lin in recorded if acc in panel_accessions]
-            if recorded else None
-        )
         lineage_rows = assign_lineages(
             coll_files,
             user_lineage_map=params.lineage_map,
@@ -546,6 +627,7 @@ def _type_panel(
     else:
         lineage_rows = build_lineage_map(
             user_tsv=params.lineage_map,
+            datasets_rows=datasets_rows,
             title_by_label=titles_from_collection(coll_files),
             organism=params.taxon,
         )
@@ -559,6 +641,17 @@ def _type_panel(
     if lineage_map:
         logger.info("Typed %d reference(s) with a lineage/genotype name.", len(lineage_map))
     return lineage_map, query_lineage
+
+
+CURATION_NOT_RUN = (
+    "Curation (--curate) was requested but did not run on this panel. It runs on a "
+    "supplied collection before the first build and on references a round downloads, but "
+    "needs a whole-genome backbone to anchor the sibling test; none was found, or, for a "
+    "collection seeded by this run (which applies its own sibling filter and is not "
+    "curated before the first build), no round downloaded a reference. Close relatives of "
+    "the query that were seeded or supplied may still be in the panel, and no "
+    "panel_lineages.tsv was written."
+)
 
 
 def _report_sections(
@@ -576,6 +669,12 @@ def _report_sections(
         table = list(panel_rows.values())
         write_panel_tsv(params.output / "panel_lineages.tsv", table, logger, lineage_map)
         extra_sections.append(("Reference panel", panel_table_html(table, lineage_map)))
+    elif params.curate:
+        # A curation that did not run must not read as one that ran and kept everything.
+        logger.warning(CURATION_NOT_RUN)
+        extra_sections.append(
+            ("Reference panel", f'<p class="cap">{html.escape(CURATION_NOT_RUN)}</p>')
+        )
     # For a recombinant SARS-CoV-2 query, list the Pango-designated parents alongside
     # the recruited ones as a cross-check (best-effort; needs the cached alias key).
     if params.report and query_lineage and query_lineage.split(".")[0].startswith("X"):
@@ -759,7 +858,9 @@ def _fetch_diverse(params: FillParams, logger: logging.Logger) -> list[Path]:
     )
     # Keyed by what was asked for, not by what the fetch settled on: the RefSeq ->
     # complete broadening below is how a request is satisfied, not a separate request.
-    scope = {"source_refseq": params.source_refseq, "fetch_limit": params.fetch_limit}
+    # --fetch-limit is not part of the request: it only sets when a notice is logged, and
+    # the full set is downloaded whatever its value.
+    scope = {"source_refseq": params.source_refseq}
     cache = ncbi_virus_cache(taxon, scope=scope, override=params.cache_dir)
     existing = cached_genomes(cache, manifest_required=True)
     if existing:
@@ -789,6 +890,12 @@ def _fetch_diverse(params: FillParams, logger: logging.Logger) -> list[Path]:
         else:
             fetched = fetch_ncbi_virus(
                 taxon, staging, refseq=False, complete_only=True, logger=logger
+            )
+        if not fetched:
+            # Raised inside the staging context, so no empty panel is cached.
+            raise UserInputError(
+                f"NCBI Virus returned no genomes for '{taxon}'. Try --taxon or a broader "
+                "scope."
             )
         if len(fetched) > params.fetch_limit:
             logger.info(
@@ -954,13 +1061,11 @@ def _seed_windowed(
         "No starting references: seeding from a %d-window NCBI search (%s)...",
         len(chunks), label,
     )
-    per_window_hits: list[list] = []
-    any_hits = False  # did any search return anything, before filtering?
+    per_window_hits: list[list] = []  # each window's hits after the self/--exclude filter
     for chunk in chunks:
         if len(chunk) < MIN_SUBSEQ:
             continue
         hits = _blast_or_none(chunk, params, logger)
-        any_hits = any_hits or bool(hits)
         per_window_hits.append([h for h in hits if _keep(h, exclude, params)])
 
     selected: list[str] = []
@@ -994,12 +1099,12 @@ def _seed_windowed(
             "Suppressed %d sibling hit(s) (>= %.0f%% identity over near-full coverage) to "
             "recruit parental lineages.", len(dropped_siblings), SEED_SIBLING_IDENTITY,
         )
-    # "Only siblings were found" needs something to have been found. When every
-    # search failed or came back empty there is no evidence about what NCBI holds, and
-    # calling that saturation would switch the seed source under a false explanation.
-    saturated = any_hits and not any(
-        not _is_sibling_hit(h) for kept in per_window_hits for h in kept
-    )
+    # "Only siblings were found" needs something to have been kept. When every search
+    # failed, came back empty, or returned only the query's own record or --exclude
+    # accessions, there is no evidence about what NCBI holds, and calling that saturation
+    # would switch the seed source under a false explanation. Same rule as _seed_whole.
+    kept_hits = [h for kept in per_window_hits for h in kept]
+    saturated = bool(kept_hits) and all(_is_sibling_hit(h) for h in kept_hits)
     return selected[:SEED_TOTAL_CAP], saturated
 
 
@@ -1023,9 +1128,11 @@ def _progress_section(trace: list[RoundResult], final_size: int) -> str:
     )
     cap = (
         '<p class="cap">Each round rebuilt the alignment from the growing collection, '
-        'searched the worst gaps on NCBI, and added the best new reference per gap &mdash; '
+        'searched the longest gaps on NCBI, and added the best new reference per gap &mdash; '
         f'ending with {final_size} references. The run stops when the gaps close, no new '
-        'reference is found, or a round no longer improves the worst gap.</p>'
+        'reference is found, or a round no longer reduces the coverage shortfall (the '
+        'under-covered length weighted by how far each gap falls below the '
+        'threshold).</p>'
     )
     return f'{cap}<div class="scroll"><table class="table">{head}{rows}</table></div>'
 
@@ -1034,11 +1141,11 @@ def _write_trace(output: Path, trace: list[RoundResult], logger: logging.Logger)
     path = output / "fill_summary.tsv"
     logger.info("Writing fill summary: %s", path)
     header = ["round", "n_gaps", "undercovered_bp", "worst_best_similarity",
-              "threshold", "references_added"]
+              "threshold", "references_added", "coverage_shortfall"]
     with open(path, "w") as fo:
         fo.write("\t".join(header) + "\n")
         for r in trace:
             fo.write("\t".join(map(str, [
                 r.round, r.n_gaps, r.undercovered_bp, r.worst_best_sim,
-                r.threshold, ",".join(r.added) or "-",
+                r.threshold, ",".join(r.added) or "-", r.shortfall,
             ])) + "\n")

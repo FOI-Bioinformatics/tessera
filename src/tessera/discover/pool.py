@@ -26,7 +26,13 @@ from pathlib import Path
 
 from ..core.binaries import BinarySpec
 from ..core.errors import UserInputError
-from ..core.io import read_fasta, strip_sequence_extension, write_fasta_record
+from ..core.io import (
+    _require_fasta,
+    collection_genomes,
+    read_fasta,
+    strip_sequence_extension,
+    write_fasta_record,
+)
 from ..core.ncbi import eutils_env, eutils_throttle
 from ..core.plugins import ToolCapabilities
 from ..core.process import FETCH_TIMEOUT, default_timeout, run_tool
@@ -66,15 +72,19 @@ def datasets_available() -> bool:
 
 
 def iter_pool_genomes(pool: Path) -> list[Path]:
-    """List the genome FASTA files in a pool directory."""
+    """List the genome files in a pool directory, read the way a collection is read.
+
+    Every non-hidden file is a genome, whatever its extension and gzip-compressed or
+    not, and a file that is not FASTA is an error rather than something to skip. A list
+    of accepted extensions dropped a ``.fas`` or ``.fsa`` genome in silence.
+    """
     if not pool.is_dir():
         raise UserInputError(f"Candidate pool {pool} is not a directory.")
-    genomes = sorted(
-        p for p in pool.iterdir()
-        if p.is_file() and p.suffix.lower() in {".fasta", ".fa", ".fna", ".gz"}
-    )
+    genomes = collection_genomes(pool)
     if not genomes:
-        raise UserInputError(f"Candidate pool {pool} has no FASTA genome files.")
+        raise UserInputError(f"Candidate pool {pool} has no genome files.")
+    for genome in genomes:
+        _require_fasta(genome)
     return genomes
 
 
@@ -147,6 +157,10 @@ def fetch_ncbi_virus(
     ``datasets`` CLI cannot count-limit a virus-genome download), bounding the
     downstream split/align work; a heavily sequenced taxon still downloads in full,
     so a curated ``--candidate-pool`` is preferable there.
+
+    Returns an empty list when the package holds no genomes for this scope. Whether that
+    is an error is the caller's decision: an empty RefSeq set is the case for broadening
+    to complete genomes, not for stopping the run.
     """
     if not datasets_available():
         raise UserInputError(
@@ -169,9 +183,8 @@ def fetch_ncbi_virus(
         data_dir = Path(tmp) / "ncbi_dataset" / "data"
         fna = data_dir / "genomic.fna"
         if not fna.exists():
-            raise UserInputError(
-                f"NCBI Virus returned no genomes for '{taxon}'. Try --taxon or a broader scope."
-            )
+            logger.info("NCBI Virus holds no %s genomes for '%s'.", scope, taxon)
+            return []
         labels = _lineage_labels(data_dir / "data_report.jsonl")
         write_ncbi_lineages(dest, labels)
         written = _split_fasta(fna, dest, labels, limit=limit)
@@ -331,11 +344,28 @@ def select_regional(
                 len(siblings), sibling_identity,
             )
             pool = [g for g in pool if g not in siblings]
+        elif siblings:
+            # Dropping them would empty the pool, so they stay; say so, as BLAST seeding
+            # does, rather than return a panel that looks like any other.
+            logger.warning(
+                "Every pool genome is a sibling of the query (>= %.0f%% ANI over near-full "
+                "coverage); selecting among them instead (no distinct parental lineage "
+                "found in the pool). Siblings match the query everywhere and can mask a "
+                "recombination.",
+                sibling_identity,
+            )
     # Drop genomes unrelated to the query (keep everything if the floor removes all).
     related = [g for g in pool if whole[g][0] >= ani_floor] or pool
 
     query_seq = records[0][1].replace("-", "")
     n_windows = max(1, len(query_seq) // window)
+    # Integer division gives a query between one and two windows long a single window
+    # over the whole of it, which is whole-genome selection under another name (a 2.9 kb
+    # genome at the default 1500 bp). Cut such a query into two equal halves instead.
+    split_short = n_windows == 1 and len(query_seq) > window
+    if split_short:
+        n_windows = 2
+        window = -(-len(query_seq) // 2)  # ceiling: the two halves cover the query
     selected: list[Path] = []
     table: list[dict] = []
     seen = set()
@@ -361,6 +391,18 @@ def select_regional(
                     "window": w, "query_start": start, "query_end": end,
                     "genome": strip_sequence_extension(g.name), "ani": ani[g][0],
                 })
+    if not selected and split_short:
+        # skani is a genome-scale tool and may report nothing for a half-length chunk.
+        # Fall back to the whole-query ranking the single window used to give, rather
+        # than return an empty panel for a short genome.
+        logger.info(
+            "No pool genome matched either half of the %d bp query; selecting on the "
+            "whole query instead.", len(query_seq),
+        )
+        ranked = sorted(
+            (g for g in related if whole[g][0] > 0), key=lambda g: whole[g][0], reverse=True
+        )
+        selected = ranked[:per_window]
     logger.info(
         "Regional selection: %d genome(s) cover the query across %d window(s).",
         len(selected), n_windows,

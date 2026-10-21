@@ -307,7 +307,7 @@ def build_pool(
 
         if per_clade_consensus:
             for clade, seqs in clade_tips.items():
-                if not clade or clade == "NA":
+                if clade in NON_CLADE_MARKERS:
                     continue  # untyped tips cannot form a clade consensus
                 label = re.sub(r"[^\w.]", "_", clade) + "_consensus"
                 cons = consensus_sequence(seqs).replace("-", "")  # equal-length gapped -> ungapped

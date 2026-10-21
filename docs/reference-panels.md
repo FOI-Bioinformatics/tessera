@@ -68,6 +68,9 @@ When a gap is found, `tessera find-references` searches NCBI for the missing gen
 it BLASTs the under-covered query subsequence against `nt`, reports candidate
 references (accession, identity, whether already in your collection), and -- with
 `--download` -- fetches the best new one into a collection directory to re-run with.
+Every candidate is listed in `candidate_references.tsv`; one is downloaded per gap,
+the one with the highest identity over the sub-interval it was found in (identity times
+query coverage, so a short perfect match does not outrank a hit that spans it).
 
 ```
 tessera find-references --msa msa.fasta --query my_query \
@@ -84,8 +87,10 @@ A gap longer than `--subtile` (default 400 bp) is searched in overlapping
 sub-intervals, not as one subsequence. A short divergent tract inside a longer gap is
 otherwise diluted by the gap's high-matching flanks: one whole-gap BLAST returns the
 flanks' donor and hides the tract's. (On a norovirus capsid gap this is the difference
-between recruiting only the flank reference and also recruiting the divergent core's
-distinct donor.) Resolution has two levers: `--window-size` controls whether a short
+between finding only the flank reference and also finding the divergent core's distinct
+donor. Both are listed as candidates; one reference is downloaded per gap per run, and
+`fill-references` may take another in a later round, when what remains of the gap is
+searched again.) Resolution has two levers: `--window-size` controls whether a short
 region is *detected* as a gap at all (a wide window averages it away), and `--subtile`
 controls whether its donor is *found* once detected. Set `--subtile 0` to disable;
 very short intervals (< ~150 bp) lose BLAST specificity.
@@ -102,9 +107,14 @@ tessera fill-references --query my_query.fasta \
 ```
 
 It stops when the gaps close, when no new reference can be found, or when a round no
-longer improves the worst gap (so a genuinely hypervariable region is reported, not
-chased forever). Each round is recorded in `filled/fill_summary.tsv`, and the query's
-own record is auto-excluded from its FASTA header. This needs an aligner and Entrez
+longer reduces the coverage shortfall -- the under-covered length weighted by how far
+each gap falls below the threshold -- by at least `--min-improvement` (default 0.01, a
+fraction of the previous round's shortfall), so a genuinely hypervariable region is
+reported, not chased forever. Only the `--top-gaps` longest gaps are searched each round;
+a shorter gap outside that set adds the same amount every round and does not stop the
+loop. Each round, with its `coverage_shortfall`, is recorded in
+`filled/fill_summary.tsv`, and the query's own record is auto-excluded from its FASTA
+header. This needs an aligner and Entrez
 Direct, and rebuilds the alignment every round. If the last permitted round
 (`--max-rounds`) still downloaded references, one more alignment (`final.msa.fasta`) is
 built from them without a further search, so `panel.msa.fasta` holds every reference the
@@ -194,8 +204,9 @@ For an over-represented lineage, seed from a **finite pool** instead
   dump, a subtype reference set, or a lab collection). Because the pool is finite it is
   dereplicated and the query's siblings (near-identical genome-wide) are dropped, so
   the divergent parents are no longer out-ranked. The query is then matched region by
-  region and the best-covering genomes are kept -- a focused parental panel, offline
-  and reproducible.
+  region (in windows of `--seed-window`, 1500 bp by default; a query between one and two
+  windows long is cut into two halves) and the best-covering genomes are kept -- a
+  focused parental panel, offline and reproducible.
 - `ncbi-virus` -- a taxon-scoped set fetched with the `datasets` CLI (`--taxon
   "HIV-1"`, auto-detected if omitted). By default it pulls the RefSeq representative
   set (one genome per lineage, diverse by construction); add `--source-complete` for
@@ -228,6 +239,13 @@ tessera fill-references --query q.fasta --output out/ --seed-source nextclade \
     --nextclade-dataset nextstrain/sars-cov-2/XBB
 ```
 
+`--candidate-pool` and `--nextclade`/`--nextclade-dataset` each choose where `detect` and
+`build-panel` recruit from, so giving both is refused. `--pool-consensus` applies only to
+a Nextclade pool and is refused with any other seed source, and in `fill-references`
+`--candidate-pool` needs `--seed-source local`. A candidate pool is read like a
+collection: every non-hidden file is a genome, whatever its extension, and a file that is
+not FASTA is an error.
+
 A Nextclade dataset is a clade-typing reference tree, so the pool spans clade
 representatives rather than clean recombinant-parental endpoints; it suits a broad
 screen. Single-segment datasets (most flu segments) yield segment-length pool genomes,
@@ -238,6 +256,8 @@ The sibling drop uses an absolute identity cutoff, which suits divergent-lineage
 recombinants (HIV subtypes ~12 % apart). For closely related parents that have no
 masking sibling (e.g. SARS-CoV-2 sublineages), add `--seed-keep-siblings`. NCBI Virus
 / `datasets` needs `conda install -c conda-forge ncbi-datasets-cli`.
+When every genome in the pool is a sibling, none is dropped (the pool would be empty),
+and the run logs a warning that no distinct parental lineage was found in the pool.
 
 ## Auto-diversify
 
@@ -286,8 +306,11 @@ The same curation runs inside the fill loop with `fill-references --curate`, and
 working collection holds genomes that have not been through it: the collection you
 supplied (before round 1), and each round's downloads (before the next build). A panel
 seeded from scratch is not curated before round 1, because seeding applies its own sibling
-filter. With `--reference`, that genome is never removed by curation; the sibling test
-stays anchored on the query's closest whole-genome relative, which the log names.
+filter; if no round then downloads anything (a seeded panel with no coverage gap),
+curation does not run at all. The log and the report's "Reference panel" section then say
+so, and no `panel_lineages.tsv` is written. With `--reference`, that genome is never
+removed by curation; the sibling test stays anchored on the query's closest whole-genome
+relative, which the log names.
 
 One limit: because the anchor is the closest whole-genome relative, a sibling that is
 itself the closest genome in the collection becomes the anchor and is kept. Curation then
@@ -299,6 +322,12 @@ already in the download directory are compared against but kept, and appear in
 `panel_lineages.tsv` as `sibling-kept` or `redundant-kept` if curation would otherwise
 have dropped them. Both need skani (and skDER for dereplication):
 `conda install -c bioconda skani skder`.
+
+Because one reference is downloaded per gap, a gap whose best candidate is a sibling of
+the query is left without a new reference once curation removes it; its other
+candidates are in `candidate_references.tsv`. Inside `fill-references --curate` (and
+`detect` and `build-panel`, which curate) a genome curation removes is excluded from later searches,
+and the next round takes the gap's next candidate.
 
 ## Make a collection lineage-ready (`type-lineages`)
 
@@ -317,10 +346,12 @@ is header/metadata mining only. Pass `--deep-typing` to run the full `type-linea
 the recruited references instead, so genomes that carry no clean header lineage still get a
 Nextclade nearest-neighbour or de-novo label. It writes the same `lineages.tsv` and feeds the
 lineage-aware panel selection. It is off by default because it adds a Nextclade/skani pass at
-the end of the run; it needs skani (the command errors early if skani is absent). References
-fetched from NCBI Virus are additionally tagged with the source `ncbi-datasets` -- their
+the end of the run; it needs skani (the command errors early if skani is absent). With or
+without `--deep-typing`, references fetched from NCBI Virus are typed from their
 structured datasets lineage, captured during download in an `ncbi_lineages.tsv` sidecar,
-rather than a token mined back out of the header.
+and tagged with the source `ncbi-datasets`, rather than from a token mined back out of the
+header (which loses short names such as `B.1` or `XBB`). A `--lineage-map` still takes
+precedence.
 
 ## Detect reassortment across segments (`reassort`)
 

@@ -104,3 +104,31 @@ def test_reference_tips_parses_and_picks_one_per_clade(monkeypatch, tmp_path):
     # one representative per clade; NA dropped
     assert sorted(tips.values()) == ["A.1", "B.2"]
     assert t4 not in tips
+
+
+def test_reference_tips_treat_every_non_clade_marker_as_no_clade(monkeypatch, tmp_path):
+    """nextclade.NON_CLADE_MARKERS lists four tokens that mean "no clade"; the tip parser
+    hardcoded two of them, so a tip labelled "?" became a clade named "?"."""
+    from tessera.discover.nextclade import NON_CLADE_MARKERS
+
+    labels = ["B.1", *sorted(NON_CLADE_MARKERS)]
+    tips = [tmp_path / f"t{i}.fasta" for i in range(len(labels))]
+    headers = {
+        t: f"acc{i} {label}".strip()
+        for i, (t, label) in enumerate(zip(tips, labels, strict=True))
+    }
+    for p in tips:
+        p.write_text(">x\nACGT\n")
+
+    class _DS:
+        path = "nextstrain/x"
+        tag = "2020"
+
+    monkeypatch.setattr(la, "resolve_dataset", lambda q, o, *, email, logger: _DS())
+    monkeypatch.setattr(la, "build_pool", lambda ds, *, cache_dir, logger: tips)
+    monkeypatch.setattr(la, "first_header", lambda p: headers[p])
+
+    reps = la._reference_tips(query=_g("q"), nextclade_dataset=None, email=None,
+                              cache_dir=tmp_path, logger=logging.getLogger("t"))
+
+    assert list(reps.values()) == ["B.1"]

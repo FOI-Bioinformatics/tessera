@@ -25,15 +25,6 @@ from .main import (
 )
 
 
-def _seed_source(candidate_pool, nextclade: bool, nextclade_dataset: str | None) -> str:
-    """Local pool wins, then Nextclade, then the default BLAST recruitment."""
-    if candidate_pool:
-        return "local"
-    if nextclade or nextclade_dataset:
-        return "nextclade"
-    return "blast"
-
-
 @app.command(name="build-panel")
 def build_panel(
     query: Path = typer.Option(
@@ -59,7 +50,8 @@ def build_panel(
     ),
     candidate_pool: Path | None = typer.Option(
         None, "--candidate-pool",
-        help="Use a local genome pool instead of fetching from NCBI (for mega-taxa).",
+        help="Use a local genome pool instead of fetching from NCBI (for mega-taxa). "
+        "Cannot be combined with --nextclade or --nextclade-dataset.",
     ),
     nextclade: bool = typer.Option(
         False, "--nextclade/--no-nextclade",
@@ -88,7 +80,7 @@ def build_panel(
     import os
 
     from ..aligners.base import registry as aligner_registry
-    from ..discover.iterate import FillParams, fill_references
+    from ..discover.iterate import FillParams, fill_references, seed_source_for
 
     logger = get_logger(output)
     with stage_errors(logger):
@@ -107,7 +99,7 @@ def build_panel(
             email=email or os.environ.get("NCBI_EMAIL"),
             threads=threads, cache_dir=cache_dir,
             # Same parent-recruiting preset as `detect`, but stop at the panel.
-            seed_source=_seed_source(candidate_pool, nextclade, nextclade_dataset),
+            seed_source=seed_source_for(candidate_pool, nextclade, nextclade_dataset),
             nextclade_dataset=nextclade_dataset,
             candidate_pool=candidate_pool, taxon=taxon,
             seed_mode="parents", curate=True,

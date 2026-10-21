@@ -196,8 +196,10 @@ def test_curate_after_download_keeps_the_users_own_genomes(monkeypatch, tmp_path
         logger,
     )
 
+    # One reference per gap: NEWSIB (97 % over 96 % of the gap) outranks NEW123 and is the
+    # only download; curation then removes it and leaves the user's genomes alone.
     assert sorted(p.name for p in coll.iterdir()) == [
-        "NEW123.fasta", "refA.fasta", "refB.fasta", "userC.fasta",
+        "refA.fasta", "refB.fasta", "userC.fasta",
     ]
     rows = dict(
         line.split("\t")[:2]
@@ -249,7 +251,8 @@ def test_curate_after_download_into_a_new_directory(monkeypatch, tmp_path, logge
         logger,
     )
 
-    assert sorted(p.name for p in fresh.iterdir()) == ["NEW123.fasta"]
+    # NEWSIB is the gap's one download, and curation is free to drop it.
+    assert sorted(p.name for p in fresh.iterdir()) == []
     assert sorted(p.name for p in coll.iterdir()) == ["refA.fasta"]
 
 
@@ -308,3 +311,83 @@ def test_collect_candidates_subtiling_surfaces_per_region_donors(monkeypatch, lo
     # each region's donor surfaces; SHARED appears in all tiles but is kept once
     assert {c.hit.accession for c in tiled} == {"FLANK_A", "CORE", "FLANK_C", "SHARED"}
     assert sum(c.hit.accession == "SHARED" for c in tiled) == 1
+
+
+# --- audit 4: one new reference per gap (D1) ---------------------------------------
+
+def _gap_at(start: int):
+    from tessera.recomb.coverage import CoverageGap
+
+    return CoverageGap(
+        msa_start=start, msa_end=start + 1000, query_start=start, query_end=start + 1000,
+        length_bp=1000, n_windows=10, best_label="ref", mean_best=0.8, kind="divergent",
+    )
+
+
+def _cand(gap, accession: str, identity: float, coverage: float, *, present: bool = False):
+    from tessera.discover.run import Candidate
+
+    return Candidate(gap, Hit(accession, accession, identity, coverage, 1e-9), present)
+
+
+def _recording_efetch(monkeypatch, fetched: list[str], *, failing: tuple[str, ...] = ()):
+    def fake_efetch(accession, dest, logger):
+        fetched.append(accession)
+        if accession in failing:
+            raise RuntimeError("efetch timed out")
+        path = dest / f"{accession}.fasta"
+        path.write_text(f">{accession}\nACGT\n")
+        return path
+
+    monkeypatch.setattr(discover_run, "efetch_fasta", fake_efetch)
+
+
+def test_download_takes_one_reference_per_gap(monkeypatch, tmp_path, logger):
+    """Sub-interval searches return up to --max-hits each; 40 candidates from one gap
+    used to become 40 downloads. The best new candidate per gap is fetched: identity
+    over the searched sub-interval, so a 100 % HSP over 15 % of it does not win."""
+    gap1, gap2 = _gap_at(0), _gap_at(2000)
+    candidates = [_cand(gap1, f"G1_{i:02d}", 85.0 + i * 0.1, 95.0) for i in range(40)]
+    candidates += [
+        _cand(gap2, "OLD", 99.0, 99.0, present=True),  # already in the collection
+        _cand(gap2, "SHORT", 100.0, 15.0),  # a short, perfect HSP
+        _cand(gap2, "G2_A", 91.0, 95.0),  # 86.5 over the sub-interval
+        _cand(gap2, "G2_B", 93.0, 90.0),  # 83.7 over the sub-interval
+    ]
+    fetched: list[str] = []
+    _recording_efetch(monkeypatch, fetched)
+
+    downloaded = discover_run._download(candidates, tmp_path, logger)
+
+    assert fetched == ["G1_39", "G2_A"]
+    assert [c.hit.accession for c in downloaded] == ["G1_39", "G2_A"]
+    assert [c.gap for c in downloaded] == [gap1, gap2]
+
+
+def test_download_tries_the_next_candidate_when_a_fetch_fails(monkeypatch, tmp_path, logger):
+    gap = _gap_at(0)
+    fetched: list[str] = []
+    _recording_efetch(monkeypatch, fetched, failing=("BEST",))
+
+    downloaded = discover_run._download(
+        [_cand(gap, "BEST", 95.0, 95.0), _cand(gap, "NEXT", 90.0, 95.0)], tmp_path, logger
+    )
+
+    assert fetched == ["BEST", "NEXT"]
+    assert [c.hit.accession for c in downloaded] == ["NEXT"]
+
+
+def test_a_reference_best_for_two_gaps_is_fetched_once(monkeypatch, tmp_path, logger):
+    """The second gap is served by the reference the first one fetched; it is not given
+    a further, worse reference of its own."""
+    gap1, gap2 = _gap_at(0), _gap_at(2000)
+    fetched: list[str] = []
+    _recording_efetch(monkeypatch, fetched)
+
+    discover_run._download(
+        [_cand(gap1, "SHARED", 95.0, 95.0), _cand(gap2, "SHARED", 94.0, 95.0),
+         _cand(gap2, "WORSE", 80.0, 95.0)],
+        tmp_path, logger,
+    )
+
+    assert fetched == ["SHARED"]

@@ -43,7 +43,8 @@ def detect(
     ),
     candidate_pool: Path | None = typer.Option(
         None, "--candidate-pool",
-        help="Use a local genome pool instead of fetching from NCBI (for mega-taxa).",
+        help="Use a local genome pool instead of fetching from NCBI (for mega-taxa). "
+        "Cannot be combined with --nextclade or --nextclade-dataset.",
     ),
     nextclade: bool = typer.Option(
         False, "--nextclade/--no-nextclade",
@@ -78,8 +79,9 @@ def detect(
     ),
     pool_consensus: bool = typer.Option(
         False, "--pool-consensus/--no-pool-consensus",
-        help="With a Nextclade pool, use one denoised consensus genome per clade (a "
-        "stable per-lineage reference) instead of every tree tip.",
+        help="With a Nextclade pool (--nextclade or --nextclade-dataset), use one "
+        "denoised consensus genome per clade (a stable per-lineage reference) instead of "
+        "every tree tip. Refused without a Nextclade pool.",
     ),
     organism: str | None = typer.Option(
         None, "--organism",

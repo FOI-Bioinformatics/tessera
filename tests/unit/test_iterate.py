@@ -891,3 +891,414 @@ def test_fresh_seed_clears_its_own_working_copy_on_a_rerun(monkeypatch, tmp_path
         fill_references(FillParams(query=query, collection=None, output=out), logger)
 
     assert sorted(p.name for p in (out / "collection").iterdir()) == ["S2.fasta", "other.fasta"]
+
+
+# --- audit 4: the stop test follows the gaps the loop searches (D2) -----------------
+
+def _sized_gap(start: int, length: int, mean_best: float) -> CoverageGap:
+    return CoverageGap(
+        msa_start=start, msa_end=start + length, query_start=start, query_end=start + length,
+        length_bp=length, n_windows=max(1, length // 100), best_label="refA",
+        mean_best=mean_best, kind="divergent",
+    )
+
+
+def test_stop_test_is_not_pinned_by_a_gap_the_search_never_reaches(
+    monkeypatch, tmp_path, logger
+):
+    """Three long gaps are searched every round and improve (0.70, 0.80, 0.90) without
+    clearing the 0.94 threshold, so their length does not change. A short fourth gap is
+    below --top-gaps, never searched, and stays at 0.55. The old test compared the worst
+    gap (always 0.55) and stopped after round 2; an under-covered base count would also
+    stop, because the long gaps keep their length while they improve."""
+    query, coll, out = _setup(tmp_path)
+
+    def gaps(long_best: float) -> list[CoverageGap]:
+        return [_sized_gap(0, 2000, long_best), _sized_gap(3000, 2000, long_best),
+                _sized_gap(6000, 2000, long_best), _sized_gap(9000, 200, 0.55)]
+
+    _common_mocks(monkeypatch, [
+        (gaps(0.70), 0.94), (gaps(0.80), 0.94), (gaps(0.90), 0.94), ([], 0.95),
+    ])
+    _one_new_hit_per_round(monkeypatch)
+
+    trace = fill_references(
+        FillParams(query=query, collection=coll, output=out, max_rounds=5, top_gaps=3),
+        logger,
+    )
+
+    assert [r.round for r in trace] == [1, 2, 3, 4]
+    assert trace[-1].n_gaps == 0
+    assert [r.undercovered_bp for r in trace[:3]] == [6200, 6200, 6200]
+    assert [r.shortfall for r in trace[:3]] == [1518.0, 918.0, 318.0]
+
+
+def test_fill_summary_records_the_coverage_shortfall(monkeypatch, tmp_path, logger):
+    query, coll, out = _setup(tmp_path)
+    _common_mocks(monkeypatch, [([_gap(0.84)], 0.94), ([], 0.95)])
+    _one_new_hit_per_round(monkeypatch)
+
+    fill_references(FillParams(query=query, collection=coll, output=out), logger)
+
+    header, first, _ = (out / "fill_summary.tsv").read_text().splitlines()
+    row = dict(zip(header.split("\t"), first.split("\t"), strict=True))
+    assert row["coverage_shortfall"] == "50.0"  # 500 bp x (0.94 - 0.84)
+
+
+# --- audit 4: how many genomes one round may add (D1) ------------------------------
+
+def test_a_round_adds_at_most_one_reference_per_searched_gap(monkeypatch, tmp_path, logger):
+    """Two 1000 bp gaps, each searched in four sub-intervals of 400 bp returning five
+    hits each: the real collect_candidates and _download, with BLAST and efetch mocked."""
+    from tessera.discover import run as discover_run
+
+    query, coll, out = _setup(tmp_path)
+    _common_mocks(monkeypatch, [([_sized_gap(0, 1000, 0.8), _sized_gap(2000, 1000, 0.8)],
+                                 0.94), ([], 0.95)])
+    monkeypatch.setattr(iterate, "read_fasta", lambda path: [("q", "ACGT" * 1000)])
+    calls = iter(range(1000))
+
+    def fake_blast(seq, *, max_hits, logger, email=None, cache_dir=None, **kw):
+        n = next(calls)
+        return [Hit(f"H{n}_{k}", "t", 90.0 - k, 95.0, 1e-9) for k in range(max_hits)]
+
+    fetched: list[str] = []
+
+    def fake_efetch(accession, dest, logger):
+        fetched.append(accession)
+        (dest / f"{accession}.fasta").write_text(f">{accession}\nACGT\n")
+        return dest / f"{accession}.fasta"
+
+    monkeypatch.setattr(discover_run, "blast_subsequence", fake_blast)
+    monkeypatch.setattr(discover_run, "efetch_fasta", fake_efetch)
+
+    trace = fill_references(
+        FillParams(query=query, collection=coll, output=out, top_gaps=2, max_hits=5),
+        logger,
+    )
+
+    assert next(calls) == 8  # 2 gaps x 4 sub-intervals were searched
+    assert len(trace[0].added) == 2
+    assert fetched == trace[0].added
+
+
+def test_a_download_removed_by_curation_is_excluded_and_searched_past(
+    monkeypatch, tmp_path, logger
+):
+    """With one reference per gap, the best hit for a gap is often a sibling of the query,
+    which curation then removes. The removed genome is excluded from later searches, and
+    a round built from an unchanged panel is not read as a stall: the next round
+    searches again and recruits the gap's next candidate."""
+    from tessera.discover import run as discover_run
+
+    query, coll, out = _setup(tmp_path)
+    _common_mocks(monkeypatch, [([_gap(0.80)], 0.94), ([_gap(0.80)], 0.94)])
+    excluded_per_round: list[set[str]] = []
+
+    def collect(targets, query_row, existing, *, exclude, **kw):
+        excluded_per_round.append(set(exclude))
+        hits = [] if "SIB" in exclude else [Hit("SIB", "sibling", 99.0, 98.0, 0.0)]
+        return [Candidate(targets[0], h, False)
+                for h in hits + [Hit("DONOR", "donor", 88.0, 30.0, 1e-9)]]
+
+    monkeypatch.setattr(iterate, "collect_candidates", collect)
+
+    def fake_efetch(accession, dest, logger):
+        (dest / f"{accession}.fasta").write_text(f">{accession}\nACGT\n")
+        return dest / f"{accession}.fasta"
+
+    monkeypatch.setattr(discover_run, "efetch_fasta", fake_efetch)
+    _fake_skani(monkeypatch, {"refA": (92.0, 95.0), "SIB": (99.0, 98.0),
+                              "DONOR": (88.0, 30.0)})
+
+    trace = fill_references(
+        FillParams(query=query, collection=coll, output=out, curate=True, max_rounds=2),
+        logger,
+    )
+
+    assert [r.added for r in trace] == [[], ["DONOR"]]
+    assert "SIB" not in excluded_per_round[0] and "SIB" in excluded_per_round[1]
+    assert sorted(p.name for p in (out / "collection").iterdir()) == [
+        "DONOR.fasta", "refA.fasta",
+    ]
+
+
+class _SiblingOrDonor(dict):
+    """skani table: labels starting with SIB are siblings of the query, others donors."""
+
+    def __missing__(self, key):
+        return (99.0, 98.0) if key.startswith("SIB") else (88.0, 30.0)
+
+
+def _partly_curated_run(monkeypatch, tmp_path, logger, *, max_rounds):
+    """Two gaps; each round downloads one sibling for the first (curated away) and one donor
+    for the second (kept). The gaps never improve, so the shortfall is unchanged."""
+    from tessera.discover import run as discover_run
+
+    query, coll, out = _setup(tmp_path)
+    _common_mocks(monkeypatch, [([_sized_gap(0, 1000, 0.80), _sized_gap(2000, 900, 0.80)], 0.94)]
+                   * (max_rounds + 1))
+    searches: list[int] = []
+
+    def collect(targets, query_row, existing, *, exclude, **kw):
+        n = len(searches)
+        searches.append(n)
+        return [Candidate(targets[0], Hit(f"SIB{n}", "sibling", 99.0, 98.0, 0.0), False),
+                Candidate(targets[1], Hit(f"DONOR{n}", "donor", 88.0, 30.0, 1e-9), False)]
+
+    monkeypatch.setattr(iterate, "collect_candidates", collect)
+
+    def fake_efetch(accession, dest, logger):
+        (dest / f"{accession}.fasta").write_text(f">{accession}\nACGT\n")
+        return dest / f"{accession}.fasta"
+
+    monkeypatch.setattr(discover_run, "efetch_fasta", fake_efetch)
+    _fake_skani(monkeypatch, _SiblingOrDonor({"refA": (92.0, 95.0)}))
+    trace = fill_references(
+        FillParams(query=query, collection=coll, output=out, curate=True,
+                   max_rounds=max_rounds, top_gaps=2),
+        logger,
+    )
+    return trace, searches
+
+
+def test_a_partly_curated_round_is_not_read_as_a_stall(monkeypatch, tmp_path, logger):
+    """Round 1 downloads two references and curation removes one of them. The next round's
+    unchanged shortfall reflects a panel that lacks the removed reference's replacement, so
+    it does not stop the loop."""
+    trace, searches = _partly_curated_run(monkeypatch, tmp_path, logger, max_rounds=2)
+
+    assert searches == [0, 1]  # round 2 searched again instead of stopping
+    assert trace[0].added == ["DONOR0"]
+
+
+def test_consecutive_partly_curated_rounds_still_stop_at_max_rounds(
+    monkeypatch, tmp_path, logger
+):
+    trace, searches = _partly_curated_run(monkeypatch, tmp_path, logger, max_rounds=4)
+
+    assert [r.round for r in trace] == [1, 2, 3, 4]
+    assert searches == [0, 1, 2, 3]
+
+
+# --- audit 4: saturation needs a kept hit (D4) -------------------------------------
+
+@pytest.mark.parametrize(
+    ("hit", "exclude"),
+    [(Hit("OWN", "the query's own record", 99.9, 99.0, 0.0), set()),  # a self-hit
+     (Hit("BAD1", "excluded by the user", 97.0, 98.0, 0.0), {"BAD1"})],  # --exclude
+)
+def test_windowed_seeding_is_not_saturated_when_every_hit_was_filtered(
+    monkeypatch, tmp_path, logger, hit, exclude
+):
+    """Every search returned something, and the filters removed all of it. Nothing was
+    kept, so nothing says the query's lineage saturates NCBI; reporting saturation would
+    start a negative-lineage sweep and a whole-taxon download on a false explanation."""
+    monkeypatch.setattr(iterate, "blast_subsequence", lambda seq, **k: [hit])
+    params = FillParams(query=tmp_path / "q.fasta", collection=None, output=tmp_path / "o",
+                        seed_window=100)
+
+    windowed = iterate._seed_windowed("A" * 300, params, exclude, logger, drop_siblings=True)
+    whole = iterate._seed_whole("A" * 300, params, exclude, logger)
+
+    assert windowed == ([], False)
+    assert whole == ([], False)  # the whole-query seeder already got this right
+
+
+def test_windowed_seeding_is_saturated_when_every_kept_hit_is_a_sibling(
+    monkeypatch, tmp_path, logger
+):
+    """Guard (passes before and after): the true saturation case still reports it."""
+    monkeypatch.setattr(iterate, "blast_subsequence",
+                        lambda seq, **k: [Hit("SIB", "sibling", 98.0, 99.0, 0.0)])
+    params = FillParams(query=tmp_path / "q.fasta", collection=None, output=tmp_path / "o",
+                        seed_window=100)
+
+    _, saturated = iterate._seed_windowed("A" * 300, params, set(), logger, drop_siblings=True)
+
+    assert saturated is True
+
+
+# --- audit 4: zero RefSeq genomes broaden (D5) -------------------------------------
+
+def _fake_datasets(monkeypatch, *, refseq: int, complete: int) -> list[list[str]]:
+    """Stand in for the datasets CLI: write a package holding ``refseq`` or ``complete``
+    genomes. A package with none carries no genomic.fna, as datasets writes it."""
+    import zipfile
+
+    from tessera.discover import pool as pool_mod
+
+    commands: list[list[str]] = []
+
+    def fake_run_tool(tool, command, **kwargs):
+        commands.append(command)
+        n = refseq if "--refseq" in command else complete
+        with zipfile.ZipFile(command[command.index("--filename") + 1], "w") as zf:
+            zf.writestr("ncbi_dataset/data/data_report.jsonl", "")
+            if n:
+                zf.writestr("ncbi_dataset/data/genomic.fna",
+                            "".join(f">G{i}.1 some virus\nACGT\n" for i in range(n)))
+
+    monkeypatch.setattr(pool_mod, "datasets_available", lambda: True)
+    monkeypatch.setattr(pool_mod, "run_tool", fake_run_tool)
+    monkeypatch.setattr(pool_mod.eutils_throttle, "wait", lambda logger: None)
+    return commands
+
+
+def test_a_taxon_with_no_refseq_genome_broadens_to_complete_genomes(
+    monkeypatch, tmp_path, logger
+):
+    commands = _fake_datasets(monkeypatch, refseq=0, complete=50)
+    out = tmp_path / "o"
+    out.mkdir()
+    params = FillParams(query=tmp_path / "q.fasta", collection=None, output=out,
+                        taxon="Some virus", cache_dir=tmp_path / "cache")
+
+    genomes = iterate._fetch_diverse(params, logger)
+
+    assert len(genomes) == 50
+    assert ["--refseq" in c for c in commands] == [True, False]
+
+
+def test_a_taxon_with_no_genome_at_all_is_a_clear_error_and_caches_nothing(
+    monkeypatch, tmp_path, logger
+):
+    _fake_datasets(monkeypatch, refseq=0, complete=0)
+    out = tmp_path / "o"
+    out.mkdir()
+    params = FillParams(query=tmp_path / "q.fasta", collection=None, output=out,
+                        taxon="Some virus", cache_dir=tmp_path / "cache")
+
+    with pytest.raises(UserInputError, match="NCBI Virus returned no genomes"):
+        iterate._fetch_diverse(params, logger)
+
+    cache_root = tmp_path / "cache" / "ncbi_virus"
+    assert not cache_root.exists() or not any(p.is_dir() for p in cache_root.iterdir())
+
+
+# --- audit 4: the default typing path reads the lineage sidecar (D3) ---------------
+
+def test_default_and_deep_typing_agree_on_a_sidecar_typed_panel(tmp_path, logger):
+    """Recruitment records each NCBI Virus genome's exact lineage in
+    <output>/ncbi_lineages.tsv. Only the deep branch read it; the default branch mined
+    the headers again with a rule that needs a digit-bearing token of four characters or
+    more, so B.1, A and XBB were lost and those genomes skipped lineage-aware handling."""
+    coll = tmp_path / "collection"
+    coll.mkdir()
+    lineages = {"OQ1.1": "B.1", "OQ2.1": "A", "OQ3.1": "XBB"}
+    for acc, lineage in lineages.items():
+        (coll / f"{acc}.fasta").write_text(f">{acc} {lineage}\nACGT\n")
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "ncbi_lineages.tsv").write_text(
+        "".join(f"{acc}\t{lin}\n" for acc, lin in lineages.items())
+        + "NOTINPANEL.1\tBA.2\n"  # fetched, not selected: must not reach lineages.tsv
+    )
+    query = tmp_path / "q.fasta"
+    query.write_text(">q\nACGT\n")
+
+    def typed(deep: bool) -> dict[str, str]:
+        params = FillParams(query=query, collection=None, output=out, deep_typing=deep)
+        lineage_map, _ = iterate._type_panel(params, coll, "q", logger)
+        return lineage_map
+
+    default = typed(False)
+    assert default == lineages
+    assert typed(True) == default
+    assert "NOTINPANEL" not in (out / "lineages.tsv").read_text()
+
+
+def test_a_user_lineage_map_still_overrides_the_sidecar_on_the_default_path(tmp_path, logger):
+    """Priority stays user map > NCBI datasets lineage > mined header."""
+    coll = tmp_path / "collection"
+    coll.mkdir()
+    (coll / "OQ1.1.fasta").write_text(">OQ1.1 B.1\nACGT\n")
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "ncbi_lineages.tsv").write_text("OQ1.1\tB.1\n")
+    user_map = tmp_path / "mine.tsv"
+    user_map.write_text("OQ1.1\tB.1.617.2\n")
+    query = tmp_path / "q.fasta"
+    query.write_text(">q\nACGT\n")
+
+    params = FillParams(query=query, collection=None, output=out, lineage_map=user_map)
+    lineage_map, _ = iterate._type_panel(params, coll, "q", logger)
+
+    assert lineage_map == {"OQ1.1": "B.1.617.2"}
+
+
+
+# --- audit 4: a requested curation that never ran is reported (D6) -----------------
+
+def test_a_requested_curation_that_never_ran_is_reported(monkeypatch, tmp_path, caplog):
+    """A freshly seeded panel is not curated before round 1, and a panel with no
+    coverage gap downloads nothing, so curation never runs. The report used to drop its
+    panel section and the log said nothing, which reads as "curated, nothing to drop"."""
+    import logging
+
+    query = tmp_path / "q.fasta"
+    query.write_text(">q\n" + "ACGT" * 100 + "\n")
+    out = tmp_path / "out"
+    _common_mocks(monkeypatch, [([], 0.95)])
+    monkeypatch.setattr(iterate, "skani_available", lambda: True)
+
+    def seed(params, collection, query_records, exclude, logger):
+        for name in ("S1", "S2"):
+            (collection / f"{name}.fasta").write_text(f">{name}\nACGT\n")
+
+    monkeypatch.setattr(iterate, "_seed_collection", seed)
+    sections: dict = {}
+    monkeypatch.setattr(iterate, "run_recomb", lambda p, logger, **kw: sections.update(kw))
+    log = logging.getLogger("fill_loop_test")
+    with caplog.at_level(logging.WARNING, logger="fill_loop_test"):
+        fill_references(FillParams(query=query, collection=None, output=out, curate=True), log)
+
+    assert "Curation (--curate) was requested but did not run" in caplog.text
+    body = dict(sections["extra_sections"])["Reference panel"]
+    assert "was requested but did not run" in body
+    assert not (out / "panel_lineages.tsv").exists()
+
+
+def test_no_curation_note_when_curation_was_not_requested(monkeypatch, tmp_path, logger):
+    """Guard (passes before and after): without --curate there is no panel section."""
+    query, coll, out = _setup(tmp_path)
+    _common_mocks(monkeypatch, [([], 0.95)])
+    sections: dict = {}
+    monkeypatch.setattr(iterate, "run_recomb", lambda p, logger, **kw: sections.update(kw))
+
+    fill_references(FillParams(query=query, collection=coll, output=out), logger)
+
+    assert "Reference panel" not in dict(sections["extra_sections"])
+
+
+# --- audit 4: --fetch-limit is not part of the cache key (D8) ----------------------
+
+def test_fetch_limit_does_not_split_the_cache(monkeypatch, tmp_path, logger):
+    """--fetch-limit only sets when a notice is logged; the full set is downloaded either
+    way (docs/reference-panels.md, and the option's help). As a cache-key field it forced a
+    full re-download of an identical genome set whenever the value changed."""
+    from tessera.discover import pool as pool_mod
+
+    calls = {"fetch": 0}
+
+    def fake_fetch(taxon, d, *, refseq=True, complete_only=False, released_after=None,
+                   limit=None, logger):
+        calls["fetch"] += 1
+        written = []
+        for i in range(4):
+            p = d / f"G{i}.fasta"
+            p.write_text(">x\nA\n")
+            written.append(p)
+        return written
+
+    monkeypatch.setattr(pool_mod, "fetch_ncbi_virus", fake_fetch)
+    out = tmp_path / "o"
+    out.mkdir()
+    common = {"query": tmp_path / "q.fasta", "collection": None, "output": out,
+              "taxon": "SARS-CoV-2", "cache_dir": tmp_path / "cache"}
+
+    first = iterate._fetch_diverse(FillParams(fetch_limit=2000, **common), logger)
+    second = iterate._fetch_diverse(FillParams(fetch_limit=5, **common), logger)
+
+    assert calls["fetch"] == 1
+    assert [p.name for p in second] == [p.name for p in first]

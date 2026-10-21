@@ -247,3 +247,72 @@ def test_type_lineages_rejects_a_file_that_is_not_fasta(tmp_path: Path, no_pipel
         "type-lineages", "--collection", str(collection), "--output", str(tmp_path / "out"),
     ])
     _rejected(result, "does not look like a FASTA file")
+
+
+@pytest.mark.parametrize("value", ["-0.1", "1.5"])
+def test_fill_references_rejects_a_min_improvement_outside_zero_one(
+    tmp_path: Path, no_pipeline, value: str
+) -> None:
+    """--min-improvement is a fraction of the previous round's coverage shortfall."""
+    result = runner.invoke(app, [
+        "fill-references", "--query", str(_query(tmp_path)), "--output", str(tmp_path / "out"),
+        "--min-improvement", value,
+    ])
+    _rejected(result, "Invalid --min-improvement")
+
+
+# --- seed-source options that cannot act together (audit 4, E5) ------------------
+
+@pytest.mark.parametrize("command", ["detect", "build-panel"])
+@pytest.mark.parametrize(
+    "nextclade_args",
+    [["--nextclade"], ["--nextclade-dataset", "nextstrain/sars-cov-2/XBB"]],
+)
+def test_a_candidate_pool_and_a_nextclade_request_are_refused_together(
+    tmp_path: Path, no_pipeline, command: str, nextclade_args: list[str]
+) -> None:
+    """Both choose where the panel is recruited from. The pool used to win in silence,
+    so a run asked to use Nextclade clades used the pool and did not say so."""
+    pool_dir = tmp_path / "pool"
+    pool_dir.mkdir()
+    result = runner.invoke(app, [
+        command, "--query", str(_query(tmp_path)), "--output", str(tmp_path / "out"),
+        "--candidate-pool", str(pool_dir), *nextclade_args,
+    ])
+    _rejected(result, "--candidate-pool and --nextclade/--nextclade-dataset")
+
+
+@pytest.mark.parametrize(
+    ("command", "args"),
+    [("detect", []),
+     ("detect", ["--candidate-pool", "POOL"]),
+     ("fill-references", ["--seed-source", "local", "--candidate-pool", "POOL"]),
+     ("fill-references", ["--seed-source", "ncbi-virus"])],
+)
+def test_pool_consensus_without_a_nextclade_pool_is_refused(
+    tmp_path: Path, no_pipeline, command: str, args: list[str]
+) -> None:
+    """--pool-consensus acts only on a Nextclade pool; under any other seed source it
+    did nothing and the run looked like one that had used it."""
+    pool_dir = tmp_path / "pool"
+    pool_dir.mkdir()
+    args = [str(pool_dir) if a == "POOL" else a for a in args]
+    result = runner.invoke(app, [
+        command, "--query", str(_query(tmp_path)), "--output", str(tmp_path / "out"),
+        "--pool-consensus", *args,
+    ])
+    _rejected(result, "--pool-consensus")
+
+
+def test_fill_references_refuses_a_candidate_pool_under_another_seed_source(
+    tmp_path: Path, no_pipeline
+) -> None:
+    """fill-references reads --candidate-pool only with --seed-source local; without it
+    the default BLAST seeding ran and the pool was ignored."""
+    pool_dir = tmp_path / "pool"
+    pool_dir.mkdir()
+    result = runner.invoke(app, [
+        "fill-references", "--query", str(_query(tmp_path)), "--output", str(tmp_path / "out"),
+        "--candidate-pool", str(pool_dir),
+    ])
+    _rejected(result, "--seed-source local")
