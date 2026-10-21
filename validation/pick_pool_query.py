@@ -23,17 +23,18 @@ from pathlib import Path
 from tessera.recomb.typing import is_recombinant_lineage, pool_labels
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("pool", type=Path, help="a cached Nextclade or NCBI Virus pool directory")
-    ap.add_argument("--min-clade-size", type=int, default=5,
-                    help="skip clades with fewer tips than this (default 5)")
-    args = ap.parse_args()
+def choose_query(
+    pool: Path, min_clade_size: int = 5
+) -> tuple[Path, str, int] | None:
+    """``(path, clade, clade size)`` of the first qualifying tip, or ``None``.
 
-    files = sorted(args.pool.glob("*.fasta"))
+    Deterministic: tips are considered in sorted order, so the same pool always
+    yields the same query. Shared with ``run_pool_specificity.py``, which needs the
+    identical choice to keep its runs comparable between invocations.
+    """
+    files = sorted(pool.glob("*.fasta"))
     if not files:
-        print(f"no genomes in {args.pool}", file=sys.stderr)
-        return 2
+        return None
 
     labels = pool_labels(files)  # sentinels and composites are already left out
     sizes = collections.Counter(labels.values())
@@ -41,13 +42,30 @@ def main() -> int:
 
     for stem in sorted(labels):
         clade = labels[stem]
-        if is_recombinant_lineage(clade) or sizes[clade] < args.min_clade_size:
+        if is_recombinant_lineage(clade) or sizes[clade] < min_clade_size:
             continue
-        print(f"{path_of[stem]}\t{clade}\t{sizes[clade]}")
-        return 0
+        return path_of[stem], clade, sizes[clade]
+    return None
 
-    print(f"no unrecombined tip in {args.pool}", file=sys.stderr)
-    return 1
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("pool", type=Path, help="a cached Nextclade or NCBI Virus pool directory")
+    ap.add_argument("--min-clade-size", type=int, default=5,
+                    help="skip clades with fewer tips than this (default 5)")
+    args = ap.parse_args()
+
+    if not sorted(args.pool.glob("*.fasta")):
+        print(f"no genomes in {args.pool}", file=sys.stderr)
+        return 2
+
+    picked = choose_query(args.pool, args.min_clade_size)
+    if picked is None:
+        print(f"no unrecombined tip in {args.pool}", file=sys.stderr)
+        return 1
+    path, clade, size = picked
+    print(f"{path}\t{clade}\t{size}")
+    return 0
 
 
 if __name__ == "__main__":

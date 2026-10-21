@@ -83,6 +83,77 @@ replicate counts carry real sampling error -- hence the intervals. These numbers
 establish whether a failure mode exists and roughly how large it is, not its exact
 magnitude on real panels.
 
+## Specificity on real genomes, offline (`run_pool_specificity.py`)
+
+`run_specificity.py` has exact ground truth but simulated sequences. This harness asks
+the same question of real ones: the query is a tip taken from a cached Nextclade
+reference tree whose label is a clade in its own right -- not a sentinel meaning "no
+clade", not a composite of two other clades, not a recombinant-named lineage -- so it is
+a single sampled genome rather than a mosaic, and a region reported on it is a false
+positive. The tip is chosen by `pick_pool_query.py`, deterministically, so repeat runs
+compare.
+
+It needs **no network**, which is the point, and that is enforced rather than assumed:
+both proxies are pointed at a closed local port in the child environment, so an attempt
+to reach NCBI is refused in milliseconds instead of stalling. Two things make that
+necessary, both learned the hard way:
+
+- `--nextclade-dataset` fetches the dataset index over the network *before* it consults
+  the cache, so the pool is passed as `--candidate-pool <directory>` instead;
+- `--max-rounds 1` does **not** prevent the fill: the search runs inside round one
+  whenever a coverage gap remains. Only a panel that leaves no gap stays local.
+
+So a pool whose panel does not cover its own query cannot be scored, and is reported as
+**not testable** -- an untested absence, neither a pass nor a failure. That is a result
+in itself: it says selection could not build a covering panel from that pool.
+
+| verdict | meaning |
+|---|---|
+| `PASS` | converged offline, no region called on the clonal tip |
+| `CALL` | converged offline, but a region was called -- inspect it |
+| `NOT TESTABLE` | the panel left a coverage gap, so the run needed the network |
+| `SKIP` | no tip whose clade is its own and large enough (e.g. an all-recombinant pool such as `sars-cov-2/XBB`) |
+
+Exit status is 1 when a testable pool reports a region. A `CALL` is for inspection
+rather than proof of a defect: real populations do recombine, so a tip can carry a
+genuine event.
+
+```
+export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"   # append; mafft + skder
+python validation/run_pool_specificity.py
+python validation/run_pool_specificity.py --pools rubella,ebov    # a subset
+python validation/run_pool_specificity.py --keep /tmp/poolspec    # keep the outputs
+```
+
+Observed on eight cached pool entries (2026-10-21). A dataset can be cached more than
+once under different cache keys, and those entries differ in content, so they are listed
+separately:
+
+| pool entry | query | clade | refs | verdict |
+|---|---|---|---|---|
+| `enterovirus/ev-d68` | AB601884 | C | 2 | PASS |
+| `enterovirus/ev-d68` (2nd entry) | AB601882 | C | 5 | PASS |
+| `rubella/genome` | AB285129 | 1J | 5 | PASS |
+| `orthoebolavirus/ebov` | PP_000LDGG | Ebov-2007 | 6 | PASS |
+| `mpox/all-clades` | NC_063383 | IIb | 4 | **CALL, 2 regions** |
+| `mpox/all-clades` (2nd entry) | PP_000SPJP | Ia | 1 | NOT TESTABLE |
+| `measles/genome/WHO-2012` | AB481087 | D3 | 1 | NOT TESTABLE |
+| `mumps/genome` | AB000386 | B | 1 | NOT TESTABLE |
+| `sars-cov-2/XBB` | -- | -- | -- | SKIP |
+
+The `CALL` is worth reading closely rather than filing. Both regions are long (27.4 kbp
+and 12.4 kbp) but rest on a very small margin on a near-identical panel: the minor parent
+matches at 0.9998 and 0.9999 against the major parent's 0.9995 and 0.9993, a separation
+in the fourth decimal, which on 27 kbp is a handful of sites. That is the regime issues
+\#81 and \#82 concern, and it is why the verdict is `CALL` and not `FAIL`.
+
+The three NOT TESTABLE entries all seeded a **single reference**, which cannot cover a
+query, so round one went to the fill. That is a selection result, not a scan result.
+
+Runtime is seconds to a minute per testable pool; a not-testable one costs minutes of
+refused retries before it gives up, and an mpox entry spends roughly 13 minutes in
+selection alone.
+
 ## Regimes the other harnesses do not sample
 
 `run_regimes.py` simulates situations that fall outside `run_specificity.py`, whose

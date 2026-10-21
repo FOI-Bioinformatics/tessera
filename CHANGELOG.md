@@ -6,6 +6,23 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Validation: an offline false-positive control on real genomes
+
+- **`validation/run_pool_specificity.py`.** `run_specificity.py` has exact ground truth
+  but simulated sequences; this asks the same question of real ones. The query is a tip
+  from a cached Nextclade reference tree whose label is a clade in its own right, so it
+  is a single sampled genome and a region reported on it is a false positive. It needs no
+  network, and that is enforced rather than assumed: both proxies are pointed at a closed
+  local port, so an attempt to reach NCBI is refused in milliseconds instead of stalling.
+  Two findings made that necessary. `--nextclade-dataset` fetches the dataset index over
+  the network *before* consulting the cache, so the pool is passed as `--candidate-pool`
+  instead; and `--max-rounds 1` does not prevent the fill, because the search runs inside
+  round one whenever a coverage gap remains. A pool whose panel cannot cover its own query
+  is therefore reported as **not testable** -- an untested absence, neither a pass nor a
+  failure -- rather than being counted or quietly dropped.
+- **`pick_pool_query.py` exposes `choose_query`**, so the chooser is shared with the new
+  harness instead of duplicated; its command-line behaviour is unchanged.
+
 ### Test data: the gap-degraded major parent
 
 - **A fixture for the false positive behind issues #81 and #82.**
