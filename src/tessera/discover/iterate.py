@@ -30,7 +30,12 @@ from ..core.io import (
     strip_sequence_extension,
 )
 from ..msa.build import MsaParams, build_msa, provenance_path
-from ..recomb.coverage import CoverageGap, CoverageParams, call_coverage_gaps
+from ..recomb.coverage import (
+    CoverageGap,
+    CoverageParams,
+    call_coverage_gaps,
+    search_targets,
+)
 from ..recomb.pango import crosscheck_html, expand_recombinant, load_alias_key
 from ..recomb.regions import DEFAULT_METHODS
 from ..recomb.run import RecombParams, run_recomb
@@ -482,7 +487,11 @@ def _grow_collection(
             str(msa), query_label,
             window_size=params.window_size, window_step=params.window_step,
         )
-        gaps, threshold = call_coverage_gaps(result, params.window_size, cov)
+        found, threshold = call_coverage_gaps(result, params.window_size, cov)
+        # Local identity dips are stretches the panel already covers closely; they are
+        # not candidates to recruit, and the loop must not keep searching for them
+        # (issue #82).
+        gaps = search_targets(found)
         undercovered = sum(max(0, g.query_end - g.query_start) for g in gaps)
         worst = min((g.mean_best for g in gaps), default=1.0)
         shortfall = coverage_shortfall(gaps, threshold)

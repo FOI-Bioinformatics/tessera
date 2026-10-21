@@ -6,6 +6,46 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Reference coverage on a panel that is nearly identical to the query (issue #82)
+
+- **The best-similarity threshold could not resolve a low-divergence panel.** It is the
+  query's typical best match less `--coverage-rel-drop`, so a panel whose members all
+  sit within a percent of the query put it below every similarity the panel shows: no
+  window could reach it and no stretch was ever reported. The mpox run behind issues #81
+  and #82 recorded a threshold of 0.9500 against a minimum best similarity of 0.9950 and
+  an empty `coverage_gaps.tsv`, although two loci there are locally misaligned. When the
+  fixed drop is vacuous in this way the threshold now falls back to the panel's own
+  spread of best similarities, and never finer than two mismatches over the comparable
+  bases a window carries -- the smallest identity difference a window can resolve. The
+  fallback is bounded by `--coverage-rel-drop`, so it only ever tightens a threshold that
+  could not resolve anything; a panel the fixed standard already resolves is untouched.
+  Being unreachable is not sufficient: on any well-covered panel the worst window may sit
+  above the standard, which is a legitimate negative rather than a vacuous threshold, so
+  the fallback also requires the closest reference to be within one percent of a perfect
+  match across the genome. Measured on five cached panels, the three where the fixed drop
+  carries no information sit 0.0000 to 0.0010 from a perfect match, and the two where it
+  is merely never reached sit 0.0408 and 0.0670; without this condition the rubella and
+  enterovirus pools each gained a stretch that main does not report.
+- **A new `kind`, `local_dip`, for what the fallback finds.** Such a stretch sits above
+  the fixed standard: the closest reference matches it less well than it does elsewhere
+  but still closely, which is a local identity dip and usually a locally poor alignment,
+  not an absent reference. At 99.7 % identity nothing is missing, so a `local_dip` is
+  reported in `coverage_gaps.tsv` and given its own note in the report and the console,
+  is never counted in the missing-reference headline, is never bridged into a
+  donor-absent region, and is labelled "local dip" rather than "low coverage" on the
+  plot.
+- **Recruitment leaves a local dip alone.** `find-references` and the `fill-references`
+  loop treated every gap as a genome to go and find, so the tighter threshold would have
+  sent them searching NCBI for a reference that is already in the panel. Both now skip
+  this kind, and the fill loop converges on a near-identical panel as before.
+- **`donor_undercovered` is unchanged.** It states that a region's donor may be a
+  stand-in for an absent one, which is an absolute question, so it stays judged against
+  the fixed standard rather than the fallback. No region call, coordinate, p-value or
+  flag changes; a donor 99.7 % identical to the query is not reported as a poor match.
+- **Not addressed here:** the second half of issue #82, a coverage flag that describes
+  the major parent rather than the donor, and the false region of issue #81 itself. The
+  strict `xfail` for the first half comes off; the one for #81 stays red.
+
 ### Python 3.12 is the floor
 
 - **`requires-python` is now `>=3.12`** (it was `>=3.11`), with the 3.11 classifier

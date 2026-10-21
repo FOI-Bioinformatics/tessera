@@ -12,7 +12,13 @@ from math import isnan
 from pathlib import Path
 
 from .analyze import AnalysisResult, stats_sort_key, winner_label
-from .coverage import BREAKPOINT_KIND, DIVERGENT_KIND, LOW_INFORMATION_KIND, CoverageGap
+from .coverage import (
+    BREAKPOINT_KIND,
+    DIVERGENT_KIND,
+    LOCAL_DIP_KIND,
+    LOW_INFORMATION_KIND,
+    CoverageGap,
+)
 from .diagnostics import RecombinationSignal
 from .regions import Region
 from .similarity import WindowSimilarity
@@ -156,6 +162,10 @@ def print_coverage(gaps: list[CoverageGap], threshold: float, echo=print) -> Non
     if any(g.kind == LOW_INFORMATION_KIND for g in gaps):
         echo("  low_information = too few comparable bases to judge (e.g. an unsequenced "
              "stretch); not evidence of a missing reference.")
+    if any(g.kind == LOCAL_DIP_KIND for g in gaps):
+        echo("  local_dip = the closest reference matches this stretch less well than it "
+             "does elsewhere, but still matches it closely; usually a locally poor "
+             "alignment rather than a gap in the panel.")
     if any(g.kind == BREAKPOINT_KIND for g in gaps):
         echo("  breakpoint = windows beside a called breakpoint that a single switch "
              "between the region's two parents explains (not a missing reference).")

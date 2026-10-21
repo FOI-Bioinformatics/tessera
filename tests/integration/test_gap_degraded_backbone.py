@@ -19,7 +19,11 @@ from pathlib import Path
 import pytest
 
 from tessera.recomb.analyze import analyze
-from tessera.recomb.coverage import CoverageParams, call_coverage_gaps
+from tessera.recomb.coverage import (
+    LOCAL_DIP_KIND,
+    CoverageParams,
+    call_coverage_gaps,
+)
 from tessera.recomb.regions import RegionParams, call_regions
 from tessera.recomb.similarity import compute_similarity
 
@@ -98,23 +102,27 @@ def test_clonal_query_yields_no_region(tmp_path: Path, seed: int) -> None:
     assert regions == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="issue #82: neither coverage gaps nor donor_undercovered see the locus",
-)
 def test_the_degraded_locus_is_flagged(tmp_path: Path) -> None:
-    """Something should mark the locus as poorly covered rather than recombinant.
+    """Something marks the locus rather than letting it pass unremarked.
 
-    Fails today on both available flags, which is issue #82: ``best_sim`` is the
-    maximum over all references, so an intact competitor at the locus keeps the
-    window above the threshold, and ``donor_undercovered`` inspects only the minor
-    parent, which here is the undegraded one.
+    Issue #82, first half: the best-similarity threshold was a fixed drop below the
+    query's typical best match. On a panel this close that landed below every value
+    the panel shows, so no window could reach it, the gaps table was empty, and the
+    false region of issue #81 reached the report with nothing attached. The
+    threshold now falls back to the panel's own scale when the fixed one cannot
+    resolve anything, and the locus is reported.
+
+    It is reported as a local dip, not as a possible missing reference: the closest
+    reference over the locus still matches the query closely, since an intact
+    competitor covers the columns the nearest reference lost. The second half of
+    #82 -- a flag that describes the major parent rather than the donor -- is not
+    addressed here, so ``donor_undercovered`` still speaks only of the donor.
     """
     msa = make_gap_degraded_msa(seed=1)
-    result, regions, _ = _scan(tmp_path, msa)
+    result, _, _ = _scan(tmp_path, msa)
     lo, hi = msa.locus
     gaps, _ = call_coverage_gaps(result, WINDOW, CoverageParams.with_defaults(WINDOW))
 
-    assert [g for g in gaps if g.msa_start < hi and g.msa_end > lo] or any(
-        r.donor_undercovered for r in regions
-    )
+    overlapping = [g for g in gaps if g.msa_start < hi and g.msa_end > lo]
+    assert overlapping
+    assert {g.kind for g in overlapping} == {LOCAL_DIP_KIND}

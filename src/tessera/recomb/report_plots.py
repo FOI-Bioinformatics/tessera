@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from .coverage import CoverageGap
+from .coverage import LOCAL_DIP_KIND, CoverageGap
 from .regions import Region
 from .similarity import WindowSimilarity
 
@@ -179,6 +179,15 @@ def plot_pairwise(
     return out
 
 
+def _gap_annotation(gap: CoverageGap) -> str:
+    """What to call a shaded coverage stretch on the plot.
+
+    A local dip is not poor coverage: the closest reference still matches it closely,
+    and it is the local alignment quality that is low (issue #82).
+    """
+    return "local dip" if gap.kind == LOCAL_DIP_KIND else "low coverage"
+
+
 def build_interactive_figure(
     result: WindowSimilarity, datasets: list[str], regions: list[Region],
     coverage_gaps: list[CoverageGap] | None = None,
@@ -200,7 +209,7 @@ def build_interactive_figure(
         fig.add_vrect(
             x0=gap.msa_start, x1=gap.msa_end,
             fillcolor="#94a3b8", opacity=0.18, line_width=0, layer="below",
-            annotation_text="low coverage", annotation_position="bottom left",
+            annotation_text=_gap_annotation(gap), annotation_position="bottom left",
             annotation_font_size=10, annotation_font_color="#5b6573",
         )
     seen: set[str] = set()

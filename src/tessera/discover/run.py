@@ -14,7 +14,12 @@ from pathlib import Path
 
 from ..core.errors import UserInputError
 from ..core.io import collection_genomes, read_fasta, strip_sequence_extension
-from ..recomb.coverage import CoverageGap, CoverageParams, call_coverage_gaps
+from ..recomb.coverage import (
+    CoverageGap,
+    CoverageParams,
+    call_coverage_gaps,
+    search_targets,
+)
 from ..recomb.similarity import compute_similarity
 from .blast import BlastError, Hit, blast_subsequence
 from .fetch import efetch_available, efetch_fasta
@@ -72,8 +77,17 @@ def find_references(params: FindRefParams, logger: logging.Logger) -> list[Candi
     cov = CoverageParams.with_defaults(
         params.window_size, floor=params.coverage_floor, rel_drop=params.coverage_rel_drop,
     )
-    gaps, threshold = call_coverage_gaps(result, params.window_size, cov)
+    found, threshold = call_coverage_gaps(result, params.window_size, cov)
+    # A local identity dip is a stretch the panel already covers closely, so there is
+    # no reference to go and find for it (issue #82).
+    gaps = search_targets(found)
     logger.info("Coverage threshold %.3f; %d under-covered region(s).", threshold, len(gaps))
+    if len(found) > len(gaps):
+        logger.info(
+            "Leaving %d local identity dip(s) alone: the closest reference there still "
+            "matches the query closely, so nothing is missing to search for.",
+            len(found) - len(gaps),
+        )
 
     params.output.mkdir(parents=True, exist_ok=True)
     if not gaps:
