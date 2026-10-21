@@ -16,9 +16,11 @@ from .analyze import analyze, winners_per_window
 from .clusters import lineage_clusters
 from .coverage import (
     DIVERGENT_KIND,
+    LOCAL_DIP_KIND,
     LOW_INFORMATION_KIND,
     CoverageParams,
     call_coverage_gaps,
+    coverage_levels,
     flag_undercovered_regions,
     gaps_as_regions,
     mark_breakpoint_gaps,
@@ -564,7 +566,13 @@ def run_recomb(
     coverage_gaps, coverage_threshold = call_coverage_gaps(
         bp_result, params.window_size, coverage_params
     )
-    flag_undercovered_regions(regions, coverage_threshold)
+    # The region caveat is a statement about a donor being *absent*, which is an
+    # absolute question, so it is judged against the fixed standard rather than the
+    # threshold the gaps were found with. On a near-identical panel the latter falls
+    # back to the panel's own scale (issue #82), where a donor 99.7 % identical to the
+    # query would otherwise be reported as a possible stand-in for a missing one.
+    _, absolute_level = coverage_levels(bp_result, coverage_params)
+    flag_undercovered_regions(regions, absolute_level)
     # A window straddling a called breakpoint matches neither parent well on its own.
     # That is not a missing reference, so such gaps are relabelled before they can
     # caveat a region or be bridged to a donor-absent one. Recruitment
@@ -575,6 +583,7 @@ def run_recomb(
     )
     n_poor = sum(1 for g in coverage_gaps if g.kind == DIVERGENT_KIND)
     n_low_info = sum(1 for g in coverage_gaps if g.kind == LOW_INFORMATION_KIND)
+    n_local_dip = sum(1 for g in coverage_gaps if g.kind == LOCAL_DIP_KIND)
     if n_poor:
         logger.info(
             "Reference coverage: %d region(s) where the closest reference is below "
@@ -585,6 +594,13 @@ def run_recomb(
         logger.info(
             "Reference coverage: %d stretch(es) with too few comparable bases to judge "
             "(e.g. unsequenced); not treated as a missing reference.", n_low_info,
+        )
+    if n_local_dip:
+        logger.info(
+            "Reference coverage: %d stretch(es) where the closest reference matches the "
+            "query less well than it does elsewhere, but still closely (above %.3f) -- "
+            "a local identity dip, often a locally poor alignment, not a missing "
+            "reference.", n_local_dip, absolute_level,
         )
     if n_breakpoint:
         logger.info(

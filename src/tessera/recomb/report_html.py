@@ -518,6 +518,30 @@ def _low_information_html(gaps: list[CoverageGap]) -> str:
     )
 
 
+def _local_dip_html(gaps: list[CoverageGap]) -> str:
+    """A note for stretches the closest reference matches less well than elsewhere.
+
+    It still matches them closely, so this is neither a gap in the panel nor a
+    stretch too uncertain to judge; a locally poor alignment is the usual cause, and
+    it is the regime behind a false recombinant call on a near-identical panel
+    (issues #81 and #82).
+    """
+    if not gaps:
+        return ""
+    n = len(gaps)
+    word = "stretch" if n == 1 else "stretches"
+    verb = "is" if n == 1 else "are"
+    total = sum(max(0, g.query_end - g.query_start) for g in gaps)
+    return (
+        f'<div class="caveat"><span class="ic">&#9888;</span><div>'
+        f'<strong>A local identity dip.</strong> {n} {word} of the query '
+        f'(<span class="mono">{_fmt_kb(total)}</span>) {verb} matched less closely by '
+        f'the nearest reference than the rest of the genome is, while still matching it '
+        f'closely. A locally poor alignment is the usual cause, so a region called here '
+        f'rests on weaker ground. See <em>Reference coverage</em> below.</div></div>'
+    )
+
+
 def _coverage_html(gaps: list[CoverageGap], threshold: float) -> str:
     intro = (
         f'<p class="cap">Stretches where even the closest reference is below the '
@@ -712,7 +736,8 @@ def write_html_report(
         f"{_verdict_html(s, result.query, colors, lineage_map, ctx.query_lineage, untested)}"
         f"{_not_run_caveat(ctx.methods_run, ctx.not_run)}"
         f"{_caveat_html(ctx.missing_reference_gaps, threshold)}"
-        f"{_low_information_html(ctx.low_information_gaps)}</header>"
+        f"{_low_information_html(ctx.low_information_gaps)}"
+        f"{_local_dip_html(ctx.local_dip_gaps)}</header>"
         f"{_cards_html(s, colors, lineage_map)}"
         '<section class="section"><div class="eyebrow">Query mosaic</div>'
         f"{_mosaic_html(regions, colors, s, caveat_gaps, lineage_map)}</section>"

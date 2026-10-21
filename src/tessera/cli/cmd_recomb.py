@@ -98,7 +98,11 @@ def recomb(
     coverage_rel_drop: float = typer.Option(
         0.05, "--coverage-rel-drop",
         help="Adaptive coverage: flag windows more than this far below the query's "
-        "typical best similarity (ignored when --coverage-floor is set).",
+        "typical best similarity. On a panel so close to the query that this drop "
+        "lands below every similarity the panel shows, the threshold falls back to "
+        "the panel's own spread instead, and never finer than two mismatches per "
+        "window; what it then finds is reported as a local identity dip rather than "
+        "a possible missing reference (ignored when --coverage-floor is set).",
     ),
     exclude_siblings: bool = typer.Option(
         True, "--exclude-siblings/--no-exclude-siblings",

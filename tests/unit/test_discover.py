@@ -391,3 +391,51 @@ def test_a_reference_best_for_two_gaps_is_fetched_once(monkeypatch, tmp_path, lo
     )
 
     assert fetched == ["SHARED"]
+
+
+def test_a_local_dip_is_not_searched_for(monkeypatch, tmp_path, logger):
+    """A stretch the panel already covers closely is not a genome to go and find.
+
+    On a near-identical panel the best-similarity threshold falls back to the
+    panel's own scale (issue #82), which flags stretches where the closest
+    reference matches a little worse than it does elsewhere. At 98.7 % identity
+    nothing is missing, so recruitment must leave such a stretch alone rather than
+    BLAST for a reference that is already there.
+    """
+    import random
+
+    from tessera.recomb.coverage import (
+        LOCAL_DIP_KIND,
+        CoverageParams,
+        call_coverage_gaps,
+    )
+    from tessera.recomb.similarity import compute_similarity
+
+    rng = random.Random(7)
+    # Long enough that the dip is a small share of the windows, so the panel's best
+    # similarities are a point mass at 1.0 with one short dip in it.
+    query = "".join(rng.choice("ACGT") for _ in range(6000))
+    near = list(query)
+    for i in range(3000, 3004):  # four mismatches, all inside one short stretch
+        near[i] = "ACGT"[("ACGT".index(near[i]) + 1) % 4]
+    far = list(query)
+    for i in range(0, 6000, 20):
+        far[i] = "ACGT"[("ACGT".index(far[i]) + 2) % 4]
+    path = tmp_path / "msa.fasta"
+    write_fasta(path, {"q": query, "refA": "".join(near), "refB": "".join(far)})
+
+    # The stretch is flagged, and flagged as a local dip rather than as divergent.
+    result = compute_similarity(str(path), "q", window_size=300, window_step=100)
+    gaps, _ = call_coverage_gaps(result, 300, CoverageParams.with_defaults(300))
+    assert [g.kind for g in gaps] == [LOCAL_DIP_KIND]
+
+    def boom(*a, **k):
+        raise AssertionError("BLAST should not be called for a local dip")
+
+    monkeypatch.setattr(discover_run, "blast_subsequence", boom)
+    params = FindRefParams(
+        msa=path, query="q", output=tmp_path / "out", window_size=300, window_step=100,
+    )
+
+    assert find_references(params, logger) == []
+    assert (tmp_path / "out" / "candidate_references.tsv").exists()

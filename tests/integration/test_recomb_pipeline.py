@@ -245,3 +245,59 @@ def test_base_pair_windowing_writes_no_informative_site_outputs(tmp_path: Path) 
     assert not (out / "informative_site_windows.tsv").exists()
     assert not any(out.glob("informative_sites_top*"))
     assert "Identity at informative sites" not in (out / "report.html").read_text()
+
+
+def _near_identical_with_an_imperfect_donor(path: Path, seed: int = 67) -> None:
+    """The panel above, but the query's tract is not a verbatim copy of its donor.
+
+    The donor is then ~99.7 % identical to the query over the tract instead of
+    identical, which is where a real donor sits: close, but not a clone.
+    """
+    rng = random.Random(seed)
+    base = "".join(rng.choice("ACGT") for _ in range(30000))
+
+    def mutate(seq: str, frac: float) -> str:
+        chars = list(seq)
+        for i in range(len(chars)):
+            if rng.random() < frac:
+                chars[i] = rng.choice([c for c in "ACGT" if c != chars[i]])
+        return "".join(chars)
+
+    # The tract is a small share of the genome, so the panel's best similarities are
+    # a point mass at 1.0 with a short dip -- the regime where the fixed standard is
+    # vacuous and the fallback decides the threshold.
+    records = {f"ref{i}": mutate(base, 0.006) for i in range(1, 6)}
+    tract = mutate(records["ref3"][14000:16000], 0.003)
+    query = list(records["ref1"])
+    query[14000:16000] = list(tract)
+    with open(path, "w") as fo:
+        fo.write(f">query\n{''.join(query)}\n")
+        for name, seq in records.items():
+            fo.write(f">{name}\n{seq}\n")
+
+
+def test_a_close_donor_is_not_called_a_poor_match_on_a_near_identical_panel(
+    tmp_path: Path,
+) -> None:
+    """``donor_undercovered`` means the true donor may be absent, so it stays absolute.
+
+    On a panel the fixed best-similarity standard cannot resolve, the gap threshold
+    falls back to the panel's own scale (issue #82). A donor 99.7 % identical to the
+    query sits below that tight threshold while far above the absolute standard. It
+    is plainly present, so the region must not be caveated as resting on a possible
+    stand-in, and the stretch must not be reported as a donor-absent region.
+    """
+    msa = tmp_path / "imperfect.fasta"
+    _near_identical_with_an_imperfect_donor(msa)
+    out = tmp_path / "out"
+    run_recomb(
+        RecombParams(msa=msa, output=out, query="query", plot_format="png"), _LOG
+    )
+
+    regions = [r for r in _read_tsv(out / "recombination_regions.tsv")
+               if r["minor_parent"] == "ref3"]
+    assert len(regions) == 1
+    assert 0.99 < float(regions[0]["mean_sim_minor"]) < 1.0
+    assert regions[0]["donor_undercovered"] == "no"
+    assert all(r["donor_absent"] == "no" for r in _read_tsv(
+        out / "recombination_regions.tsv"))

@@ -64,6 +64,21 @@ threshold (adaptive by default, or set with `--coverage-floor`). These are writt
 labelled `divergent` (ample comparable bases, yet a poor match) is the signature of an
 absent reference, as opposed to `low_information` (too few comparable bases to judge).
 
+The threshold is the query's typical best match less `--coverage-rel-drop` (0.05 by
+default). On a panel whose members all sit within a percent of the query, that lands
+below every similarity the panel shows, so no window can reach it and nothing is ever
+reported -- the regime of issues #81 and #82, where an mpox run recorded a threshold of
+0.9500 against a minimum best similarity of 0.9950 and an empty gaps table. There the
+threshold falls back to the panel's own spread, and never finer than two mismatches over
+the comparable bases a window carries, which is the smallest identity difference a
+window can resolve. What the fallback finds sits above the fixed standard, so it is
+labelled `local_dip` and read as a local identity dip, usually a locally poor
+alignment: at 99.7 % identity the closest reference is plainly present. Such a stretch
+gets its own note in the report, is never bridged into a donor-absent region, and is
+not searched for -- recruiting a genome for it would chase a reference that is already
+there. It does not change `donor_undercovered`, which asks whether a donor is absent
+and so stays judged against the fixed standard.
+
 ### Find one missing reference
 
 When a gap is found, `tessera find-references` searches NCBI for the missing genome:

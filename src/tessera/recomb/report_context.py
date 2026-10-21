@@ -13,7 +13,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .analyze import AnalysisResult
-from .coverage import BREAKPOINT_KIND, DIVERGENT_KIND, LOW_INFORMATION_KIND, CoverageGap
+from .coverage import (
+    BREAKPOINT_KIND,
+    DIVERGENT_KIND,
+    LOCAL_DIP_KIND,
+    LOW_INFORMATION_KIND,
+    CoverageGap,
+)
 from .diagnostics import RecombinationSignal
 from .similarity import WindowSimilarity
 from .typing import LineageMap
@@ -96,3 +102,13 @@ class ReportContext:
     def low_information_gaps(self) -> list[CoverageGap]:
         """The gaps with too few comparable bases to judge."""
         return [g for g in self.gaps if g.kind == LOW_INFORMATION_KIND]
+
+    @property
+    def local_dip_gaps(self) -> list[CoverageGap]:
+        """The stretches the closest reference matches less well than elsewhere.
+
+        It still matches them closely in absolute terms, so these are neither a gap
+        in the panel nor a stretch too uncertain to judge: usually a locally poor
+        alignment. They get their own note (issue #82).
+        """
+        return [g for g in self.gaps if g.kind == LOCAL_DIP_KIND]
