@@ -24,11 +24,13 @@ class BinarySpec:
     """A required external executable.
 
     ``version_args`` is the argument vector that prints a version (e.g.
-    ``("--version",)``). ``min_version`` is an optional dotted-string requirement.
+    ``("--version",)``), or ``None`` for a tool that has no version option: it is then
+    not executed at all and its version is recorded as ``unknown``. ``min_version`` is
+    an optional dotted-string requirement.
     """
 
     name: str
-    version_args: tuple[str, ...] = field(default=("--version",))
+    version_args: tuple[str, ...] | None = field(default=("--version",))
     min_version: str | None = None
 
 
@@ -54,6 +56,11 @@ def _query_version(name: str, version_args: tuple[str, ...]) -> str | None:
     parsed = _parse_version(blob)
     if parsed:
         return ".".join(map(str, parsed))
+    # No dotted version in the output. A tool that exited cleanly said something about
+    # itself (a build date, say) and that is worth keeping; one that exited non-zero
+    # printed an error about the option, which is not a version.
+    if proc.returncode != 0:
+        return None
     return blob.strip().splitlines()[0] if blob.strip() else None
 
 
@@ -70,7 +77,10 @@ def check_binaries(specs: tuple[BinarySpec, ...]) -> dict[str, str]:
             problems.append(f"{spec.name}: not found on PATH")
             continue
 
-        reported = _query_version(spec.name, spec.version_args)
+        reported = (
+            None if spec.version_args is None
+            else _query_version(spec.name, spec.version_args)
+        )
         versions[spec.name] = reported or "unknown"
 
         if spec.min_version is not None:

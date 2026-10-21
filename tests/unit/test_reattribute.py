@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import csv
+import random
+from pathlib import Path
+
 import numpy as np
 
 from tessera.recomb.reattribute import reattribute_donors
 from tessera.recomb.regions import Region
+from tessera.recomb.run import RecombParams, run_recomb
+
+from ..conftest import write_fasta
 
 
 class _Result:
@@ -103,3 +110,50 @@ def test_keeps_an_untyped_donor_that_cannot_be_scored():
     out = reattribute_donors([_region("x1", "a1", 5, 15)], _Result(rows, "q"), lm,
                              "A", margin=0.1, min_sites=4)
     assert out[0].minor_parent == "x1"
+
+
+# --- the run's other outputs follow the re-attribution ---------------------
+
+def _reattribution_panel(tmp_path: Path) -> tuple[Path, dict[str, str]]:
+    """A cowpox backbone with a variola insert at 2000-4000. The insert is copied from
+    ``variolaA``, but ``variolaA`` shares clade V with two distant genomes, so clade V's
+    consensus matches the insert worse than clade W's (``variolaB`` alone)."""
+    rng = random.Random(11)
+
+    def mutate(seq: str, frac: float) -> str:
+        chars = list(seq)
+        for i in range(len(chars)):
+            if rng.random() < frac:
+                chars[i] = rng.choice("ACGT")
+        return "".join(chars)
+
+    base = "".join(rng.choice("ACGT") for _ in range(6000))
+    cowpox, variola = mutate(base, 0.03), mutate(base, 0.08)
+    variola_b = mutate(variola, 0.01)
+    query = list(cowpox)
+    query[2000:4000] = list(variola[2000:4000])
+    msa = write_fasta(tmp_path / "panel.fasta", {
+        "query": "".join(query), "cowpox": cowpox, "variolaA": variola,
+        "variolaB": variola_b, "junk1": mutate(base, 0.15), "junk2": mutate(base, 0.15),
+    })
+    lineages = {"cowpox": "CPX", "variolaA": "V", "junk1": "V", "junk2": "V", "variolaB": "W"}
+    return msa, lineages
+
+
+def test_method_comparison_names_the_reattributed_donor(tmp_path: Path, logger) -> None:
+    """Re-attribution re-labelled the region but not the per-method breakdown, so
+    `recombination_methods.tsv` and the report's method table kept the old donor."""
+    msa, lineages = _reattribution_panel(tmp_path)
+    out = tmp_path / "out"
+    run_recomb(
+        RecombParams(msa=msa, output=out, query="query", plot_format="png",
+                     lineage_map=lineages, reattribute_donors=True, cluster_lineages=False),
+        logger,
+    )
+    regions = list(csv.DictReader((out / "recombination_regions.tsv").open(), delimiter="\t"))
+    methods = list(csv.DictReader((out / "recombination_methods.tsv").open(), delimiter="\t"))
+    assert [r["minor_parent"] for r in regions] == ["variolaB"]  # re-attributed from variolaA
+    assert [m["minor_parent"] for m in methods] == ["variolaB"]
+    assert [(m["query_start"], m["query_end"]) for m in methods] == [
+        (r["query_start"], r["query_end"]) for r in regions
+    ]

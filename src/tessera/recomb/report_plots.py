@@ -29,6 +29,25 @@ def _color_map(datasets: list[str]) -> dict[str, str]:
     return {label: PALETTE[i % len(PALETTE)] for i, label in enumerate(datasets)}
 
 
+def region_labels(datasets: list[str], regions: list[Region]) -> list[str]:
+    """``datasets`` followed by any parent of a called region that is not among them.
+
+    The plots draw the top-N datasets, but a region can name a parent outside that
+    list (``--top-n 1`` leaves out every donor). Colours are assigned from this
+    extended list so a region is never drawn in the fallback grey; the plotted
+    datasets come first, so their colours do not depend on which regions were called.
+    Donor-absent regions are skipped: their label is a stand-in, not a called parent.
+    """
+    labels = list(datasets)
+    for region in regions:
+        if region.donor_absent:
+            continue
+        for label in (region.major_parent, region.minor_parent):
+            if label not in labels:
+                labels.append(label)
+    return labels
+
+
 def _palette(datasets: list[str]):
     """Matplotlib RGBA map drawn from the shared categorical palette."""
     from matplotlib.colors import to_rgba
@@ -46,12 +65,22 @@ def _ylim(values) -> tuple[float, float]:
     return lower, 1.005
 
 
+ABSENT_LABEL = "donor absent"
+
+
 def _shade_regions(ax, regions: list[Region], colors: dict) -> None:
     seen: set[str] = set()
     for region in regions:
-        color = colors.get(region.minor_parent, "grey")
-        label = f"recombinant: {region.minor_parent}" if region.minor_parent not in seen else None
-        seen.add(region.minor_parent)
+        if region.donor_absent:
+            # The stand-in label is the closest reference -- often the backbone itself --
+            # so naming it here would read as "recombinant from the backbone".
+            key, color = ABSENT_LABEL, GREY
+            text = f"{ABSENT_LABEL} (no close reference)"
+        else:
+            key, color = region.minor_parent, colors.get(region.minor_parent, GREY)
+            text = f"recombinant: {region.minor_parent}"
+        label = text if key not in seen else None
+        seen.add(key)
         ax.axvspan(region.msa_start, region.msa_end, color=color, alpha=0.12, label=label)
 
 
@@ -80,7 +109,7 @@ def plot_top_n(
         logger.warning("No datasets available for the top-N plot; skipping.")
         return None
     subset = df.loc[available]
-    colors = _palette(available)
+    colors = _palette(region_labels(available, regions))
 
     fig, ax = plt.subplots(figsize=(14, 7))
     _shade_regions(ax, regions, colors)
@@ -121,7 +150,7 @@ def plot_pairwise(
     if seq1 not in df.index or seq2 not in df.index:
         logger.warning("Pairwise datasets not both present; skipping pairwise plot.")
         return None
-    colors = _palette([seq1, seq2])
+    colors = _palette(region_labels([seq1, seq2], regions))
 
     fig, ax = plt.subplots(figsize=(16, 6))
     _shade_regions(ax, regions, colors)
@@ -157,7 +186,7 @@ def build_interactive_figure(
     import plotly.graph_objects as go
 
     df = result.to_dataframe()
-    colors = _color_map(datasets)
+    colors = _color_map(region_labels(datasets, regions))
     fig = go.Figure()
     for gap in coverage_gaps or []:
         fig.add_vrect(
@@ -168,15 +197,18 @@ def build_interactive_figure(
         )
     seen: set[str] = set()
     for region in regions:
-        color = colors.get(region.minor_parent, GREY)
+        if region.donor_absent:
+            key, color = ABSENT_LABEL, GREY
+        else:
+            key, color = region.minor_parent, colors.get(region.minor_parent, GREY)
         fig.add_vrect(
             x0=region.msa_start, x1=region.msa_end,
             fillcolor=color, opacity=0.12, line_width=0, layer="below",
-            annotation_text=("" if region.minor_parent in seen else region.minor_parent),
+            annotation_text=("" if key in seen else key),
             annotation_position="top left",
             annotation_font_size=11, annotation_font_color=color,
         )
-        seen.add(region.minor_parent)
+        seen.add(key)
     for dataset in datasets:
         if dataset not in df.index:
             continue

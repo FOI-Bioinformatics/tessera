@@ -16,9 +16,10 @@ tessera recomb --msa divergent.msa.fasta --query query --output out_divergent \
     --window-size 300 --window-step 30
 ```
 
-Both callers call `parent_B` over the insert (q-value ~1e-29) with a sharp breakpoint,
+The four default callers all call `parent_B` over the insert with a sharp breakpoint,
 so the region is flagged as agreeing (high confidence); the similarity plot shows an
-obvious crossover.
+obvious crossover. The two short stretches listed under reference coverage are the
+windows straddling the breakpoints (kind `breakpoint`), not missing references.
 
 ## `cryptic_insert.msa.fasta` -- why the ensemble exists
 
@@ -31,12 +32,14 @@ tessera recomb --msa cryptic_insert.msa.fasta --query query --output out_hmm \
     --window-size 1000 --window-step 100 --method hmm     # 0 regions
 ```
 
-The default ensemble also runs 3SEQ, which pools the discriminating sites into an exact
-triplet test and recovers the event (q-value ~1e-12, `methods` = 3seq):
+The default ensemble also runs the site-based callers, which pool the discriminating
+sites into triplet tests and recover the event (q-value ~1e-12, `methods` = 3seq,maxchi):
 
 ```
 tessera recomb --msa cryptic_insert.msa.fasta --query query --output out_cryptic \
     --window-size 1000 --window-step 100                  # finds parent_B insert
 ```
 
-Both runs also report the parent-free PHI / Rmin signal in `recombination_profile.tsv`.
+Both runs also write the parent-free PHI / Rmin signal to `recombination_profile.tsv`.
+The cryptic example has 54 informative sites, fewer than the default PHI window of 100, so
+its PHI test is reported as `not testable`; add `--phi-window 5` to test it.

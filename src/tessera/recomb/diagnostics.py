@@ -54,7 +54,9 @@ class RecombinationSignal:
     """Parent-free recombination evidence for an alignment."""
 
     n_informative: int  # biallelic informative columns used
-    phi_p: float  # PHI permutation p-value (one-sided; small = recombination)
+    # PHI permutation p-value (one-sided; small = recombination). None when the test
+    # could not have rejected: see recombination_signal.
+    phi_p: float | None
     phi_observed: float  # the windowed mean incompatibility
     phi_window: int  # window width, in informative-column ranks
     rmin: int  # Hudson-Kaplan minimum number of recombination events
@@ -231,6 +233,12 @@ def recombination_signal(
     as-is; the significance threshold is a reporting concern, applied downstream.
     ``query_label`` is accepted for interface symmetry; the statistics use every
     sequence in ``rows``.
+
+    ``phi_p`` is ``None`` when the test is not testable at this window: with ``z``
+    informative columns and ``window >= z - 1`` every pair of columns falls inside the
+    window, the statistic is the mean over all pairs, and no reordering of the columns
+    can change it -- the permutation p-value would be 1 whatever the data. Rmin, the
+    intervals and the profile do not depend on the permutation and are still returned.
     """
     allele1, allele0, positions = biallelic_columns(rows)
     z = positions.size
@@ -243,7 +251,11 @@ def recombination_signal(
         allele1, allele0, positions = allele1[keep], allele0[keep], positions[keep]
         z = positions.size
     incompatible = incompatibility_matrix(allele1, allele0)
-    p, observed = phi_pvalue(incompatible, window, seed=seed)
+    p: float | None
+    if z - 1 > window:
+        p, observed = phi_pvalue(incompatible, window, seed=seed)
+    else:
+        p, observed = None, phi(incompatible, window)
     rmin, intervals = hudson_kaplan_rmin(incompatible, positions)
     query_intervals = [(int(column_to_query(a)), int(column_to_query(b))) for a, b in intervals]
     profile = phi_profile(incompatible, positions, column_to_query, window)

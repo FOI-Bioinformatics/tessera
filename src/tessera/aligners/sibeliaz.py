@@ -47,7 +47,9 @@ class SibeliazAligner(Aligner):
     capabilities = ToolCapabilities(
         name="sibeliaz",
         conda=("bioconda::sibeliaz",),
-        required_binaries=(BinarySpec("sibeliaz", version_args=("-v",)),),
+        # The sibeliaz wrapper has no version option ("-v" is rejected as an illegal
+        # option), so there is nothing to probe; its version is recorded as unknown.
+        required_binaries=(BinarySpec("sibeliaz", version_args=None),),
         recommended_max_genomes=2000,
         threads_param="-t",
     )

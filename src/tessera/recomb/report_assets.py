@@ -108,12 +108,16 @@ _GLOSSARY = [
      "The scan slides a fixed-width window along the alignment in fixed steps; each "
      "window is scored independently."),
     ("Support",
-     "The share of distinguishing (discordant) sites -- where the query matches one "
-     "candidate parent but not the other -- that favour the donor. 0.5 = no "
-     "preference, 1.0 = every distinguishing site favours the donor."),
+     "The supporting statistic of the test behind the region; its meaning depends on "
+     "the caller, and the statistic column of recombination_regions.tsv names it. For "
+     "the HMM it is the share of distinguishing (discordant) sites -- where the query "
+     "matches one candidate parent but not the other -- that favour the donor "
+     "(0.5 = no preference, 1.0 = every distinguishing site favours the donor)."),
     ("q-value",
-     "The sign-test p-value after Benjamini-Hochberg correction across all candidate "
-     "segments (false-discovery-rate control). A region is reported when q <= alpha."),
+     "The p-value of the test behind the region after Benjamini-Hochberg correction "
+     "across that caller's own candidates (false-discovery-rate control within one "
+     "caller). A region is reported when q <= alpha. For a region several callers "
+     "found, the most significant caller's value is shown."),
     ("Breakpoint",
      "The query position where the source switches, with a posterior-derived "
      "uncertainty interval from the HMM."),
@@ -137,6 +141,13 @@ _REFERENCES = [
     ("3SEQ triplet test",
      "Boni MF, Posada D, Feldman MW (2007). An exact nonparametric method for inferring "
      "mosaic structure in sequence triplets. Genetics 176(2):1035-1047."),
+    ("MaxChi",
+     "Maynard Smith J (1992). Analyzing the mosaic structure of genes. Journal of "
+     "Molecular Evolution 34(2):126-129."),
+    ("Bootscan",
+     "Salminen MO, Carr JK, Burke DS, McCutchan FE (1995). Identification of breakpoints "
+     "in intergenotypic recombinants of HIV type 1 by bootscanning. AIDS Research and "
+     "Human Retroviruses 11(11):1423-1425."),
     ("PHI test",
      "Bruen TC, Philippe H, Bryant D (2006). A simple and robust statistical test for "
      "detecting the presence of recombination. Genetics 172(4):2665-2681."),

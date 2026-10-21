@@ -11,7 +11,16 @@ from pathlib import Path
 
 import typer
 
-from .main import _require_choice, _require_file, app, get_logger, stage_errors
+from .main import (
+    _require_choice,
+    _require_file,
+    _require_lineage_map,
+    _require_range,
+    _require_scan_windows,
+    app,
+    get_logger,
+    stage_errors,
+)
 
 
 @app.command(name="detect")
@@ -55,8 +64,8 @@ def detect(
     method: str = typer.Option(
         "hmm,3seq,maxchi,bootscan", "--method",
         help="Region caller(s): a comma-separated list of hmm/3seq/maxchi/bootscan/"
-        "heuristic, or 'all'. Several run as an ensemble and their regions are merged "
-        "(default hmm,3seq,maxchi,bootscan).",
+        "geneconv/barcode/heuristic, or 'all'. Several run as an ensemble and their "
+        "regions are merged (default hmm,3seq,maxchi,bootscan).",
     ),
     min_methods: int = typer.Option(
         1, "--min-methods",
@@ -113,6 +122,12 @@ def detect(
     logger = get_logger(output)
     with stage_errors(logger):
         _require_file(query, "Query file")
+        _require_lineage_map(lineage_map)
+        # Checked here, before any network or aligner work: a round count of zero
+        # builds nothing and still exits 0, and a bad window otherwise surfaces only
+        # after the panel has been recruited and aligned.
+        _require_range(max_rounds, "--max-rounds", lo=1)
+        _require_scan_windows(window_size, window_step)
         _require_choice(aligner, set(aligner_registry.names()), "--aligner")
         params = FillParams.for_detection(
             query=query, output=output,

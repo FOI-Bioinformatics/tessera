@@ -12,7 +12,7 @@ from math import isnan
 from pathlib import Path
 
 from .analyze import AnalysisResult, stats_sort_key, winner_label
-from .coverage import CoverageGap
+from .coverage import BREAKPOINT_KIND, CoverageGap
 from .diagnostics import RecombinationSignal
 from .regions import Region
 from .similarity import WindowSimilarity
@@ -150,8 +150,12 @@ def print_coverage(gaps: list[CoverageGap], threshold: float, echo=print) -> Non
         for g in gaps
     ]
     print_formatted_table(rows, header=COVERAGE_HEADER, echo=echo)
-    echo("  ^ the closest reference here is poor; the true source may be missing. "
-         "Run 'tessera find-references' to search NCBI.")
+    if any(g.kind != BREAKPOINT_KIND for g in gaps):
+        echo("  ^ the closest reference here is poor; the true source may be missing. "
+             "Run 'tessera find-references' to search NCBI.")
+    if any(g.kind == BREAKPOINT_KIND for g in gaps):
+        echo("  breakpoint = windows straddling a called breakpoint; the two parents "
+             "together explain the query there (not a missing reference).")
     echo("")
 
 
@@ -275,9 +279,14 @@ def write_regions_tsv(regions: list[Region], output_dir: Path, logger: logging.L
 
 def write_methods_tsv(
     breakdown: list[dict], methods_run: tuple[str, ...], output_dir: Path,
-    logger: logging.Logger,
+    logger: logging.Logger, methods_not_run: tuple[str, ...] = (),
 ) -> None:
-    """Write the per-region x per-method agreement matrix (the ensemble breakdown)."""
+    """Write the per-region x per-method agreement matrix (the ensemble breakdown).
+
+    A cell is ``yes`` / ``no`` for a caller that ran, and ``not run`` for one that was
+    selected but could not run -- a ``no`` there would read as a caller that looked and
+    found nothing.
+    """
     path = output_dir / "recombination_methods.tsv"
     logger.info("Writing method comparison: %s", path)
     with open(path, "w") as fo:
@@ -285,7 +294,10 @@ def write_methods_tsv(
                             *methods_run, "parent_free_support"]) + "\n")
         for b in breakdown:
             called = b["per_method_support"]
-            cells = [("yes" if m in called else "no") for m in methods_run]
+            cells = [
+                "not run" if m in methods_not_run else ("yes" if m in called else "no")
+                for m in methods_run
+            ]
             fo.write("\t".join(map(str, [
                 b["minor_parent"], b["query_start"], b["query_end"], *cells,
                 "yes" if b["parent_free_support"] else "no",
@@ -319,8 +331,12 @@ def write_profile_tsv(
     path = output_dir / "recombination_profile.tsv"
     logger.info("Writing recombination signal profile: %s", path)
     with open(path, "w") as fo:
+        # "NA" when the PHI test could not have rejected (too few informative sites
+        # for the window). The Rmin stays last in the note: the harness reads it there.
+        phi_p = "NA" if signal.phi_p is None else f"{signal.phi_p:.4g}"
+        note = "" if signal.phi_p is not None else "not testable at this window; "
         fo.write(
-            f"# PHI p-value\t{signal.phi_p:.4g}\t(window {signal.phi_window} "
+            f"# PHI p-value\t{phi_p}\t({note}window {signal.phi_window} "
             f"informative sites, {signal.n_informative} sites, Rmin {signal.rmin})\n"
         )
         fo.write("msa_pos\tquery_pos\tphi\n")

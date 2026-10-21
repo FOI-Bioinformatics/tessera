@@ -78,12 +78,40 @@ def _require_file(path: Path, label: str) -> None:
         raise UserInputError(f"{label} is a directory, not a file: {path}")
 
 
+def _require_lineage_map(path: Path | None) -> None:
+    """Reject a ``--lineage-map`` that does not exist.
+
+    The readers treat a missing lineage file as "no typed names", which is right for
+    the automatically discovered ``lineages.tsv`` and wrong for a path the user typed:
+    the run would finish with an untyped report, and the barcode caller and donor
+    re-attribution would do nothing, without a word.
+    """
+    if path is not None:
+        _require_file(path, "--lineage-map file")
+
+
 def _require_directory(path: Path, label: str) -> None:
     """Reject a missing or non-directory input directory. See :func:`_require_file`."""
     if not Path(path).exists():
         raise UserInputError(f"{label} not found: {path}")
     if not Path(path).is_dir():
         raise UserInputError(f"{label} is not a directory: {path}")
+
+
+def _require_output_directory(path: Path) -> None:
+    """Reject an output path that exists and is not a directory.
+
+    The writers create the directory if it is missing; given an existing file they fail
+    with ``[Errno 17] File exists`` from wherever the first output is written.
+    """
+    if Path(path).exists() and not Path(path).is_dir():
+        raise UserInputError(f"Output path exists and is not a directory: {path}")
+
+
+def _require_scan_windows(window_size: int, window_step: int) -> None:
+    """The window options every scanning command shares; see :func:`_require_range`."""
+    _require_range(window_size, "--window-size", lo=1)
+    _require_range(window_step, "--window-step", lo=1)
 
 
 def _parse_key_values(items: list[str], label: str) -> dict[str, str]:

@@ -151,3 +151,27 @@ def test_corroborating_intervals_require_a_significant_phi() -> None:
 
 def test_corroborating_intervals_without_a_signal() -> None:
     assert corroborating_intervals(None, alpha=0.05) == []
+
+
+# --- "not testable" is not "no signal" --------------------------------------
+
+def test_phi_is_not_testable_when_every_site_pair_is_inside_the_window() -> None:
+    """With z informative sites and a window of at least z - 1 ranks, the statistic
+    averages over every pair of sites, so reordering the sites cannot change it and the
+    permutation p-value is 1 whatever the data. That was reported as "no signal"."""
+    rows = _block_alignment(recombinant=True)  # 24 informative columns
+    signal = recombination_signal(rows, "s0", lambda c: c, window=100, seed=1)
+    assert signal is not None
+    assert signal.n_informative == 24
+    assert signal.phi_p is None  # was 1.0
+    assert signal.rmin >= 1  # Rmin does not depend on the window
+    assert corroborating_intervals(signal, alpha=0.05) == []
+
+
+def test_phi_becomes_testable_one_rank_below_the_site_count() -> None:
+    rows = _block_alignment(recombinant=True)  # z = 24, so z - 1 = 23
+    at_limit = recombination_signal(rows, "s0", lambda c: c, window=23, seed=1)
+    below = recombination_signal(rows, "s0", lambda c: c, window=22, seed=1)
+    assert at_limit is not None and below is not None
+    assert at_limit.phi_p is None
+    assert below.phi_p is not None

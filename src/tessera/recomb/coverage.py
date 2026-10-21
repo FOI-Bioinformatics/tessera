@@ -15,6 +15,12 @@ everything in a genuinely divergent collection; an absolute ``floor`` overrides 
 A gap is labelled ``divergent`` (ample comparable bases, the query really is far
 from all references -- a likely missing reference) or ``low_information`` (few
 comparable bases, so the gap is uncertain rather than informative).
+
+Once regions have been called, a ``divergent`` gap that sits on a called breakpoint
+and is explained by that region's two parents together is relabelled ``breakpoint``
+(:func:`mark_breakpoint_gaps`): a window straddling a switch between divergent
+parents matches neither of them well on its own, which is a property of the window,
+not a missing reference.
 """
 
 from __future__ import annotations
@@ -27,7 +33,10 @@ from statistics import mean, median
 import numpy as np
 
 from .regions import Region
-from .similarity import WindowSimilarity
+from .similarity import WindowSimilarity, _canonical_mask
+
+# The kind given to a gap that a called breakpoint explains. See mark_breakpoint_gaps.
+BREAKPOINT_KIND = "breakpoint"
 
 
 @dataclass
@@ -68,7 +77,7 @@ class CoverageGap:
     n_windows: int
     best_label: str  # the closest reference across the gap (still a poor match)
     mean_best: float  # its mean similarity over the gap
-    kind: str  # "divergent" | "low_information"
+    kind: str  # "divergent" | "low_information" | "breakpoint"
 
 
 def coverage_threshold(result: WindowSimilarity, params: CoverageParams) -> float:
@@ -138,6 +147,103 @@ def call_coverage_gaps(
             )
         )
     return gaps, threshold
+
+
+def _mosaic_identity(
+    rows: dict[str, np.ndarray], query: str, parents: tuple[str, str], start: int, end: int
+) -> float:
+    """Best identity of the query, over columns ``[start, end)``, to a single-switch
+    mosaic of the two ``parents`` (either order, any switch point).
+
+    This is what a window straddling one breakpoint between the two parents can reach:
+    one parent up to the switch, the other after it. Identity is counted as everywhere
+    else -- matches over the columns where the query and the parent in force both carry
+    a canonical base -- so the value is on the same scale as the per-window similarity
+    the coverage threshold is applied to. ``nan`` when nothing is comparable.
+    """
+    q = rows[query][start:end]
+    q_canon = _canonical_mask(q)
+    comp, match = [], []
+    for label in parents:
+        ref = rows[label][start:end]
+        canon = q_canon & _canonical_mask(ref)
+        comp.append(np.concatenate(([0], np.cumsum(canon))))
+        match.append(np.concatenate(([0], np.cumsum(canon & (q == ref)))))
+    best = float("nan")
+    for first, second in ((0, 1), (1, 0)):
+        # Switch after k columns: `first` explains [0, k), `second` explains [k, n).
+        num = match[first] + (match[second][-1] - match[second])
+        den = comp[first] + (comp[second][-1] - comp[second])
+        valid = den > 0
+        if valid.any():
+            value = float(np.max(num[valid] / den[valid]))
+            best = value if isnan(best) else max(best, value)
+    return best
+
+
+def mark_breakpoint_gaps(
+    gaps: list[CoverageGap],
+    regions: list[Region],
+    result: WindowSimilarity,
+    window_size: int,
+    threshold: float,
+) -> int:
+    """Relabel ``divergent`` gaps that a called breakpoint explains; return how many.
+
+    A window straddling a breakpoint between two divergent parents is part one parent
+    and part the other, so its similarity to either alone falls below the coverage
+    threshold although both are in the panel. A gap is relabelled ``breakpoint`` when
+
+    - it lies within one window width of a boundary of a called, donor-present region
+      (the only place a straddling window can be), and
+    - every under-threshold window inside it is explained by the region's two parents:
+      the query's identity to the best single-switch mosaic of donor and major parent
+      over that window reaches ``threshold``.
+
+    The second condition asks, window by window, the question the coverage test asks,
+    with a mosaic of the two parents in place of a single reference. It keeps a stretch
+    from a source outside the panel labelled ``divergent`` even when it is short and
+    sits right beside a breakpoint: averaged over the whole gap such a stretch is
+    diluted by the well-matching flanks, but the windows that hold it stay below the
+    threshold whatever the switch point. ``result`` is the base-pair scan the gaps were
+    called on. The gaps are mutated in place; call this after region calling and before
+    :func:`gaps_as_regions`, which skips every kind other than ``divergent``.
+    """
+    half = window_size // 2
+    relabelled = 0
+    for gap in gaps:
+        if gap.kind != "divergent":
+            continue
+        windows = [
+            (pos - half, pos - half + window_size)
+            for pos, best in zip(result.positions, result.best_sim, strict=True)
+            if gap.msa_start <= pos - half and pos - half + window_size <= gap.msa_end
+            and not isnan(best) and best < threshold
+        ]
+        if not windows:
+            continue
+        for region in regions:
+            if region.donor_absent:
+                continue
+            parents = (region.minor_parent, region.major_parent)
+            if any(label not in result.rows for label in parents):
+                continue
+            near = any(
+                boundary - window_size <= gap.msa_start
+                and gap.msa_end <= boundary + window_size
+                for boundary in (region.msa_start, region.msa_end)
+            )
+            if not near:
+                continue
+            explained = [
+                _mosaic_identity(result.rows, result.query, parents, start, end)
+                for start, end in windows
+            ]
+            if all(not isnan(value) and value >= threshold for value in explained):
+                gap.kind = BREAKPOINT_KIND
+                relabelled += 1
+                break
+    return relabelled
 
 
 def flag_undercovered_regions(regions: list[Region], threshold: float) -> None:

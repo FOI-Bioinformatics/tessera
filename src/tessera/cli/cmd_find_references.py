@@ -6,7 +6,7 @@ from pathlib import Path
 
 import typer
 
-from .main import app, get_logger, stage_errors
+from .main import _require_file, _require_scan_windows, app, get_logger, stage_errors
 
 
 @app.command(name="find-references")
@@ -87,6 +87,8 @@ def find_references(
 
     logger = get_logger()
     with stage_errors(logger):
+        _require_file(msa, "MSA file")
+        _require_scan_windows(window_size, window_step)
         params = FindRefParams(
             msa=msa, query=str(query), output=output, collection=collection,
             window_size=window_size, window_step=window_step,

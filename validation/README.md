@@ -61,10 +61,19 @@ python validation/run_specificity.py --reps 3         # quick look
 python validation/run_specificity.py --min-methods 1  # without the agreement gate
 ```
 
-It is deliberately sensitive to the failure mode it was built for. With the default
-agreement gate the scan is clean; dropping the gate with `--min-methods 1` surfaces the
-single-caller regions again (measured at 4 replicates: 9/16 runs, 10 false regions,
-almost all from one caller). Treat a non-zero total as a regression to explain.
+It is deliberately sensitive to the failure mode it was built for. **The harness's own
+default is `--min-methods 2`; the `tessera` CLI default is `--min-methods 1`**, so a clean
+default harness run does not describe the shipped default. Measured at 3 replicates on
+2026-10-01 (commit `457bdfb`):
+
+| gate | runs with a false region | false regions | source |
+|---|---|---|---|
+| `--min-methods 2` (harness default) | 0/12 (CI 0-24 %) | 0 | -- |
+| `--min-methods 1` (CLI default) | 7/12 (58 %, CI 32-81 %) | 8 | hmm = 8 |
+
+The positive control was detected 3/3 with the correct donor at both gates (median
+breakpoint error 55 bp). Treat a non-zero total at `--min-methods 2` as a regression to
+explain, and quote the `--min-methods 1` row when describing what a default run reports.
 
 **Caveat.** JC69 on a fixed topology is simpler than real viral evolution, and modest
 replicate counts carry real sampling error -- hence the intervals. These numbers
@@ -105,11 +114,13 @@ have not been fetched, so a partial setup still reports cleanly.
 | `enterovirus_e11` | enterovirus ~7.3 kb | Echovirus-11 x Coxsackievirus-B1, breakpoint in P2 | mafft | recombination detected; both parents named (checks parents-present, not the ambiguous backbone direction) |
 | `hiv_crf02ag` | HIV-1 ~9.2 kb | CRF02_AG (IbNG): A backbone + subtype-G segments | mafft | major A; G donor region(s) over the pol/vif and vpu-env inserts |
 | `hcv_2k1b` | HCV ~9.4 kb | RF1_2k/1b: genotype-2k 5' + 1b 3', breakpoint in NS2/NS3 | mafft | major 1b; genotype-2 donor over the 5'; **precise breakpoint ~nt 3187 recovered** |
-| `hcv_clonal_1b` | HCV ~9.4 kb | pure genotype-1b (non-recombinant control) | mafft | resolves to 1b throughout; **0 regions** (real-data specificity) |
+| `hcv_clonal_1b` | HCV ~9.4 kb | pure genotype-1b (non-recombinant control) | mafft | resolves to 1b throughout, but **currently FAILS**: one 12 bp MaxChi-only region (GT2a donor, q = 0.045) is reported where none is expected (real-data specificity) |
 
-Each reproduces its published event (or, for the clonal control, its *absence* of
-recombination) end-to-end; the current run is **7 PASS, 0 FAIL**
-(`orthopox_example` SKIPs until its 7-genome collection is built). `hcv_2k1b` is the
+The six recombinant datasets that ran reproduce their published events end-to-end
+(`orthopox_example` SKIPs until its 7-genome collection is built). The clonal control does
+not currently pass: the run on 2026-10-01 was **6 PASS, 1 FAIL** (`hcv_clonal_1b`), **1
+SKIP**. The failing region rests on a single caller at the CLI default `--min-methods 1`;
+it is recorded here as an open specificity item rather than hidden. `hcv_2k1b` is the
 first real **precise-breakpoint** check and `hcv_clonal_1b` the first real
 **false-positive** (specificity) check. Accessions are
 listed per dataset in `datasets.json` (`provenance` field) and were confirmed
