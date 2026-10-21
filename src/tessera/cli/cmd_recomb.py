@@ -95,6 +95,13 @@ def recomb(
         help="Flag windows whose closest reference is below this similarity as a "
         "possible missing reference (default: adaptive, relative to the query).",
     ),
+    backbone_gap_ratio: float = typer.Option(
+        2.0, "--backbone-gap-ratio",
+        help="Withhold a region where the backbone's gap rate is at least this many "
+        "times its genome-wide rate: the comparison there is not between comparably "
+        "aligned genomes, so an intact reference wins whether or not anything "
+        "recombined. 0 reports such regions anyway.",
+    ),
     coverage_rel_drop: float = typer.Option(
         0.05, "--coverage-rel-drop",
         help="Adaptive coverage: flag windows more than this far below the query's "
@@ -184,6 +191,7 @@ def recomb(
         _require_range(margin, "--margin", lo=0.0, hi=1.0)
         _require_range(reattribute_margin, "--reattribute-margin", lo=0.0, hi=1.0)
         _require_range(coverage_rel_drop, "--coverage-rel-drop", lo=0.0, hi=1.0)
+        _require_range(backbone_gap_ratio, "--backbone-gap-ratio", lo=0.0, hi=1000.0)
         if coverage_floor is not None:
             _require_range(coverage_floor, "--coverage-floor", lo=0.0, hi=1.0)
         methods = parse_methods(method)
@@ -204,6 +212,7 @@ def recomb(
             margin=margin,
             merge_gap=merge_gap,
             coverage_floor=coverage_floor,
+            max_backbone_gap_ratio=backbone_gap_ratio,
             coverage_rel_drop=coverage_rel_drop,
             exclude_siblings=exclude_siblings,
             cluster_lineages=cluster_lineages,

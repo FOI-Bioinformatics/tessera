@@ -35,7 +35,13 @@ from .ensemble import (
 )
 from .hmm import DEFAULT_JUMP_RATE
 from .reattribute import reattribute_donors
-from .regions import DEFAULT_METHODS, Region, RegionParams, call_regions
+from .regions import (
+    DEFAULT_METHODS,
+    Region,
+    RegionParams,
+    call_regions,
+    withhold_misaligned_backbone,
+)
 from .report import (
     PHI,
     ReportContext,
@@ -108,6 +114,11 @@ class RecombParams:
     # Heuristic-only thresholds. merge_gap also merges coverage gaps.
     margin: float = 0.0
     merge_gap: int | None = None
+    # Withhold a region whose backbone is locally gap-degraded over it: its gap rate
+    # there, as a multiple of its own genome-wide rate, at or above this (0 = off).
+    # The comparison such a region rests on is not between comparably aligned genomes
+    # (issue #81). See regions.withhold_misaligned_backbone for the measurements.
+    max_backbone_gap_ratio: float = 2.0
     # Reference-coverage diagnostic.
     coverage_floor: float | None = None  # None -> adaptive baseline
     coverage_rel_drop: float = 0.05
@@ -426,6 +437,7 @@ def run_recomb(
     per_method: dict[str, list] = {}
     majors: dict[str, str | None] = {}
     excluded_siblings: list = []
+    withheld_regions: list[Region] = []
     for method in params.methods:
         res, ana = (result, analysis) if method == "hmm" else (bp_result, analysis_bp)
         clusters = reference_clusters if method == "hmm" else shared_clusters
@@ -433,6 +445,15 @@ def run_recomb(
             res, ana, params.window_size, _region_params(method, clusters),
             not_run=not_run,
         )
+        # A region whose backbone is locally gap-degraded over it rests on a
+        # comparison between genomes that are not comparably aligned there, so it is
+        # set aside before the merge rather than reported (issue #81). Applied per
+        # caller because the defect drew several callers to the same locus.
+        regs, withheld_m = withhold_misaligned_backbone(
+            regs, res, params.max_backbone_gap_ratio
+        )
+        if withheld_m:
+            withheld_regions.extend(withheld_m)
         per_method[method] = regs
         majors[method] = major_m
         if method == "hmm":
@@ -556,6 +577,20 @@ def run_recomb(
             suppressed, min_agree, params.min_methods,
         )
 
+    if withheld_regions:
+        spans = sorted({(r.major_parent, r.msa_start, r.msa_end) for r in withheld_regions})
+        logger.info(
+            "Withheld %d region(s) at %d locus/loci: the backbone is locally "
+            "gap-degraded there (at least %.1fx its genome-wide gap rate), so the "
+            "comparison that produced them was not between comparably aligned "
+            "genomes. Rerun with --backbone-gap-ratio 0 to see them.",
+            len(withheld_regions), len(spans), params.max_backbone_gap_ratio,
+        )
+        for major, lo, hi in spans:
+            logger.info(
+                "  withheld %d-%d (backbone %s)", lo, hi, major,
+            )
+
     coverage_params = CoverageParams.with_defaults(
         params.window_size,
         floor=params.coverage_floor,
@@ -676,6 +711,12 @@ def run_recomb(
         "major parent": major_parent or "n/a",
         "coverage threshold / gaps": f"{coverage_threshold:.3f} / {len(coverage_gaps)}",
     }
+    if withheld_regions:
+        n_loci = len({(r.major_parent, r.msa_start, r.msa_end) for r in withheld_regions})
+        provenance["regions withheld (misaligned backbone)"] = (
+            f"{len(withheld_regions)} at {n_loci} locus/loci, backbone gap rate at "
+            f"least {params.max_backbone_gap_ratio:g}x its genome-wide rate"
+        )
     reported_not_run = [m for m in params.methods if m in not_run]
     if reported_not_run:
         provenance["callers not run"] = "; ".join(
@@ -725,6 +766,7 @@ def run_recomb(
             methods_run=params.methods, method_breakdown=method_breakdown, per_major=per_major,
             major_parent=major_parent,
             not_run=not_run, alpha=params.alpha,
+            withheld_regions=withheld_regions,
         ),
     )
     logger.info("All done.")

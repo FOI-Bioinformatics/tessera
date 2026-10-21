@@ -21,6 +21,7 @@ from .coverage import (
     CoverageGap,
 )
 from .diagnostics import RecombinationSignal
+from .regions import Region
 from .similarity import WindowSimilarity
 from .typing import LineageMap
 
@@ -49,6 +50,10 @@ class ReportContext:
     # parent-free test. Whatever is named here is reported as "not run", never as a
     # negative.
     not_run: dict[str, str] = field(default_factory=dict)
+    # Regions set aside because the backbone is locally gap-degraded over them, so the
+    # comparison that produced them was not between comparably aligned genomes
+    # (issue #81). Reported rather than silently dropped.
+    withheld_regions: list[Region] = field(default_factory=list)
     method_breakdown: list[dict] | None = None
     per_major: dict[str, str] | None = None
     # The run's reconciled major parent -- the one the provenance records and the

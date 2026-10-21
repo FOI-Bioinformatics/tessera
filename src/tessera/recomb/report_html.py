@@ -518,6 +518,32 @@ def _low_information_html(gaps: list[CoverageGap]) -> str:
     )
 
 
+def _withheld_html(regions: list[Region]) -> str:
+    """A note for regions set aside because the backbone was locally misaligned.
+
+    They are not in the table, so the reader is told they existed and why, rather
+    than being left with a table that is shorter for no stated reason (issue #81).
+    """
+    if not regions:
+        return ""
+    loci = sorted({(r.msa_start, r.msa_end) for r in regions})
+    n = len(regions)
+    word = "region" if n == 1 else "regions"
+    spans = ", ".join(f"{_fmt_int(lo)}&ndash;{_fmt_int(hi)}" for lo, hi in loci[:4])
+    more = "" if len(loci) <= 4 else f" and {len(loci) - 4} more"
+    return (
+        f'<div class="caveat"><span class="ic">&#9888;</span><div>'
+        f'<strong>{n} {word} withheld.</strong> At alignment columns {spans}{more} the '
+        f'backbone is locally gap-degraded: its gap rate there is several times its rate '
+        f'across the rest of the genome. A reference that stayed intact over those '
+        f'columns matches the query better than a backbone that lost them, whether or '
+        f'not any recombination happened, so the comparison is not between comparably '
+        f'aligned genomes and the {word} {"is" if n == 1 else "are"} not reported. '
+        f'Rerun with <span class="mono">--backbone-gap-ratio 0</span> to see '
+        f'{"it" if n == 1 else "them"}.</div></div>'
+    )
+
+
 def _local_dip_html(gaps: list[CoverageGap]) -> str:
     """A note for stretches the closest reference matches less well than elsewhere.
 
@@ -737,7 +763,8 @@ def write_html_report(
         f"{_not_run_caveat(ctx.methods_run, ctx.not_run)}"
         f"{_caveat_html(ctx.missing_reference_gaps, threshold)}"
         f"{_low_information_html(ctx.low_information_gaps)}"
-        f"{_local_dip_html(ctx.local_dip_gaps)}</header>"
+        f"{_local_dip_html(ctx.local_dip_gaps)}"
+        f"{_withheld_html(ctx.withheld_regions)}</header>"
         f"{_cards_html(s, colors, lineage_map)}"
         '<section class="section"><div class="eyebrow">Query mosaic</div>'
         f"{_mosaic_html(regions, colors, s, caveat_gaps, lineage_map)}</section>"
