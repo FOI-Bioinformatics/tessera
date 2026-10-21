@@ -68,7 +68,13 @@ The threshold is the query's typical best match less `--coverage-rel-drop` (0.05
 default). On a panel whose members all sit within a percent of the query, that lands
 below every similarity the panel shows, so no window can reach it and nothing is ever
 reported -- the regime of issues #81 and #82, where an mpox run recorded a threshold of
-0.9500 against a minimum best similarity of 0.9950 and an empty gaps table. There the
+0.9500 against a minimum best similarity of 0.9950 and an empty gaps table. Being
+unreachable is not enough on its own, since on any well-covered panel the worst window
+may sit above the standard, which is a legitimate negative; the fallback also requires
+the closest reference to be within one percent of a perfect match across the genome.
+Measured on five cached panels, the three where
+the fixed drop carries no information sit 0.0000 to 0.0010 from a perfect match and the
+two where it is merely never reached sit 0.0408 and 0.0670. Where both hold, the
 threshold falls back to the panel's own spread, and never finer than two mismatches over
 the comparable bases a window carries, which is the smallest identity difference a
 window can resolve. What the fallback finds sits above the fixed standard, so it is

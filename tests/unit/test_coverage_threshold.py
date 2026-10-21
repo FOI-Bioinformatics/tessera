@@ -168,3 +168,26 @@ def test_recruitment_still_searches_for_a_divergent_gap() -> None:
 
     assert len(gaps) == 1
     assert search_targets(gaps) == gaps
+
+
+def test_a_panel_a_few_percent_from_the_query_keeps_the_fixed_drop() -> None:
+    """Unreachable is not the same as vacuous.
+
+    Measured on the cached rubella pool: the typical best match is 0.9592, the
+    fixed standard 0.9092, and the worst window 0.9152 -- so no window reaches the
+    standard, but only because the panel covers the query well everywhere. That is
+    a legitimate negative, not a threshold that carries no information, and
+    tightening it reports ordinary variation in a panel four percent from the
+    query. The fallback is for a panel whose closest reference is within one
+    percent of the query across the genome, which is the regime issues #81 and #82
+    describe.
+    """
+    best = [0.9592] * 80 + [0.9278] * 5 + [0.9152] * 4
+    result = _result(best, [WINDOW] * len(best))
+
+    threshold, coarse = coverage_levels(result, CoverageParams.with_defaults(WINDOW))
+    gaps, _ = call_coverage_gaps(result, WINDOW, CoverageParams.with_defaults(WINDOW))
+
+    assert isclose(threshold, coarse)
+    assert isclose(threshold, 0.9592 - 0.05)
+    assert gaps == []

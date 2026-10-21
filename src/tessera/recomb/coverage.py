@@ -55,6 +55,11 @@ class CoverageParams:
 
     floor: float | None  # absolute best-similarity floor; None -> adaptive baseline
     rel_drop: float  # adaptive: flag below (90th percentile of best_sim - rel_drop)
+    # The fallback of coverage_levels applies only to a panel whose closest reference
+    # is within this of a perfect match across the genome. Measured on five cached
+    # panels: the three where the fixed drop carries no information sit 0.0000-0.0010
+    # from perfect, and the two where it is simply never reached sit 0.0408 and 0.0670.
+    near_identical_deficit: float
     min_gap: int  # drop gaps shorter than this many bp
     merge_gap: int  # merge gaps separated by at most this many alignment columns
 
@@ -66,10 +71,12 @@ class CoverageParams:
         rel_drop: float = 0.05,
         min_gap: int | None = None,
         merge_gap: int | None = None,
+        near_identical_deficit: float = 0.01,
     ) -> CoverageParams:
         return cls(
             floor=floor,
             rel_drop=rel_drop,
+            near_identical_deficit=near_identical_deficit,
             min_gap=window_size if min_gap is None else min_gap,
             merge_gap=window_size if merge_gap is None else merge_gap,
         )
@@ -102,14 +109,20 @@ def coverage_levels(
     the fixed absolute standard a stretch has to fall below to suggest a *missing*
     reference.
 
-    The two differ only on a panel the fixed standard cannot resolve. ``coarse`` is
-    the baseline less ``rel_drop`` -- a typical best match of 1.0 and the default
-    drop give 0.95. On a panel whose references all sit within a percent of the
-    query, that is below every value the panel shows, so no window can reach it and
-    no stretch is ever reported (issue #82: the mpox run recorded a threshold of
-    0.9500 against a minimum best similarity of 0.9950, and an empty gaps file).
+    The two differ only on a near-identical panel the fixed standard cannot resolve.
+    ``coarse`` is the baseline less ``rel_drop`` -- a typical best match of 1.0 and
+    the default drop give 0.95. On a panel whose references all sit within a percent
+    of the query, that is below every value the panel shows, so no window can reach
+    it and no stretch is ever reported (issue #82: the mpox run recorded a threshold
+    of 0.9500 against a minimum best similarity of 0.9950, and an empty gaps file).
 
-    When that happens the threshold falls back to the panel's own scale: the
+    Being unreachable is not enough, since on any well-covered panel the worst
+    window may sit above the standard -- a legitimate negative. The fallback also
+    requires the closest reference to be within ``near_identical_deficit`` of a
+    perfect match across the genome, the regime where ``rel_drop`` is orders of
+    magnitude too coarse to resolve anything.
+
+    When both hold the threshold falls back to the panel's own scale: the
     observed spread of the best similarities, and never finer than two mismatches
     over the comparable bases a window carries, which is the smallest identity
     difference a window can resolve. The fallback is bounded by ``rel_drop``, so it
@@ -128,7 +141,10 @@ def coverage_levels(
         return 0.0, 0.0
     p10, p90 = (float(v) for v in np.percentile(finite, [10, 90]))
     coarse = max(0.0, min(1.0, p90 - params.rel_drop))
-    if coarse > min(finite):
+    vacuous = (
+        coarse <= min(finite) and (1.0 - p90) < params.near_identical_deficit
+    )
+    if not vacuous:
         return coarse, coarse
     evidence = [n for n in result.informative if n > 0]
     # Two mismatches over the typical comparable bases: finer than this, a window

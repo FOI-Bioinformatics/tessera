@@ -19,6 +19,13 @@ All notable changes to Tessera are recorded here. The format follows
   bases a window carries -- the smallest identity difference a window can resolve. The
   fallback is bounded by `--coverage-rel-drop`, so it only ever tightens a threshold that
   could not resolve anything; a panel the fixed standard already resolves is untouched.
+  Being unreachable is not sufficient: on any well-covered panel the worst window may sit
+  above the standard, which is a legitimate negative rather than a vacuous threshold, so
+  the fallback also requires the closest reference to be within one percent of a perfect
+  match across the genome. Measured on five cached panels, the three where the fixed drop
+  carries no information sit 0.0000 to 0.0010 from a perfect match, and the two where it
+  is merely never reached sit 0.0408 and 0.0670; without this condition the rubella and
+  enterovirus pools each gained a stretch that main does not report.
 - **A new `kind`, `local_dip`, for what the fallback finds.** Such a stretch sits above
   the fixed standard: the closest reference matches it less well than it does elsewhere
   but still closely, which is a local identity dip and usually a locally poor alignment,
