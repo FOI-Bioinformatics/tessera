@@ -37,11 +37,11 @@ container below, **not** through PyPI -- `pip install tessera` will not work. Th
 Python package is only half the tool: the aligners it delegates to are not
 pip-installable, so an index install would hand you a CLI that cannot align.
 
-Tessera needs Python (>= 3.11) and at least one aligner backend, most easily installed
+Tessera needs Python (>= 3.12) and at least one aligner backend, most easily installed
 with conda:
 
 ```
-conda create -n tessera -c conda-forge -c bioconda python">=3.11" mauve "boost-cpp=1.74.0"
+conda create -n tessera -c conda-forge -c bioconda python">=3.12" mauve "boost-cpp=1.74.0"
 conda activate tessera
 pip install git+https://github.com/FOI-Bioinformatics/tessera.git@v1.2.0
 ```

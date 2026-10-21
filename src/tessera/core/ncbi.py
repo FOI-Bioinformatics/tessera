@@ -28,9 +28,6 @@ import random
 import threading
 import time
 from collections.abc import Callable
-from typing import TypeVar
-
-T = TypeVar("T")
 
 # NCBI's BLAST URL API guidance is not to contact the server more than once every
 # 10 seconds. Applied to submissions; Biopython does its own polling within a search.
@@ -140,7 +137,7 @@ eutils_throttle = Throttle(
 )
 
 
-def with_retries(
+def with_retries[T](
     call: Callable[[], T],
     *,
     what: str,
