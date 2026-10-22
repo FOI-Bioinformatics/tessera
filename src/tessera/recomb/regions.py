@@ -169,6 +169,14 @@ class Region:
     # Set by coverage analysis: the donor's own similarity is poor, so it may be a
     # stand-in for an absent true donor. Default False (not yet evaluated).
     donor_undercovered: bool = False
+    # The backbone is locally gap-degraded over this region: gappier here than it is
+    # across the rest of its own genome, so the comparison that produced the region
+    # was not between comparably aligned sequences. Deliberately NOT a low
+    # `mean_sim_major`: over a true donor region the backbone is the poorer match by
+    # definition, so that would fire on every genuine recombinant. The gap-rate test
+    # is issue #81's measured discriminator, applied here below the bar at which #81
+    # withholds the region outright (issue #82).
+    major_degraded: bool = False
     # A putative recombination where the query is locally far from EVERY reference:
     # the true donor is likely missing from the collection (bridged from a gap).
     donor_absent: bool = False
@@ -288,6 +296,58 @@ def withhold_misaligned_backbone(
         )
         (withheld if degraded else kept).append(region)
     return kept, withheld
+
+
+def backbone_gap_rates(
+    region: Region, result: WindowSimilarity
+) -> tuple[float, float] | None:
+    """``(local, genome_wide)`` gap rate for ``region``'s backbone, or None.
+
+    None when the backbone has no row in the alignment, so nothing was measured.
+    Shared by the withholding above and the caveat below, which differ only in where
+    they put the bar.
+    """
+    row = result.rows.get(region.major_parent)
+    if row is None or row.size == 0:
+        return None
+    genome = float(np.count_nonzero(row == GAP)) / row.size
+    span = row[region.msa_start:region.msa_end]
+    local = float(np.count_nonzero(span == GAP)) / span.size if span.size else 0.0
+    return local, genome
+
+
+# The caveat bar, below the withholding bar above. Issue #81 measured a backbone
+# degraded enough to lose the comparison at 2.27x to 19.06x its genome-wide rate with a
+# local rate of 5.02 % to 31.21 %, against at most 0.74x and 3.09 % for the backbone
+# under a real recombinant region. These sit in the empty band between the two, so the
+# flag covers a backbone that is degraded but not far enough for #81 to remove the
+# region, without firing on anything a real region was measured to show.
+CAVEAT_LOCAL_GAP_RATE = 0.035
+CAVEAT_GAP_RATIO = 1.5
+
+
+def flag_degraded_backbone(
+    regions: list[Region],
+    result: WindowSimilarity,
+    min_local_gap: float = CAVEAT_LOCAL_GAP_RATE,
+    min_ratio: float = CAVEAT_GAP_RATIO,
+) -> None:
+    """Mark regions whose backbone is locally gap-degraded (``major_degraded``).
+
+    Applied to the regions that survive ``withhold_misaligned_backbone``, so it
+    describes the band below that bar: degraded enough to be worth saying, not enough
+    to remove the region. A donor-absent row is exempt for the same reason it is
+    exempt there -- it reports that every reference is far from the query, which is not
+    a comparison the backbone can lose.
+    """
+    for region in regions:
+        rates = backbone_gap_rates(region, result)
+        if region.donor_absent or rates is None:
+            continue
+        local, genome = rates
+        region.major_degraded = local >= min_local_gap and (
+            genome <= 0.0 or local / genome >= min_ratio
+        )
 
 
 def call_regions(

@@ -41,6 +41,7 @@ from .regions import (
     Region,
     RegionParams,
     call_regions,
+    flag_degraded_backbone,
     withhold_misaligned_backbone,
 )
 from .report import (
@@ -630,6 +631,12 @@ def run_recomb(
     # query would otherwise be reported as a possible stand-in for a missing one.
     _, absolute_level = coverage_levels(bp_result, coverage_params)
     flag_undercovered_regions(regions, absolute_level)
+    # The same judgement for the backbone, on the gap-rate signal rather than identity:
+    # over a true donor region the backbone is the poorer match by definition, so a low
+    # `mean_sim_major` would caveat every genuine recombinant. These regions already
+    # survived withhold_misaligned_backbone, so this describes the band below that bar
+    # -- degraded enough to say so, not enough to remove the region (issue #82).
+    flag_degraded_backbone(regions, bp_result)
     # A window straddling a called breakpoint matches neither parent well on its own.
     # That is not a missing reference, so such gaps are relabelled before they can
     # caveat a region or be bridged to a donor-absent one. Recruitment

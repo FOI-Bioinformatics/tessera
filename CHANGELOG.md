@@ -6,6 +6,34 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### The report says when the backbone is degraded (issue #82, second half)
+
+- **The defect.** `donor_undercovered` reported on the minor parent alone. A backbone
+  that was itself locally degraded was never flagged, so on the mpox run behind the
+  issue all three regions read `donor_undercovered = no` while the backbone was the
+  degraded sequence, and a reader had nothing in the output saying so.
+- **A new column, `major_degraded`,** appended after `donor_undercovered` rather than
+  widening it. Which parent is at fault changes what the reader should conclude: a poor
+  donor suggests the true donor is missing from the panel, a degraded backbone means the
+  comparison behind the region was not between comparably aligned sequences.
+- **Measured on the gap rate, not on identity.** The obvious implementation -- flag a low
+  `mean_sim_major` -- is wrong, and was tried and rejected here: over a true donor region
+  the backbone is the poorer match *by definition*, so it fires on every genuine
+  recombinant. It dropped a clean four-caller recombinant in the test suite from high to
+  low confidence, which is how it was caught. The flag instead uses issue #81's measured
+  discriminator, the backbone's gap rate over the region against its own genome-wide
+  rate, so a uniformly gappy assembly is not penalised for being gappy.
+- **The bar, and why there.** At least 3.5 % gaps locally and at least 1.5x the
+  genome-wide rate. #81 withholds a region outright above 5 % and 2.0x, so this covers
+  the band below that: degraded enough to say so, not enough to remove the region.
+  Checked against all 72 region rows of the 43 hybrid validation cases, whose regions are
+  real recombinants: the flag fires on **none** of them, and the highest local gap rate
+  any of them shows is 2.21 %. A donor-absent row is exempt, as it is for #81.
+- **Where it shows.** The new column; a `backbone degraded` badge on the region's row in
+  the report; and a note under the console table naming the spans. The run-level
+  confidence verdict is deliberately left alone -- it already accounts for a poor donor,
+  and folding this in was what produced the regression described above.
+
 ### A region resting on a locally misaligned backbone is withheld (issue #81)
 
 - **The defect.** Region calling asks whether some reference beats the backbone over a
