@@ -693,8 +693,14 @@ measures **specificity** (false positives), not only sensitivity. The default ru
 - `low_div` -- pins the *closest* viable clade pair (`pair_objective: "min"`, within a
   `divergence_band`) and **requires** backbone + donor at the correct top-level clade, with no
   sub-4% relaxation, testing attribution near the informative-site floor.
-- `panel_donor_absent` -- removes the true donor clade from the panel; the run must report a
-  coverage gap rather than mis-attribute the region to a present sibling.
+- `panel_donor_absent` -- removes the true donor **and its whole sub-clade** from the panel;
+  the run must report a coverage gap rather than mis-attribute the region to a present
+  sibling. Removing only the donor's own label is not enough, and that is what this case did
+  until issue #90: pulling RSV `A.D.1.8` left `A.D.1.3`, `A.D.1.6` and `A.D.1.11` in the
+  panel, matching the spliced tract at 0.9854-0.9875 against the true donor's 0.9947. A
+  stand-in that close *is* the donor's lineage, so naming it was the right answer at the
+  resolution the panel supported, and the case was demanding a `donor_absent` caveat that
+  would have been false. One naming level up removes the close relatives too.
 - `panel_equidistant` -- two candidate donors equally close to the query; the caller must
   attribute the true one (a tie-break guard).
 
