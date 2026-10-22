@@ -214,6 +214,7 @@ def _merge_group(
         pvalue=best.pvalue,
         qvalue=best.qvalue,
         donor_undercovered=any(r.donor_undercovered for r in group),
+        major_degraded=any(r.major_degraded for r in group),
         donor_absent=any(r.donor_absent for r in group),
         minor_cluster_size=best.minor_cluster_size,
         major_cluster_size=best.major_cluster_size,

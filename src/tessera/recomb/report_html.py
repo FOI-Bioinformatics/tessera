@@ -278,8 +278,16 @@ def _regions_html(
         else:
             swatch = _swatch(colors.get(r.minor_parent, GREY))
             donor = html.escape(typed(r.minor_parent, lineage_map))
-            flag = ('<span class="flag" title="donor is itself a poor match">low conf</span>'
-                    if r.donor_undercovered else "")
+            flags = []
+            if r.donor_undercovered:
+                flags.append('<span class="flag" title="donor is itself a poor match">'
+                             'low conf</span>')
+            if r.major_degraded:
+                flags.append('<span class="flag" title="the backbone is gappier over '
+                             'this region than across the rest of its own genome, so '
+                             'the comparison behind the region was not between '
+                             'comparably aligned sequences">backbone degraded</span>')
+            flag = " ".join(flags)
         support = "&ndash;" if r.support is None else f"{r.support:.2f}"
         qval = "&ndash;" if r.qvalue is None else f"{r.qvalue:.2g}"
         if r.breakpoint_lo is None:

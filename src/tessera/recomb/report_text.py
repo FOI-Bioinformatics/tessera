@@ -135,6 +135,18 @@ def print_regions(regions: list[Region], major_parent: str | None, echo=print) -
         echo("")
         return
     print_formatted_table([_region_row(r) for r in regions], header=REGION_HEADER, echo=echo)
+    # A note rather than another column: the table is already wide and the caveat
+    # applies to a minority of rows. Which parent is the weak one matters, so the
+    # backbone gets its own sentence rather than sharing the donor's (issue #82).
+    weak = [r for r in regions if r.major_degraded]
+    if weak:
+        spans = ", ".join(f"{r.query_start}-{r.query_end}" for r in weak[:4])
+        more = "" if len(weak) <= 4 else f" and {len(weak) - 4} more"
+        echo(
+            f"  note: at {spans}{more} the backbone is locally gap-degraded -- gappier "
+            f"there than across the rest of its own genome -- so the comparison behind "
+            f"the region was not between comparably aligned sequences."
+        )
     echo("")
 
 
@@ -273,7 +285,8 @@ def write_regions_tsv(
         "mean_sim_minor", "mean_sim_major", "margin",
         "support", "pvalue", "qvalue", "test", "statistic",
         "posterior", "breakpoint_lo", "breakpoint_hi",
-        "donor_undercovered", "donor_absent", "methods", "parent_free_support",
+        "donor_undercovered", "major_degraded", "donor_absent", "methods",
+        "parent_free_support",
     ]
     # No comment preamble here, deliberately. The `test` and `statistic` columns make
     # each row self-describing, which is what a consumer actually needs, and this is the
@@ -298,6 +311,7 @@ def write_regions_tsv(
                     "NA" if r.breakpoint_lo is None else r.breakpoint_lo,
                     "NA" if r.breakpoint_hi is None else r.breakpoint_hi,
                     "yes" if r.donor_undercovered else "no",
+                    "yes" if r.major_degraded else "no",
                     "yes" if r.donor_absent else "no",
                     ",".join(r.methods) if r.methods else "NA",
                     _parent_free_cell(r.parent_free_support, phi_not_run),

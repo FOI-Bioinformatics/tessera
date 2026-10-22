@@ -20,13 +20,19 @@ from tessera.recomb.ensemble import consensus_regions
 from tessera.recomb.regions import Region
 from tessera.recomb.report_text import write_regions_tsv
 
+# This list is a contract, and changing it is meant to be deliberate: it is the most
+# widely parsed output, so a column added or moved breaks readers that index by
+# position. `major_degraded` was appended after `donor_undercovered` in the issue #82
+# work -- a new column rather than a changed one, so a reader selecting by name is
+# unaffected.
 REGION_COLUMNS = [
     "minor_parent", "major_parent", "msa_start", "msa_end",
     "query_start", "query_end", "length_bp", "length_msa", "n_windows",
     "mean_sim_minor", "mean_sim_major", "margin",
     "support", "pvalue", "qvalue", "test", "statistic",
     "posterior", "breakpoint_lo", "breakpoint_hi",
-    "donor_undercovered", "donor_absent", "methods", "parent_free_support",
+    "donor_undercovered", "major_degraded", "donor_absent", "methods",
+    "parent_free_support",
 ]
 
 

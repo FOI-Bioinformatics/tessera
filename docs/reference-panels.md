@@ -82,8 +82,8 @@ labelled `local_dip` and read as a local identity dip, usually a locally poor
 alignment: at 99.7 % identity the closest reference is plainly present. Such a stretch
 gets its own note in the report, is never bridged into a donor-absent region, and is
 not searched for -- recruiting a genome for it would chase a reference that is already
-there. It does not change `donor_undercovered`, which asks whether a donor is absent
-and so stays judged against the fixed standard.
+there. It does not change `donor_undercovered`, which asks whether a donor is absent and so
+stays judged against the fixed standard.
 
 ### Find one missing reference
 
