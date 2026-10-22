@@ -301,6 +301,35 @@ def recombination_signal(
     )
 
 
+def contradicts_regions(signal: RecombinationSignal | None, alpha: float) -> bool:
+    """Does the parent-free diagnostic positively contradict a region call?
+
+    Not merely fail to corroborate one. ``Region.parent_free_support`` already records
+    the absence of corroboration, but it reads the same whether the diagnostic looked
+    and found nothing or could never look, and those are different statements to put in
+    front of a reader.
+
+    A contradiction needs both halves of the diagnostic to say so:
+
+    * PHI ran and did not reject at the run's ``alpha`` -- no detectable excess of
+      incompatible site pairs, and
+    * the Hudson-Kaplan minimum is zero -- no recombination event is *required* to
+      explain the data at all.
+
+    ``phi_p is None`` means the test could not have rejected at this window, which is
+    silence rather than evidence; three of the hybrid validation positives sit there and
+    must not be caveated. An ``rmin`` above zero means some event is needed whatever
+    PHI's power was, which is where two more positives sit (p=0.015 with rmin 149, and
+    p=0.045 with rmin 76).
+
+    Measured on issue #84's clonal mpox tip: ``PHI p=1, Rmin=0``, against a minimum
+    ``rmin`` of 6 across every hybrid positive where the diagnostic ran.
+    """
+    if signal is None or signal.phi_p is None:
+        return False
+    return signal.phi_p > alpha and signal.rmin == 0
+
+
 def corroborating_intervals(
     signal: RecombinationSignal | None, *, alpha: float = 0.05
 ) -> list[tuple[int, int]]:

@@ -79,6 +79,7 @@ def _not_run_caveat(methods_run: tuple[str, ...], not_run: dict[str, str]) -> st
 def _summary(
     result: WindowSimilarity, regions: list[Region], datasets: list[str],
     major_parent: str | None = None,
+    parent_free_contradicts: bool = False,
 ) -> dict:
     """Headline numbers: query length, backbone, donor list, recombinant fraction.
 
@@ -112,11 +113,14 @@ def _summary(
         "recomb_bp": recomb_bp,
         "pct": (100.0 * recomb_bp / query_len) if query_len else 0.0,
         "minors": minors,
-        "confidence": _confidence(present, absent),
+        "confidence": _confidence(present, absent, parent_free_contradicts),
     }
 
 
-def _confidence(present: list[Region], absent: list[Region]) -> str | None:
+def _confidence(
+    present: list[Region], absent: list[Region],
+    parent_free_contradicts: bool = False,
+) -> str | None:
     """A plain-language confidence label for the call, from FDR / support / coverage.
 
     None when there is nothing to qualify (no recombination). A donor-present region
@@ -126,6 +130,12 @@ def _confidence(present: list[Region], absent: list[Region]) -> str | None:
     """
     if not present:
         return "low" if absent else None
+    # The parent-free diagnostic looked at the same alignment and found that no
+    # recombination event is required to explain it. That is a contradiction rather
+    # than an absence of corroboration, and it caps the confidence whatever the
+    # per-region statistics say (issue #84).
+    if parent_free_contradicts:
+        return "low"
     qs = [r.qvalue for r in present if r.qvalue is not None]
     sups = [r.support for r in present if r.support is not None]
     min_q = min(qs) if qs else 1.0
@@ -551,6 +561,32 @@ def _inverted_html(regions: list[Region], backbone: str | None) -> str:
     )
 
 
+def _contradiction_html(contradicts: bool, n_present: int) -> str:
+    """A note when the parent-free diagnostic contradicts the regions below it.
+
+    Phrased as a disagreement between two lines of evidence rather than as a verdict on
+    either, because both can be right: the diagnostic is weak on a panel with few
+    informative sites, and a real event can leave too little trace for it. What the
+    reader needs is to know the two disagree (issue #84).
+    """
+    if not contradicts or n_present < 1:
+        return ""
+    word = "region" if n_present == 1 else "regions"
+    these = "this" if n_present == 1 else "these"
+    return (
+        f'<div class="caveat"><span class="ic">&#9888;</span><div>'
+        f'<strong>The parent-free diagnostic does not support {these} '
+        f'{word}.</strong> On the same alignment the PHI test found no excess of '
+        f'incompatible site pairs, and the Hudson-Kaplan minimum is zero -- no '
+        f'recombination event is <em>required</em> to explain the data. That is a '
+        f'disagreement with the caller(s) above, not a verdict on either: the '
+        f'diagnostic is weak where few sites are informative, and a real event can '
+        f'leave too little trace for it. Treat the call as unconfirmed by evidence '
+        f'independent of the panel.'
+        f'</div></div>'
+    )
+
+
 def _withheld_html(regions: list[Region]) -> str:
     """A note for regions set aside because the backbone was locally misaligned.
 
@@ -768,7 +804,8 @@ def write_html_report(
     # Colour every label a region names, not only the top-N: with --top-n 1 the donor
     # is outside the plotted datasets and its swatch and mosaic segment were grey.
     colors = _color_map(region_labels(datasets, regions))
-    s = _summary(result, regions, datasets, ctx.major_parent)
+    s = _summary(result, regions, datasets, ctx.major_parent,
+                 ctx.parent_free_contradicts)
     untested = bool(ctx.methods_run) and len(ctx.methods_not_run) == len(ctx.methods_run)
     organism_html = (
         f'<div class="organism">{html.escape(ctx.organism)}</div>' if ctx.organism else ""
@@ -797,6 +834,7 @@ def write_html_report(
         f"{_caveat_html(ctx.missing_reference_gaps, threshold)}"
         f"{_low_information_html(ctx.low_information_gaps)}"
         f"{_local_dip_html(ctx.local_dip_gaps)}"
+        f"{_contradiction_html(ctx.parent_free_contradicts, s['n_regions'])}"
         f"{_withheld_html(ctx.withheld_regions)}"
         f"{_inverted_html(ctx.inverted_regions, ctx.major_parent)}</header>"
         f"{_cards_html(s, colors, lineage_map)}"

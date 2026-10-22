@@ -26,7 +26,12 @@ from .coverage import (
     mark_breakpoint_gaps,
     reconcile_gaps,
 )
-from .diagnostics import MIN_INFORMATIVE, corroborating_intervals, recombination_signal
+from .diagnostics import (
+    MIN_INFORMATIVE,
+    contradicts_regions,
+    corroborating_intervals,
+    recombination_signal,
+)
 from .ensemble import (
     consensus_regions,
     filter_by_agreement,
@@ -614,6 +619,18 @@ def run_recomb(
                 "  withheld %d-%d (backbone %s)", lo, hi, major,
             )
 
+    # Two lines of evidence disagreeing is worth saying out loud, not leaving for a
+    # reader to notice by comparing a `no` in one column with a p-value elsewhere.
+    parent_free_contradicts = bool(regions) and contradicts_regions(signal, params.alpha)
+    if parent_free_contradicts and signal is not None:
+        logger.warning(
+            "The parent-free diagnostic does not support the %d region(s) above: PHI "
+            "p=%.4g (not significant at alpha=%g) and Rmin=0, so no recombination "
+            "event is required to explain this alignment. The callers and the "
+            "panel-free evidence disagree; treat the call as unconfirmed.",
+            len(regions), signal.phi_p, params.alpha,
+        )
+
     coverage_params = CoverageParams.with_defaults(
         params.window_size,
         floor=params.coverage_floor,
@@ -740,6 +757,11 @@ def run_recomb(
         "major parent": major_parent or "n/a",
         "coverage threshold / gaps": f"{coverage_threshold:.3f} / {len(coverage_gaps)}",
     }
+    if parent_free_contradicts and signal is not None:
+        provenance["parent-free diagnostic"] = (
+            f"does not support the reported region(s): PHI p={signal.phi_p:.4g} "
+            f"(not significant at alpha={params.alpha:g}) and Rmin=0"
+        )
     if inverted_regions:
         rejected = sorted({r.major_parent for r in inverted_regions})
         provenance["regions withheld (rejected backbone)"] = (
@@ -803,6 +825,7 @@ def run_recomb(
             not_run=not_run, alpha=params.alpha,
             withheld_regions=withheld_regions,
             inverted_regions=inverted_regions,
+            parent_free_contradicts=parent_free_contradicts,
         ),
     )
     logger.info("All done.")

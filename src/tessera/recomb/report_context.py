@@ -55,6 +55,10 @@ class ReportContext:
     # (issue #81). Reported rather than silently dropped.
     withheld_regions: list[Region] = field(default_factory=list)
     inverted_regions: list[Region] = field(default_factory=list)
+    # The parent-free diagnostic ran and found that no recombination event is
+    # required to explain the alignment, while regions were nonetheless called:
+    # a contradiction rather than an absence of corroboration (issue #84).
+    parent_free_contradicts: bool = False
     method_breakdown: list[dict] | None = None
     per_major: dict[str, str] | None = None
     # The run's reconciled major parent -- the one the provenance records and the
