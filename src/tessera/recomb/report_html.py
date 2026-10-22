@@ -518,6 +518,31 @@ def _low_information_html(gaps: list[CoverageGap]) -> str:
     )
 
 
+def _inverted_html(regions: list[Region], backbone: str | None) -> str:
+    """A note for rows set aside for resting on a backbone the run rejected.
+
+    As with ``_withheld_html``, the reader is told the rows existed and why rather
+    than being left with a shorter table and no reason (issue #86).
+    """
+    if not regions or backbone is None:
+        return ""
+    rejected = sorted({r.major_parent for r in regions})
+    n = len(regions)
+    word = "region" if n == 1 else "regions"
+    names = ", ".join(html.escape(x) for x in rejected[:3])
+    more = "" if len(rejected) <= 3 else f" and {len(rejected) - 3} more"
+    return (
+        f'<div class="caveat"><span class="ic">&#9888;</span><div>'
+        f'<strong>{n} {word} withheld as inverted.</strong> {word.capitalize()} naming '
+        f'{names}{more} as the backbone, with {html.escape(backbone)} as a donor into it. '
+        f'{html.escape(backbone)} is the reference the query is closest to across the genome, '
+        f'while the rejected backbone is closest in no window at all, so the pair reads '
+        f'the wrong way round: the caller segmented on a view that disagreed with the '
+        f'genome-wide evidence. The backbone reported above is the windowed vote\'s.'
+        f'</div></div>'
+    )
+
+
 def _withheld_html(regions: list[Region]) -> str:
     """A note for regions set aside because the backbone was locally misaligned.
 
@@ -764,7 +789,8 @@ def write_html_report(
         f"{_caveat_html(ctx.missing_reference_gaps, threshold)}"
         f"{_low_information_html(ctx.low_information_gaps)}"
         f"{_local_dip_html(ctx.local_dip_gaps)}"
-        f"{_withheld_html(ctx.withheld_regions)}</header>"
+        f"{_withheld_html(ctx.withheld_regions)}"
+        f"{_inverted_html(ctx.inverted_regions, ctx.major_parent)}</header>"
         f"{_cards_html(s, colors, lineage_map)}"
         '<section class="section"><div class="eyebrow">Query mosaic</div>'
         f"{_mosaic_html(regions, colors, s, caveat_gaps, lineage_map)}</section>"

@@ -30,15 +30,13 @@ All notable changes to Tessera are recorded here. The format follows
 - **Nothing is dropped silently.** Each withheld locus is logged, the count goes into
   `run_provenance.json`, and the report carries a note naming the columns.
   `--backbone-gap-ratio 0` reports the regions anyway.
-- **What this does not fix, now issue #86.** The same degradation also drags the
-  backbone's genome-wide score. On one fixture seed that hands the crown to a reference
-  of the other clade and the flanks are reported as a mosaic with the query's own sister
-  cast as the donor -- the mosaic inverted. The reported backbone is aligned normally
-  over those regions, so no region is withheld, and the remedy is a ranking statistic a
-  local stretch cannot move: the mean picks the wrong reference on all five seeds and the
-  median picks the right one on all five. The same two regions are reported on the
-  previous release, so this is not new. The strict `xfail` for issue #81's own symptom
-  comes off; a strict `xfail` for #86 goes in.
+- **What this does not fix, issue #86.** On one fixture seed the flanks are reported as
+  a mosaic with the query's own sister cast as the donor -- the mosaic inverted. The
+  reported backbone is aligned normally over those regions, so no region is withheld
+  here. The same two regions are reported on the previous release, so this is not new.
+  The strict `xfail` for issue #81's own symptom comes off; a strict `xfail` for #86
+  goes in. (Its cause is **not** the ranking statistic this entry first named -- see the
+  #86 section below, which corrects it with the measurement.)
 
 ### Reference coverage on a panel that is nearly identical to the query (issue #82)
 
@@ -79,6 +77,34 @@ All notable changes to Tessera are recorded here. The format follows
 - **Not addressed here:** the second half of issue #82, a coverage flag that describes
   the major parent rather than the donor, and the false region of issue #81 itself. The
   strict `xfail` for the first half comes off; the one for #81 stays red.
+
+### The mosaic is no longer reported the wrong way round (issue #86)
+
+- **The defect.** `reconcile_major` already guards one artefact: a caller segments on a
+  view that can disagree with the genome-wide evidence, and a major parent that is the
+  closest reference in not one base-pair window is an artefact of that view. The guard
+  corrected the run's backbone and stopped there, leaving the regions that caller had
+  already built on the rejected major in the table. The report then named one backbone in
+  its headline and the opposite in its rows, casting the genome-wide closest reference as
+  a donor into a reference that is closest nowhere.
+- **The cause, which is not the one #86 was filed on.** The issue recorded the backbone
+  ranking as the culprit, with the median as the remedy. Measurement does not support it:
+  `plurality_major` ranks by window wins and uses the mean only to break ties, and on the
+  base-pair view it picks the correct reference on all five seeds of
+  `make_gap_degraded_msa`. Mean-alone would pick the wrong one on all five, but it never
+  reaches the decision, so switching to the median would change nothing. What
+  distinguishes the one failing seed is that it alone crosses the informative-site
+  auto-trigger; on that view the backbone inverts, and its major won zero base-pair
+  windows against the true backbone's 129.
+- **The fix.** A region is withheld when the reconciled backbone is its *minor* parent
+  **and** its major parent won no base-pair window -- the same condition the existing
+  guard used to reject that major. Both are required, so a caller that disagrees about
+  the backbone with window evidence of its own is left alone rather than overruled by the
+  headline, and an empty vote withholds nothing. The breakdown rows are filtered in step
+  with the regions, so no row is left describing a different region than before.
+- **Nothing is dropped silently.** Each withheld row is logged with the backbone that was
+  rejected, and the count and reason go into `run_provenance.json`.
+- The strict `xfail` on `test_a_clonal_query_yields_no_region_at_all` comes off.
 
 ### Python 3.13 is the floor, and CI tests one interpreter
 
