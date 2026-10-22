@@ -32,6 +32,7 @@ from .ensemble import (
     filter_by_agreement,
     filter_by_length,
     reconcile_major,
+    withhold_inverted_backbone,
 )
 from .hmm import DEFAULT_JUMP_RATE
 from .reattribute import reattribute_donors
@@ -510,6 +511,27 @@ def run_recomb(
         scan=(bp_result, params.window_size),
         clusters=shared_clusters,
     )
+    # reconcile_major may have rejected a caller's major parent for winning no window of
+    # its own. The regions that caller built on it assert the inverse of the backbone the
+    # run settled on, so they go with it rather than contradicting the headline above
+    # them (issue #86). The breakdown is filtered in step with the regions.
+    regions, method_breakdown, inverted_regions = withhold_inverted_backbone(
+        regions, method_breakdown,
+        backbone=major_parent, window_wins=analysis_bp.winners_with_ties,
+    )
+    if inverted_regions:
+        logger.info(
+            "Withheld %d region(s) naming %s -- the genome-wide closest reference -- as "
+            "a donor into a reference that won no window: the caller segmented on a view "
+            "that disagreed with the genome-wide evidence, and the backbone it used was "
+            "rejected in favour of %s.",
+            len(inverted_regions), major_parent, major_parent,
+        )
+        for region in inverted_regions:
+            logger.info(
+                "  withheld %d-%d (rejected backbone %s)",
+                region.msa_start, region.msa_end, region.major_parent,
+            )
     # --min-region, when given, bounds the length of every reported region. Left unset,
     # only the HMM applies a floor (to its segments, before trimming); the site callers
     # exist to find tracts shorter than a window and are not bounded by default.
@@ -711,6 +733,12 @@ def run_recomb(
         "major parent": major_parent or "n/a",
         "coverage threshold / gaps": f"{coverage_threshold:.3f} / {len(coverage_gaps)}",
     }
+    if inverted_regions:
+        rejected = sorted({r.major_parent for r in inverted_regions})
+        provenance["regions withheld (rejected backbone)"] = (
+            f"{len(inverted_regions)} naming {major_parent} as a donor; "
+            f"rejected backbone(s) {', '.join(rejected)} won no base-pair window"
+        )
     if withheld_regions:
         n_loci = len({(r.major_parent, r.msa_start, r.msa_end) for r in withheld_regions})
         provenance["regions withheld (misaligned backbone)"] = (
@@ -767,6 +795,7 @@ def run_recomb(
             major_parent=major_parent,
             not_run=not_run, alpha=params.alpha,
             withheld_regions=withheld_regions,
+            inverted_regions=inverted_regions,
         ),
     )
     logger.info("All done.")

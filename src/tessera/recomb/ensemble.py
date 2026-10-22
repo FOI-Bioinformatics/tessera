@@ -89,6 +89,63 @@ def reconcile_major(
     return canonical, per
 
 
+def is_inverted_backbone(
+    region: Region, *, backbone: str | None, window_wins: dict[str, int] | None
+) -> bool:
+    """Does ``region`` rest on a backbone the run has rejected? (issue #86)
+
+    ``reconcile_major`` above already recognises one artefact: a caller segments on a
+    view that can disagree with the genome-wide evidence, and a major that is the closest
+    reference in not a single base-pair window is an artefact of that view rather than
+    the query's backbone. It corrects the run's backbone and stops there, which left the
+    regions the caller had already built on the rejected major in the table. The report
+    could then name one backbone in its headline and the opposite in its rows, casting
+    the genome-wide closest reference as a donor into a reference closest nowhere -- the
+    mosaic read the wrong way round.
+
+    Both conditions are required:
+
+    * the reconciled ``backbone`` is the region's *minor* parent, so the row asserts the
+      inverse of what the run concluded, and
+    * the region's major parent won no window in the base-pair vote, the same condition
+      ``reconcile_major`` used to reject it.
+
+    The second ties the guard to that artefact. Callers may disagree about the backbone
+    for real reasons, and a disagreement backed by window evidence of its own is left
+    alone rather than overruled by the headline. An empty vote matches nothing, since it
+    cannot establish that a major won no window.
+    """
+    if backbone is None or not window_wins:
+        return False
+    return (
+        region.minor_parent == backbone
+        and window_wins.get(region.major_parent, 0) == 0
+    )
+
+
+def withhold_inverted_backbone(
+    regions: list[Region],
+    breakdown: list[dict],
+    *,
+    backbone: str | None,
+    window_wins: dict[str, int] | None,
+) -> tuple[list[Region], list[dict], list[Region]]:
+    """Drop the regions ``is_inverted_backbone`` matches, keeping ``breakdown`` in step.
+
+    ``regions`` and ``breakdown`` are parallel, as in ``filter_by_length``. Returns the
+    kept regions, their breakdown rows, and the withheld regions so the run can report
+    them rather than let the table come up short for no stated reason.
+    """
+    kept: list[tuple[Region, dict]] = []
+    withheld: list[Region] = []
+    for region, row in zip(regions, breakdown, strict=True):
+        if is_inverted_backbone(region, backbone=backbone, window_wins=window_wins):
+            withheld.append(region)
+        else:
+            kept.append((region, row))
+    return [r for r, _ in kept], [b for _, b in kept], withheld
+
+
 def _best(group: list[Region]) -> Region:
     """The most significant member of a group (smallest q-value, then highest support)."""
     return min(group, key=lambda r: (r.qvalue if r.qvalue is not None else 1.0,

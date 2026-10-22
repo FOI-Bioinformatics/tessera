@@ -128,28 +128,45 @@ def test_no_region_is_reported_over_the_degraded_locus(tmp_path: Path, seed: int
     assert overlapping == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="issue #86: the degraded locus also corrupts the genome-wide statistics, "
-           "so the flanks are reported as a mosaic of the wrong backbone",
-)
 def test_a_clonal_query_yields_no_region_at_all(tmp_path: Path) -> None:
-    """The locus is not the only thing its degradation breaks.
+    """The locus is not the only thing its degradation breaks (issue #86).
 
-    On seed 4 the scan reports two regions that do not overlap the locus at all: it
-    names ``outclade0``, of the other clade, as the backbone and the query's own
-    sister as a donor across the flanks, which is the mosaic read the wrong way
-    round. Ranking the references by their mean similarity lets the degraded locus
-    drag the sister's genome-wide score below a competitor's, and the median picks
-    the sister on all five seeds where the mean does not. That is a second mechanism
-    with the same cause, it predates this fix (the same two regions are on main),
-    and it needs the genome-wide statistics to be robust rather than one locus to be
-    withheld, so it is filed separately as #86.
+    Seed 4 used to report two regions that do not overlap the locus at all, naming
+    ``outclade0`` of the other clade as the backbone and the query's own sister as a
+    donor across the flanks -- the mosaic read the wrong way round.
+
+    The cause is not the one #86 was filed on. ``plurality_major`` ranks by window
+    wins and uses the mean only to break ties, and on the base-pair view it picks the
+    sister on all five seeds; mean-alone would pick ``cousin`` on all five, but never
+    reaches the decision. What distinguishes seed 4 is that it alone crosses the
+    informative-site auto-trigger, and on that view the backbone inverts.
+    ``reconcile_major`` already caught that -- the caller's major won zero base-pair
+    windows against the sister's 129 -- and corrected the run's backbone, but the
+    regions the caller had already built on the rejected major stayed in the table,
+    so the headline and the rows named opposite backbones. Those rows are now
+    withheld with it.
     """
     msa = make_gap_degraded_msa(seed=4)
     out = _run(tmp_path, msa)
 
     assert _present_regions(out) == []
+
+
+def test_the_inverted_rows_are_reported_not_silently_dropped(tmp_path: Path) -> None:
+    """A row removed for resting on a rejected backbone is still accounted for.
+
+    Asserts a specific provenance key rather than a bare word: ``tmp_path`` carries
+    this test's name and provenance records the input path, so a loose match would
+    pass on the path alone.
+    """
+    msa = make_gap_degraded_msa(seed=4)
+    out = _run(tmp_path, msa)
+
+    run = json.loads((out / "run_provenance.json").read_text())["run"]
+    key = "regions withheld (rejected backbone)"
+    assert key in run
+    assert "won no base-pair window" in str(run[key])
+    assert run["major parent"] == msa.nearest
 
 
 def test_the_withheld_region_is_reported_not_silently_dropped(tmp_path: Path) -> None:

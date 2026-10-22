@@ -456,10 +456,26 @@ Nothing is dropped silently. The run logs each withheld locus, records the count
 `run_provenance.json`, and the report carries a note naming the columns. Pass
 `--backbone-gap-ratio 0` to report the regions anyway.
 
-One thing this does **not** reach: a locus degraded this way also drags the backbone's
-genome-wide score, which can hand the crown to a different reference and invert the
-mosaic across the rest of the genome. The reported backbone is then aligned normally
-everywhere it is used, so no region is withheld. That is issue #86, and it is open.
+### A region resting on a rejected backbone
+
+A second, independent way the mosaic could be reported the wrong way round. The callers
+segment on whichever view the scan selected, and on a near-identical panel that is the
+informative-site view rather than the base-pair one. The two can disagree about which
+reference the query is closest to, and a major parent that is the closest reference in
+not a single base-pair window is an artefact of the view rather than the query's
+backbone.
+
+The run already rejects such a major and takes the windowed vote's winner as the
+backbone. What it does with the regions that caller built on the rejected major is to
+withhold them, because they assert the inverse of the conclusion printed above them --
+the genome-wide closest reference cast as a donor into a reference that is closest
+nowhere. The test needs both halves: the reconciled backbone is the region's *minor*
+parent, and the region's major parent won no base-pair window. Callers may disagree
+about the backbone for real reasons, and a disagreement with window evidence of its own
+is left alone.
+
+These rows are logged with the backbone that was rejected, and counted in
+`run_provenance.json` under `regions withheld (rejected backbone)`.
 
 ## Output files
 
