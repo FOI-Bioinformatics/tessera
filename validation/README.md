@@ -150,9 +150,15 @@ all (PHI p=1, Rmin=0), so it contradicts the callers outright.
 It is **not** issues \#81 or \#82, which concern a locally gap-degraded major parent.
 Measured on the run's `panel.msa.fasta`, the major parent carries 0.00 % gaps inside both
 loci against 0.06 % genome-wide, and `donor_undercovered` and `donor_absent` are both
-`no` -- there is no degradation to find. The likelier contributors are a redundant panel
-(all four references are 2022-outbreak genomes, so near-equidistant from the query) and
-bootscan, which has no null and backs one of the two regions.
+`no` -- there is no degradation to find. The likelier contributor is a redundant panel:
+all four references are 2022-outbreak genomes, so near-equidistant from the query.
+
+An earlier version of this note also blamed bootscan "which has no null". That is no
+longer true and should not be repeated: `recomb/bootscan.py` tests each candidate run
+against a block-permutation null (2000 permutations, blocks one window wide), corrects
+the p-values with Benjamini-Hochberg across candidates, and gates on the q-value at
+`alpha` exactly as the other callers do. Bootscan backs one of the two regions here, but
+it does so through the same FDR gate as the rest.
 
 The verdict is `CALL` and not `FAIL` because mpox does recombine, so a tip can carry a
 genuine event; the harness flags it for inspection rather than asserting a defect.
