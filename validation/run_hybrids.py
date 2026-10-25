@@ -323,6 +323,17 @@ def clade_match(observed: str, expected: str) -> bool:
             or expected.startswith(observed + "."))
 
 
+def _parent_clade(clade: str) -> str | None:
+    """The lineage one naming level above ``clade``, or None when there is none.
+
+    ``A.D.1.8`` -> ``A.D.1``. Used by the ``panel_donor_absent`` case to remove the
+    donor together with its siblings: a sister sub-clade is as good a source as the
+    donor itself, so leaving one in the panel means the donor is not really absent.
+    """
+    base = base_clade(clade)
+    return base.rsplit(".", 1)[0] if "." in base else None
+
+
 def donor_match(observed: str, donor: str, backbone: str) -> bool:
     """The recombinant region's clade names the donor's parental lineage.
 
@@ -1008,10 +1019,21 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
 
     # Panel-adversarial case types: manipulate pool/members_by_clade after standard build.
     if case_type == "panel_donor_absent":
-        # Remove every genome whose clade matches the true donor (clade_b) to simulate an
-        # absent donor; the pipeline should flag the span as donor-absent, not mis-attribute.
+        # Remove the donor's whole sub-clade, not just its own label. Removing by
+        # clade_match alone left the donor's siblings in the panel -- for the RSV case,
+        # pulling A.D.1.8 left A.D.1.3, A.D.1.6 and A.D.1.11, which match the spliced
+        # tract at 0.9854-0.9875 against the true donor's 0.9947. A stand-in that close
+        # IS the donor's lineage, so naming it is correct at the resolution the panel
+        # supports, and the case was demanding a donor-absent caveat that would have been
+        # a false statement. One naming level up removes the close relatives too, which
+        # is what "the donor is absent" has to mean for the scorer below to be fair.
+        absent_clade = case.get("absent_clade") or _parent_clade(clade_b)
+        if absent_clade is None:
+            raise CaseSkipped(
+                f"panel_donor_absent: donor clade {clade_b!r} has no parent lineage to "
+                f"remove, so its close relatives cannot be excluded")
         members_by_clade = {c: m for c, m in members_by_clade.items()
-                            if not clade_match(c, clade_b)}
+                            if not clade_match(c, absent_clade)}
         retained_tips = {acc for accs in members_by_clade.values() for acc in accs}
         pool = [g for g in pool
                 if base_to_tip.get(strip_sequence_extension(g.name).split(".")[0])
