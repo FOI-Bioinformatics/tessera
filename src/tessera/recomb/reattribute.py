@@ -24,7 +24,7 @@ _BASES = np.array(sorted(CANONICAL_BASES), dtype=np.uint8)  # A C G T byte codes
 
 def _clade_consensus(
     rows: dict[str, np.ndarray], query: str, lineage_map: LineageMap
-) -> tuple[dict[str, np.ndarray], dict[str, str]]:
+) -> tuple[dict[str, np.ndarray], dict[str, str], dict[str, int]]:
     """Per-clade majority canonical base per column (0 where no canonical base), a
     representative member label per clade, and each clade's member count."""
     by_clade: dict[str, list[str]] = {}

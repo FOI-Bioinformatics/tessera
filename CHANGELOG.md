@@ -35,15 +35,28 @@ All notable changes to Tessera are recorded here. The format follows
   autocorrelation of overlapping windows survives, but the grid was fixed at window 0. A
   donor run that happened to sit inside one block was carried intact into every
   permutation and scored p = 1.0 whatever its length, while the same run shifted by three
-  windows was cut in two and scored about 0.1. Measured on 91 windows with block 10: a
-  10-window run starting at window 0 or 10 gave 1.000, at window 3 or 5 gave 0.097. The
-  verdict depended on where the tract fell, not on the tract.
-- **The fix.** The grid's phase is drawn at random per permutation (offset 0 to block-1),
-  the partial blocks at either end travel as blocks of their own, and every row keeps all
-  of its wins. The same 10-window run now scores 0.18 to 0.20 at every offset; a
-  20-window run 0.03 at every offset. Runs that used to score well only by luck of the
-  phase now score honestly, which is slightly less often than their best case and far
-  more often than their worst.
+  windows was cut in two and scored about 0.1. Measured on 111 windows with block 10, the
+  same 6-window run scored 0.0755 at one offset and 1.0000 at another, and the same
+  10-window run likewise. The answer came from where the tract happened to fall.
+- **The fix.** The phase is a nuisance parameter, so the null averages over it instead of
+  fixing one: each permutation rotates the win vector circularly by a random amount
+  before the blocks are cut and shuffled. Every row still keeps exactly its own number of
+  wins. The spread across offsets falls from 0.925 to under 0.01, and the all-wins and
+  single-block guards are unchanged.
+- **It was wrong in both directions, and the cost is real.** A favourable phase made a
+  short run look significant as surely as an unfavourable one made it look impossible: a
+  6-window run (shorter than one window width) scored 0.0755 at one offset and now scores
+  about 0.52 wherever it sits, which is what a run shorter than the correlation length is
+  worth. The same averaging makes longer runs somewhat harder to call: an 18-window run
+  that scored 0.005 at its lucky phase now scores 0.03. One test case changed verdict
+  because of this -- on a panel of eight references 0.1 % apart, Bootscan's 18-window run
+  reached q = 0.06 and no longer clears FDR, so it stops naming a donor there. On a panel
+  0.25 % apart all four callers still agree on the planted donor at q = 2e-14.
+- **Measured against the harness that can see this.** `validation/run_specificity.py
+  --reps 3` is unchanged by the fix: 0 of 12 runs report a false region before and after,
+  and the positive control is detected 3/3 with the correct donor and a median breakpoint
+  error of 13 bp in both. A sensitivity re-measurement on `run_hybrids.py` needs an
+  aligner and has not been run.
 
 ### The HMM breakpoint interval always contains the switch
 

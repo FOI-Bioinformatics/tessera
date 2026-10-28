@@ -236,22 +236,48 @@ def _pipeline_rows(msa: Path, out: Path, logger, **kwargs) -> list[dict[str, str
         return list(csv.DictReader(fo, delimiter="\t"))
 
 
-def test_a_whole_panel_cluster_is_not_shared_with_the_merge(tmp_path, logger) -> None:
-    # Pooling the whole panel leaves the HMM one state (reported as "not run"), but it
-    # must not reach the merge: there it would make every pair of references the same
-    # donor, so two callers that named *different* donors would be reported as one row
-    # listing both -- agreement manufactured out of a disagreement, which also passes
-    # --min-methods 2. On this panel Bootscan names ref_3 and the site callers ref_6.
-    msa = _whole_panel_pool(tmp_path, refs=8, rate=0.001, donor="ref_3",
-                            tract=(4000, 8000))
-    rows = _pipeline_rows(
-        msa, tmp_path / "out", logger,
-        methods=("hmm", "3seq", "maxchi", "bootscan", "geneconv"),
-    )
-    by_donor = {r["minor_parent"]: set(r["methods"].split(",")) for r in rows}
-    assert set(by_donor) == {"ref_3", "ref_6"}, "the two donors must stay two rows"
-    assert by_donor["ref_3"] == {"bootscan"}
-    assert by_donor["ref_6"] == {"3seq", "maxchi", "geneconv"}
+def test_a_whole_panel_cluster_is_not_shared_with_the_merge() -> None:
+    """A cluster holding every reference must not reach the consensus merge.
+
+    There it would make every pair of references the same donor, so two callers that
+    named *different* donors would be reported as one row listing both -- agreement
+    read off a disagreement, which also passes ``--min-methods 2``. ``run_recomb``
+    drops it (``shared_clusters``) before the merge and before every caller but the
+    HMM.
+
+    This asserts the invariant on the merge directly. It used to drive the whole
+    pipeline over eight references 0.1 % apart, where Bootscan named ``ref_3`` (the
+    planted donor) and the site callers ``ref_6``; that panel no longer yields two
+    rows, because Bootscan's 18-window run there scores p = 0.03 now that the
+    run-length null no longer depends on the block grid's phase, and q = 0.06 does not
+    clear FDR. The guard is unchanged -- that fixture's second row rested on the old
+    null -- and the pipeline still covers the same filter through
+    ``test_a_whole_panel_cluster_does_not_silence_bootscan``, which the filter is what
+    keeps passing.
+    """
+    from tessera.recomb.ensemble import consensus_regions
+    from tessera.recomb.regions import Region
+
+    def mk(minor: str, method: str) -> Region:
+        return Region(
+            minor_parent=minor, major_parent="ref_0",
+            msa_start=4000, msa_end=8000, query_start=4000, query_end=8000,
+            n_windows=18, mean_sim_minor=0.999, mean_sim_major=0.998, margin=0.001,
+            support=0.8, qvalue=1e-6, methods=(method,),
+        )
+
+    per_method = {"bootscan": [mk("ref_3", "bootscan")], "3seq": [mk("ref_6", "3seq")]}
+
+    # What run_recomb shares with the merge: the whole-panel cluster filtered out.
+    rows, _ = consensus_regions(per_method, major="ref_0", clusters=[])
+    assert sorted(r.minor_parent for r in rows) == ["ref_3", "ref_6"]
+    assert all(len(r.methods) == 1 for r in rows)
+
+    # What sharing it would do: one row claiming both callers for one donor.
+    whole_panel = [[f"ref_{i}" for i in range(8)]]
+    merged, _ = consensus_regions(per_method, major="ref_0", clusters=whole_panel)
+    assert len(merged) == 1
+    assert set(merged[0].methods) == {"3seq", "bootscan"}
 
 
 def test_a_whole_panel_cluster_does_not_silence_bootscan(tmp_path, logger) -> None:

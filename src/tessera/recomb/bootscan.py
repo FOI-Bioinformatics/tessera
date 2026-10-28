@@ -53,9 +53,9 @@ def run_pvalue(wins: np.ndarray, run_len: int, *, block: int = 1, seed: int = 0)
     their number alone explains -- a recombinant tract is one run, chance flips are
     scattered. Windows are permuted in blocks of ``block`` so the autocorrelation
     that overlapping windows induce survives into the null; a plain element-wise
-    shuffle would destroy it and make every short run look significant. The block
-    grid's phase is drawn at random per permutation, so the p-value depends on the
-    run and not on where the run sits relative to a fixed grid.
+    shuffle would destroy it and make every short run look significant. Each
+    permutation draws its own grid phase, so the p-value depends on the run and not on
+    where the run sits relative to an arbitrary grid.
     """
     n_win = int(wins.size)
     k = int(np.count_nonzero(wins))
@@ -79,37 +79,39 @@ def run_pvalue(wins: np.ndarray, run_len: int, *, block: int = 1, seed: int = 0)
 def _block_permutations(wins: np.ndarray, block: int, perms: int, rng) -> np.ndarray:
     """``(perms, n_win)`` block permutations of ``wins``, every row holding its wins.
 
-    The block grid is laid down at a random phase for each permutation (offset drawn
-    from ``0 .. block-1``), the blocks are shuffled, and the partial blocks the phase
-    leaves at either end travel as blocks of their own. With a fixed grid the null
-    depended on where a run happened to fall: a run inside one block was intact in
-    every permutation and scored p = 1 whatever its length, while the same run
-    shifted by a few windows was cut in two and scored p near 1/n_blocks. Randomising
-    the phase makes the test a function of the run, not of the grid.
+    The grid the blocks are cut on has an arbitrary phase, and with it fixed at window 0
+    the null depended on where the observed run happened to fall: a run that fitted
+    inside one block was carried intact into every permutation and could never be
+    significant whatever its length, while the same run straddling a cut was broken and
+    could. The phase is a nuisance parameter, so each permutation draws its own: the
+    vector is rotated circularly by a random amount before the blocks are cut and
+    shuffled, which averages the null over every phase instead of fixing one. A short
+    run therefore gets the same answer wherever it sits -- an honest one in both
+    directions, since a favourable phase used to make a sub-block run look significant
+    as surely as an unfavourable one made it look impossible.
 
-    The vector is padded to whole blocks at both ends and the padding cells are
-    removed wherever they land, so every row keeps exactly ``n_win`` real cells and
-    all of its wins (cutting the shuffled row back to ``n_win`` instead dropped the
-    wins a shuffle moved past the end).
+    The vector is padded to whole blocks and the padding cells are removed wherever they
+    land, so every row keeps exactly ``n_win`` cells and all of its wins. Cutting the
+    shuffled row back to ``n_win`` instead (the earliest approach) dropped the wins a
+    shuffle moved past the end, so the null had fewer wins than the observed vector and
+    its runs were shorter than they should be.
     """
     n_win = int(wins.size)
     block = max(1, min(block, n_win))
-    offsets = rng.integers(0, block, size=perms) if block > 1 else np.zeros(perms, dtype=int)
-    out = np.empty((perms, n_win), dtype=bool)
-    for offset in np.unique(offsets):
-        rows = np.flatnonzero(offsets == offset)
-        front = int((block - offset) % block)  # cells before the first grid line
-        n_blocks = int(np.ceil((n_win + front) / block))
-        padded = np.zeros(n_blocks * block, dtype=bool)
-        padded[front:front + n_win] = wins
-        real = np.zeros(n_blocks * block, dtype=bool)
-        real[front:front + n_win] = True
-        order = np.argsort(rng.random((len(rows), n_blocks)), axis=1)
-        values = padded.reshape(n_blocks, block)[order].reshape(len(rows), -1)
-        keep = real.reshape(n_blocks, block)[order].reshape(len(rows), -1)
-        # Every row has exactly n_win real cells, so the boolean selection reshapes cleanly.
-        out[rows] = values[keep].reshape(len(rows), n_win)
-    return out
+    n_blocks = int(np.ceil(n_win / block))
+    shifts = rng.integers(0, n_win, size=perms)
+    rotated = wins[(np.arange(n_win)[None, :] + shifts[:, None]) % n_win]  # (perms, n_win)
+    padded = np.zeros((perms, n_blocks * block), dtype=bool)
+    padded[:, :n_win] = rotated
+    real = np.zeros(n_blocks * block, dtype=bool)
+    real[:n_win] = True
+    order = np.argsort(rng.random((perms, n_blocks)), axis=1)
+    values = np.take_along_axis(
+        padded.reshape(perms, n_blocks, block), order[:, :, None], axis=1
+    ).reshape(perms, -1)
+    keep = real.reshape(n_blocks, block)[order].reshape(perms, -1)
+    # Every row has exactly n_win real cells, so the boolean selection reshapes cleanly.
+    return values[keep].reshape(perms, n_win)
 
 
 def bootstrap_support(
