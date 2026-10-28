@@ -113,6 +113,48 @@ def test_resolve_blast_fallback_maps_organism_to_dataset(monkeypatch, tmp_path, 
     assert ds.path == "community/neherlab/hiv-1/hxb2"
 
 
+def test_resolve_blast_fallback_does_not_map_a_sibling_subtype(monkeypatch, tmp_path, logger):
+    """HIV-2 is not HIV-1, and the index's only HIV dataset is HIV-1's.
+
+    The keyword was matched as a bare substring, so "Human immunodeficiency virus 2"
+    resolved to ``community/neherlab/hiv-1/hxb2`` and that species' clade tree became
+    the recruitment pool without a word. Refusing to guess is the honest answer: the
+    message names the taxon and asks for --nextclade-dataset.
+    """
+    _patch_index(monkeypatch)
+    monkeypatch.setattr(nc.shutil, "which", lambda name: None)
+    monkeypatch.setattr(nc, "detect_taxon",
+                        lambda q, *, email, logger: "Human immunodeficiency virus 2")
+    q = tmp_path / "q.fasta"
+    q.write_text(">q\nACGT\n")
+    with pytest.raises(UserInputError, match="Could not map"):
+        nc.resolve_dataset(q, None, email=None, logger=logger)
+
+
+def test_resolve_blast_fallback_keeps_mapping_an_unqualified_name(monkeypatch, tmp_path, logger):
+    """A name carrying no serotype keeps its old mapping."""
+    _patch_index(monkeypatch)
+    monkeypatch.setattr(nc.shutil, "which", lambda name: None)
+    monkeypatch.setattr(nc, "detect_taxon",
+                        lambda q, *, email, logger: "Human immunodeficiency virus")
+    q = tmp_path / "q.fasta"
+    q.write_text(">q\nACGT\n")
+    assert nc.resolve_dataset(q, None, email=None, logger=logger).path == (
+        "community/neherlab/hiv-1/hxb2"
+    )
+
+
+def test_alias_qualifiers_reject_only_a_real_sibling_token() -> None:
+    """A trailing word that is not a serotype must not block the match."""
+    assert nc._alias_applies("respiratory syncytial virus",
+                             "human respiratory syncytial virus a")
+    assert not nc._alias_applies("respiratory syncytial virus",
+                                 "human respiratory syncytial virus b")
+    assert nc._alias_applies("respiratory syncytial virus",
+                             "respiratory syncytial virus strain xyz")
+    assert nc._alias_applies("measles", "measles morbillivirus")  # no qualifiers declared
+
+
 def test_resolve_blast_fallback_unmapped_raises(monkeypatch, tmp_path, logger):
     _patch_index(monkeypatch)
     monkeypatch.setattr(nc.shutil, "which", lambda name: None)

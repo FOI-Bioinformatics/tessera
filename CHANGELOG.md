@@ -6,6 +6,32 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Inputs that were accepted and then ignored, or accepted and then failed
+
+- **`msa --output <directory>`** warned "Overwriting the existing alignment", ran the
+  aligner to completion and only then failed moving the result into place, with
+  `Is a directory` under "Unexpected error". Every other command takes a directory
+  there, so this is an easy slip, and it cost the whole alignment. It is rejected
+  before any work starts, as are a `--collection` that is not a directory and a
+  missing `--query`.
+- **`find-references --collection <typo>`** was silently ignored, so every BLAST hit
+  read as a reference the collection lacked -- the opposite of what the command
+  reports. A `--download` path that is an existing file is checked too.
+- **`recomb --min-region 0`, `--min-region -5`, `--merge-gap -500`** all ran to a clean
+  exit 0 having quietly meant something else. They are range-checked like every other
+  numeric option on the command.
+- **A taxon was mapped to a Nextclade dataset by bare substring**, so on the
+  BLAST-detection fallback (no `--nextclade-dataset`, no `nextclade` binary) "human
+  immunodeficiency virus 2" resolved to the HIV-1 dataset and "human respiratory
+  syncytial virus b" to the RSV-A one: the wrong subtype's clade tree became the
+  recruitment pool without a word. Where a keyword names one member of a family whose
+  siblings have their own datasets, a serotype or subtype token following it must be one
+  that dataset covers; an unqualified name keeps its old mapping, and a longer trailing
+  word ("strain", "isolate") is not a qualifier. An unmappable taxon is refused by name
+  rather than guessed at.
+- **`mypy` passes.** A stale `type: ignore` in the BLAST client was the one error on
+  the default branch, so the type-check step of CI was red with no code change.
+
 ### Four output columns now say what their headers say
 
 - **`posterior`** in `recombination_regions.tsv` is an HMM measurement, but the field's

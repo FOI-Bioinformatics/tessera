@@ -116,6 +116,36 @@ _ALIAS: dict[str, str] = {
     "metapneumovirus": "nextstrain/hmpv/all-clades/NC_039199",
 }
 
+# Keywords above that name one member of a family whose other members have datasets of
+# their own, with the qualifier tokens the keyword's dataset actually covers. A plain
+# substring test mapped "human immunodeficiency virus 2" onto the HIV-1 dataset and
+# "human respiratory syncytial virus b" onto the RSV-A one, so recruitment was handed
+# the wrong subtype's clade tree and said nothing. The serotype or subtype token is
+# exactly what distinguishes them, so where one follows the keyword it has to be a
+# token the dataset covers. A longer word ("strain", "isolate", "subtype") is not a
+# qualifier and is ignored, and a name carrying no qualifier at all keeps its old
+# mapping -- an unqualified "human immunodeficiency virus" has long meant HIV-1.
+_ALIAS_QUALIFIERS: dict[str, frozenset[str]] = {
+    "human immunodeficiency virus": frozenset({"1"}),
+    "respiratory syncytial virus": frozenset({"a"}),
+}
+_MAX_QUALIFIER_LEN = 2  # "1", "2", "a", "b": longer words are not serotypes
+
+
+def _alias_applies(keyword: str, taxon: str) -> bool:
+    """Does ``keyword`` occur in ``taxon`` as the organism its dataset is for?"""
+    allowed = _ALIAS_QUALIFIERS.get(keyword)
+    at = taxon.find(keyword)
+    while at != -1:
+        if allowed is None:
+            return True
+        rest = taxon[at + len(keyword):].strip().split()
+        token = rest[0] if rest else ""
+        if not token or len(token) > _MAX_QUALIFIER_LEN or token in allowed:
+            return True
+        at = taxon.find(keyword, at + 1)
+    return False
+
 
 @dataclass
 class NextcladeDataset:
@@ -205,8 +235,11 @@ def resolve_dataset(
             return _entry_to_dataset(path, index[path])
 
     taxon = detect_taxon(query, email=email, logger=logger).lower()
-    for keyword, path in _ALIAS.items():
-        if keyword in taxon and path in index:
+    # Longest keyword first, so a more specific name is not captured by a shorter one,
+    # and each candidate checked against the subtype its dataset is for.
+    for keyword in sorted(_ALIAS, key=len, reverse=True):
+        path = _ALIAS[keyword]
+        if path in index and _alias_applies(keyword, taxon):
             logger.info("Mapped '%s' to the Nextclade dataset '%s'.", taxon, path)
             return _entry_to_dataset(path, index[path])
     raise UserInputError(

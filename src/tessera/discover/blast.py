@@ -87,7 +87,7 @@ def blast_subsequence(
         # Sets the contact address for Entrez calls. Note that Biopython's `qblast`
         # takes neither an email nor an api_key parameter, so the BLAST URL API below
         # is unauthenticated whatever is passed here; pacing is the only lever we have.
-        Entrez.email = resolved_email  # type: ignore[assignment]
+        Entrez.email = resolved_email
 
     logger.info("Submitting %d bp to NCBI %s/%s (this can take minutes)...",
                 len(seq), program, database)

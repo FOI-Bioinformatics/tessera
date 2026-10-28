@@ -11,6 +11,9 @@ from .main import (
     DEFAULT_THREADS,
     _parse_key_values,
     _require_choice,
+    _require_directory,
+    _require_file,
+    _require_output_file,
     _require_range,
     app,
     get_logger,
@@ -60,6 +63,9 @@ def msa(
             raise UserInputError(
                 "--reference and --query-as-backbone both choose the backbone; give one."
             )
+        _require_output_file(output, "--output")
+        _require_directory(collection, "--collection directory")
+        _require_file(query, "--query file")
         if output.exists():
             logger.warning("Overwriting the existing alignment %s.", output)
         params = MsaParams(

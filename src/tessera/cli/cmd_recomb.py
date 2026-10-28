@@ -192,6 +192,12 @@ def recomb(
         _require_range(reattribute_margin, "--reattribute-margin", lo=0.0, hi=1.0)
         _require_range(coverage_rel_drop, "--coverage-rel-drop", lo=0.0, hi=1.0)
         _require_range(backbone_gap_ratio, "--backbone-gap-ratio", lo=0.0, hi=1000.0)
+        # Both are lengths, and both were unchecked: --min-region 0 or a negative
+        # --merge-gap ran to a clean exit having silently meant something else.
+        if min_region is not None:
+            _require_range(min_region, "--min-region", lo=1)
+        if merge_gap is not None:
+            _require_range(merge_gap, "--merge-gap", lo=0)
         if coverage_floor is not None:
             _require_range(coverage_floor, "--coverage-floor", lo=0.0, hi=1.0)
         methods = parse_methods(method)
