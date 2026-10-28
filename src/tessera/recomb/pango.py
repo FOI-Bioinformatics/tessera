@@ -15,6 +15,7 @@ from __future__ import annotations
 import html
 import json
 import logging
+from http.client import HTTPException
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -38,7 +39,7 @@ def load_alias_key(
     path = pango_alias_path(cache_override)
     if path.exists():
         try:
-            return json.loads(path.read_text())
+            return json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             logger.warning("Cached Pango alias key is unreadable (%s); ignoring.", exc)
             return {}
@@ -47,11 +48,17 @@ def load_alias_key(
     try:
         with urlopen(ALIAS_KEY_URL, timeout=30) as resp:  # noqa: S310 - fixed https URL
             data = resp.read()
+        # Parse before caching. Written first, a body that is not the alias key at all
+        # (a proxy's error page, a truncated read) stayed in the cache, and every later
+        # call took the branch above, warned that the cache was unreadable and returned
+        # nothing -- so one bad response disabled the cross-check until somebody deleted
+        # the file by hand.
+        alias_key: dict[str, object] = json.loads(data)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
         logger.info("Fetched the Pango alias key into the cache: %s", path)
-        return json.loads(data)
-    except (URLError, OSError, json.JSONDecodeError) as exc:
+        return alias_key
+    except (URLError, OSError, HTTPException, json.JSONDecodeError) as exc:
         logger.warning("Could not fetch the Pango alias key: %s", exc)
         return {}
 

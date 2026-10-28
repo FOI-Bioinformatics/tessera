@@ -151,8 +151,10 @@ class Region:
     mean_sim_major: float
     margin: float
     # HMM caller: posterior support of the donor over the segment, and the query
-    # coordinate uncertainty of the segment's breakpoint.
-    posterior_support: float = 1.0
+    # coordinate uncertainty of the segment's breakpoint. ``None`` for a row no HMM
+    # segment contributed to: the default used to be 1.0, so every 3SEQ, MaxChi,
+    # Bootscan, GENECONV and donor-absent row wrote a posterior it never had.
+    posterior_support: float | None = None
     breakpoint_lo: int | None = None
     breakpoint_hi: int | None = None
     # Share of distinguishing (discordant) sites that favour the donor, and the

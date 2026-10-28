@@ -27,7 +27,7 @@ def test_skani_query_ani_parses_and_marks_absent(monkeypatch, tmp_path, logger):
         lines = ["Ref_file\tQuery_file\tANI\tAF_ref\tAF_query\tnames"]
         lines.append(f"{backbone.resolve()}\tq\t92.5\t83\t81.0\tx")
         lines.append(f"{cand.resolve()}\tq\t89.7\t95\t93.6\tx")
-        out.write_text("\n".join(lines) + "\n")
+        out.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return ""
 
     monkeypatch.setattr(panel, "run_tool", fake_run_tool)

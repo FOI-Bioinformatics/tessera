@@ -53,6 +53,27 @@ def test_divergent_gap_is_flagged():
     assert gap.mean_best == 0.80
 
 
+def test_gap_length_bp_is_query_bases_not_alignment_columns():
+    """`length_bp` was the MSA column span, gaps included, under a bp header."""
+    best = [0.98] * 10
+    labels = ["refA"] * 10
+    info = [100] * 10
+    for i in (4, 5, 6):
+        best[i], labels[i] = 0.80, "refB"
+    result = _result(best, labels, info)
+    # 100 gap columns inside the gap's span: columns 500-599 carry no query base.
+    present = np.ones(result.width, dtype=int)
+    present[500:600] = 0
+    result.query_cumulative = np.concatenate([[0], np.cumsum(present)])
+
+    gaps, _ = call_coverage_gaps(result, 100, CoverageParams.with_defaults(100))
+
+    gap = gaps[0]
+    assert (gap.msa_start, gap.msa_end) == (400, 700)
+    assert (gap.query_start, gap.query_end) == (400, 600)
+    assert gap.length_bp == 200 == gap.query_end - gap.query_start
+
+
 def test_low_information_gap_is_labelled_distinctly():
     best = [0.98] * 10
     labels = ["refA"] * 10

@@ -30,6 +30,7 @@ from ..core.io import (
     _require_fasta,
     collection_genomes,
     read_fasta,
+    safe_filename_stem,
     strip_sequence_extension,
     write_fasta_record,
 )
@@ -133,7 +134,7 @@ def write_ncbi_lineages(dest: Path, labels: dict[str, str]) -> Path | None:
     if not labels:
         return None
     out = dest / NCBI_LINEAGES_TSV
-    with open(out, "w") as fo:
+    with open(out, "w", encoding="utf-8") as fo:
         for acc, lineage in sorted(labels.items()):
             fo.write(f"{acc}\t{lineage}\n")
     return out
@@ -197,7 +198,7 @@ def _lineage_labels(report: Path) -> dict[str, str]:
     labels: dict[str, str] = {}
     if not report.exists():
         return labels
-    for line in report.read_text().splitlines():
+    for line in report.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
         try:
@@ -225,11 +226,15 @@ def _split_fasta(
     for header, seq in read_fasta(fna):
         if limit is not None and len(written) >= limit:
             break
-        acc = header.split()[0]
-        out = dest / f"{acc}.fasta"
-        with open(out, "w") as fo:
+        # The header comes from a downloaded archive, so it names the file only after
+        # sanitising: an empty header raised IndexError here, and one beginning "../"
+        # wrote outside `dest`. Both are what safe_filename_stem exists for.
+        acc = (header.split() or [""])[0]
+        stem = safe_filename_stem(acc, fallback=f"sequence_{len(written) + 1}")
+        out = dest / f"{stem}.fasta"
+        with open(out, "w", encoding="utf-8") as fo:
             note = f" {labels[acc]}" if acc in labels else ""
-            write_fasta_record(fo, f"{acc}{note}", seq)
+            write_fasta_record(fo, f"{acc or stem}{note}", seq)
         written.append(out)
     return written
 
@@ -377,7 +382,7 @@ def select_regional(
             if len(chunk) < 50:
                 continue
             win = Path(tmp) / f"win_{w}.fasta"
-            with open(win, "w") as fo:
+            with open(win, "w", encoding="utf-8") as fo:
                 write_fasta_record(fo, f"win_{w}", chunk)
             ani = skani_query_ani(win, related, logger)
             ranked = sorted(

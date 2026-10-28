@@ -8,6 +8,7 @@ import typer
 
 from .main import (
     _require_coverage_fractions,
+    _require_directory,
     _require_file,
     _require_output_directory,
     _require_scan_windows,
@@ -96,6 +97,12 @@ def find_references(
     with stage_errors(logger):
         _require_file(msa, "MSA file")
         _require_output_directory(output)
+        # Silently ignored when absent, which made every hit read as "new" and, with
+        # --download, undid the only protection the two paths being distinct gives.
+        if collection is not None:
+            _require_directory(collection, "--collection directory")
+        if download is not None:
+            _require_output_directory(download)
         _require_scan_windows(window_size, window_step)
         _require_coverage_fractions(coverage_floor, coverage_rel_drop)
         _require_search_counts(max_hits=max_hits, top_gaps=top_gaps, subtile=subtile)

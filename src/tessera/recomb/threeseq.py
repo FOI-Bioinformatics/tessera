@@ -34,6 +34,9 @@ from .stats import benjamini_hochberg
 # vectorised permutation p-value -- bounds worst-case cost on highly divergent pairs.
 _MAX_EXACT_CELLS = 60_000_000
 _PERMUTATIONS = 20_000  # permutation-fallback resolution (~1/_PERMUTATIONS floor)
+# Cap on permutations * discriminating sites per intermediate array, so the fallback's
+# peak memory does not grow with the panel's divergence. The same bound MaxChi uses.
+_MAX_PERM_CELLS = 20_000_000
 
 
 @dataclass
@@ -140,16 +143,36 @@ def descent_pvalue_exact(m: int, n: int, depth: int) -> float:
     return float(prev[m][0])
 
 
-def _descent_pvalue_perm(steps: np.ndarray, depth: int, *, seed: int = 0) -> float:
-    """Vectorised permutation ``P(max drawdown >= depth)`` (exact-in-the-limit)."""
-    rng = np.random.default_rng(seed)
-    n_steps = steps.size
-    order = np.argsort(rng.random((_PERMUTATIONS, n_steps)), axis=1)
-    permuted = steps[order]
-    cumulative = np.cumsum(permuted, axis=1)
-    cumulative = np.hstack([np.zeros((_PERMUTATIONS, 1), dtype=cumulative.dtype), cumulative])
+def _perm_exceedances(steps: np.ndarray, depth: int, perms: int, rng) -> int:
+    """How many of ``perms`` shuffles of ``steps`` reach a drawdown of ``depth``."""
+    order = np.argsort(rng.random((perms, steps.size)), axis=1)
+    cumulative = np.cumsum(steps[order], axis=1)
+    cumulative = np.hstack([np.zeros((perms, 1), dtype=cumulative.dtype), cumulative])
     drawdowns = (np.maximum.accumulate(cumulative, axis=1) - cumulative).max(axis=1)
-    return float((np.count_nonzero(drawdowns >= depth) + 1) / (_PERMUTATIONS + 1))
+    return int(np.count_nonzero(drawdowns >= depth))
+
+
+def _descent_pvalue_perm(steps: np.ndarray, depth: int, *, seed: int = 0) -> float:
+    """Vectorised permutation ``P(max drawdown >= depth)`` (exact-in-the-limit).
+
+    Evaluated in batches sized so no intermediate array exceeds
+    :data:`_MAX_PERM_CELLS`, which bounds peak memory *without* reducing the number of
+    permutations: the rows are independent, so the exceedance counts add. Unbatched,
+    the walk's shuffled copy, its argsort, its cumulative sum and their temporaries all
+    existed at full size at once -- 1.6 GB at 2000 discriminating sites and linear in
+    that count, so a divergent panel (dengue serotypes, a third apart) could ask for
+    several gigabytes. This fallback is reached exactly when the exact DP is too large,
+    which is to say on the biggest inputs.
+    """
+    rng = np.random.default_rng(seed)
+    batch = max(1, min(_PERMUTATIONS, _MAX_PERM_CELLS // max(1, steps.size)))
+    exceed = 0
+    remaining = _PERMUTATIONS
+    while remaining > 0:
+        this = min(batch, remaining)
+        exceed += _perm_exceedances(steps, depth, this, rng)
+        remaining -= this
+    return float((exceed + 1) / (_PERMUTATIONS + 1))
 
 
 def descent_pvalue(steps: np.ndarray, descent: Descent, *, seed: int = 0) -> tuple[float, str]:

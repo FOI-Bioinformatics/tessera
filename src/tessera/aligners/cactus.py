@@ -49,7 +49,7 @@ class CactusAligner(Aligner):
 
         genome_paths = [os.path.abspath(g) for g in genomes]
         seqfile = out_dir / "seqfile.txt"
-        with open(seqfile, "w") as fo:
+        with open(seqfile, "w", encoding="utf-8") as fo:
             for g, p in zip(genomes, genome_paths, strict=True):
                 fo.write(f"{_sample_name(g)}\t{p}\n")
 

@@ -105,7 +105,7 @@ class MafftAligner(Aligner):
         # reference so the output stays one reference row.
         ref_seq = "".join(seq for _, seq in read_fasta(reference))
         ref_fasta = out_dir / "reference.fasta"
-        ref_fasta.write_text(f">{reference.stem}\n{ref_seq}\n")
+        ref_fasta.write_text(f">{reference.stem}\n{ref_seq}\n", encoding="utf-8")
 
         tuning: list[str] = []
         for key, flag in _VALUE_TUNING.items():
@@ -159,7 +159,7 @@ class MafftAligner(Aligner):
 
         warn_unplaced(rows, reference.stem, logger)
         msa = out_dir / "msa.fasta"
-        with open(msa, "w") as out:
+        with open(msa, "w", encoding="utf-8") as out:
             write_fasta_record(out, reference.stem, ref_seq)
             for stem, row in rows:
                 write_fasta_record(out, stem, row)

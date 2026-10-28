@@ -510,3 +510,68 @@ def test_reassort_passes_the_thread_count(tmp_path: Path, monkeypatch) -> None:
     ])
     assert result.exit_code == 0, result.output
     assert seen["threads"] == 4
+
+
+# --- msa: the one command whose output is a file, not a directory ----------
+
+def test_msa_rejects_an_output_path_that_is_a_directory(tmp_path: Path) -> None:
+    """Every other command takes a directory for --output, so passing one here is an
+    easy slip. It used to warn "Overwriting the existing alignment", run the aligner to
+    completion, and only then fail moving the result into place -- the whole cost of
+    the alignment paid before the mistake was reported."""
+    occupied = tmp_path / "out"
+    occupied.mkdir()
+    (occupied / "keep.txt").write_text("untouched\n")
+
+    def _no_aligning(*args, **kwargs):
+        raise AssertionError("the aligner was reached; the output path should have been rejected")
+
+    import tessera.msa.build as build_mod
+    original = build_mod.build_msa
+    try:
+        build_mod.build_msa = _no_aligning
+        result = runner.invoke(app, [
+            "msa", "--query", str(_query(tmp_path)),
+            "--collection", str(_collection(tmp_path)), "--output", str(occupied),
+        ])
+    finally:
+        build_mod.build_msa = original
+
+    _rejected(result, "is a directory, not a file")
+    assert (occupied / "keep.txt").read_text() == "untouched\n"
+
+
+def test_msa_rejects_a_collection_that_does_not_exist(tmp_path: Path) -> None:
+    result = runner.invoke(app, [
+        "msa", "--query", str(_query(tmp_path)),
+        "--collection", str(tmp_path / "nope"), "--output", str(tmp_path / "msa.fasta"),
+    ])
+    _rejected(result, "not found")
+
+
+# --- recomb: the two length options that were unchecked --------------------
+
+@pytest.mark.parametrize(("option", "value"), [
+    ("--min-region", "0"), ("--min-region", "-5"), ("--merge-gap", "-500"),
+])
+def test_recomb_rejects_out_of_range_lengths(tmp_path: Path, option: str, value: str) -> None:
+    """These ran to a clean exit 0 having silently meant something else."""
+    result = runner.invoke(app, [
+        "recomb", "--msa", EXAMPLE, "--query", "query",
+        "--output", str(tmp_path / "out"), option, value,
+    ])
+    _rejected(result, f"Invalid {option}")
+
+
+# --- find-references: paths that were silently ignored ---------------------
+
+def test_find_references_rejects_a_collection_that_does_not_exist(
+    tmp_path: Path, no_pipeline
+) -> None:
+    """A typo'd --collection was ignored, so every hit read as a reference the
+    collection lacked -- the opposite of what the command is for."""
+    result = runner.invoke(app, [
+        "find-references", "--msa", EXAMPLE, "--query", "query",
+        "--output", str(tmp_path / "out"), "--collection", str(tmp_path / "nope"),
+    ])
+    _rejected(result, "not found")

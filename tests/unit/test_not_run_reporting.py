@@ -15,7 +15,7 @@ from tessera.recomb.run import RecombParams, run_recomb
 
 
 def _rows(path: Path) -> list[dict[str, str]]:
-    return list(csv.DictReader(path.open(), delimiter="\t"))
+    return list(csv.DictReader(path.open(encoding="utf-8"), delimiter="\t"))
 
 
 def _divergent(example_data: Path, tmp_path: Path, logger, **kwargs) -> Path:

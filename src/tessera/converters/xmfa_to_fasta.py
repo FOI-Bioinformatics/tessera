@@ -62,7 +62,7 @@ def xmfa_to_fasta(
     a_gen[alignment_number] = {}
     rm_h[alignment_number] = {}
 
-    with open(xmfa_path) as xmfa:
+    with open(xmfa_path, encoding="utf-8") as xmfa:
         for line in xmfa:
             if _PATTERN_START.search(line):
                 # progressiveMauve output truncated by a disk-full or an OOM kill would
@@ -173,7 +173,7 @@ def xmfa_to_fasta(
                 fragment = reverse_complement(fragment)
             outseqs[sequence][start:end] = fragment
 
-    with open(out_path, "w") as fo:
+    with open(out_path, "w", encoding="utf-8") as fo:
         _write_sequence(fo, num2name[reference_num], outseqs[reference_num])
         for sequence in outseqs:
             if sequence != reference_num:

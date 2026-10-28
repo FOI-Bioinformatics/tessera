@@ -46,7 +46,7 @@ def _mutate(seq: str, rng: random.Random, rate: float) -> str:
 def _read_rows(path: Path) -> dict[str, str]:
     rows: dict[str, str] = {}
     name = None
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         if line.startswith(">"):
             name = line[1:]
             rows[name] = ""

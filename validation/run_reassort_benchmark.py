@@ -80,7 +80,7 @@ def _tip_seqs(dataset_path: str, logger: logging.Logger) -> dict[str, str]:
 
 def _verdict(ha_seq: str, na_seq: str, tmp: Path, logger: logging.Logger) -> str:
     q = tmp / "q.fasta"
-    with open(q, "w") as fo:
+    with open(q, "w", encoding="utf-8") as fo:
         write_fasta_record(fo, "HA", ha_seq)
         write_fasta_record(fo, "NA", na_seq)
     result = assign_segments(q, dataset_overrides={"HA": HA_DATASET, "NA": NA_DATASET},

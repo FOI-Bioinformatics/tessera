@@ -111,7 +111,7 @@ def _concatenate(
     never from those names. Returns the query rows as ``(label, row)``.
     """
     rows: list[tuple[str, str]] = []
-    with open(out_path, "w") as out:
+    with open(out_path, "w", encoding="utf-8") as out:
         write_fasta_record(out, reference_label, reference_seq)
         for label, fa in per_query:
             records = read_fasta(fa)

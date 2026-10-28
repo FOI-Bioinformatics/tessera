@@ -146,7 +146,7 @@ def main(argv: list[str]) -> int:
     print(f"(window {WINDOW}/{STEP}; detected = any sampled query yields a consensus region)\n")
 
     rows_path = _flag(argv, "--rows", "")
-    rows_fh = open(rows_path, "w") if rows_path else None
+    rows_fh = open(rows_path, "w", encoding="utf-8") if rows_path else None
     if rows_fh:
         rows_fh.write("alignment\tmut\trec\tdual\trep\tdetected\tqueries\tqueries_hit\tregions\tcallers\n")
 

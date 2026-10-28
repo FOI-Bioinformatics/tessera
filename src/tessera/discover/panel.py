@@ -89,7 +89,7 @@ def skani_query_ani(
         return {}
     with tempfile.TemporaryDirectory() as tmp:
         ref_list = Path(tmp) / "refs.txt"
-        ref_list.write_text("\n".join(str(r.resolve()) for r in refs) + "\n")
+        ref_list.write_text("\n".join(str(r.resolve()) for r in refs) + "\n", encoding="utf-8")
         out = Path(tmp) / "dist.tsv"
         run_tool(
             SKANI,
@@ -97,7 +97,7 @@ def skani_query_ani(
              "--rl", str(ref_list), "-o", str(out), "--medium"],
             logger=logger, log_prefix="skani",
         )
-        rows = out.read_text().splitlines()
+        rows = out.read_text(encoding="utf-8").splitlines()
     by_path = {r.resolve(): r for r in refs}
     result: dict[Path, tuple[float, float]] = {r: (0.0, 0.0) for r in refs}
     for line in rows[1:]:  # skip header
@@ -201,7 +201,7 @@ def dereplicate(
         # staged symlink dereferences to its real genome rather than a dangling path.
         rep_paths = {
             Path(line.strip()).resolve()
-            for line in (out / "skDER_Results.txt").read_text().splitlines()
+            for line in (out / "skDER_Results.txt").read_text(encoding="utf-8").splitlines()
             if line.strip()
         }
     representatives = [g for g in genomes if g.resolve() in rep_paths]
@@ -381,7 +381,7 @@ def write_panel_tsv(
     genotype is inserted; without one the output is the original four columns.
     """
     logger.info("Writing reference panel: %s", path)
-    with open(path, "w") as fo:
+    with open(path, "w", encoding="utf-8") as fo:
         if lineage_map:
             fo.write("genome\trole\tlineage\tquery_ani\tquery_af\n")
         else:

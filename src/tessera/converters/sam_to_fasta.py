@@ -30,7 +30,7 @@ def project_sam_to_row(
     records are skipped.
     """
     row = bytearray(b"-" * total_len)
-    with open(sam_path) as fo:
+    with open(sam_path, encoding="utf-8") as fo:
         for line in fo:
             if line.startswith("@"):
                 continue

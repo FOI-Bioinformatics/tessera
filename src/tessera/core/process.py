@@ -19,9 +19,11 @@ from __future__ import annotations
 
 import logging
 import os
+import signal
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
+from typing import IO
 
 from .errors import MissingBinaryError, ToolExecutionError
 from .plugins import ToolCapabilities
@@ -94,11 +96,8 @@ def run_tool(
         # be read by the next stage as though the tool had finished.
         partial = Path(stdout_path).with_name(Path(stdout_path).name + ".partial")
         try:
-            with open(partial, "w") as out:
-                proc = subprocess.run(
-                    cmd, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.PIPE,
-                    text=True, timeout=timeout, env=env,
-                )
+            with open(partial, "w", encoding="utf-8") as sink:
+                code, _, err = _run(cmd, stdout=sink, timeout=timeout, env=env)
         except subprocess.TimeoutExpired as exc:
             partial.unlink(missing_ok=True)
             raise _timeout_error(cmd, timeout) from exc
@@ -108,26 +107,58 @@ def run_tool(
         except BaseException:
             partial.unlink(missing_ok=True)
             raise
-        output = proc.stderr or ""
-        if proc.returncode == 0:
+        output = err or ""
+        if code == 0:
             os.replace(partial, stdout_path)
         else:
             partial.unlink(missing_ok=True)
     else:
         try:
-            proc = subprocess.run(
-                cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                timeout=timeout, env=env,
-            )
+            code, out, err = _run(cmd, stdout=subprocess.PIPE, timeout=timeout, env=env)
         except subprocess.TimeoutExpired as exc:
             raise _timeout_error(cmd, timeout) from exc
         except FileNotFoundError as exc:
             raise _missing_binary(cmd, exc) from exc
-        output = (proc.stdout or "") + (proc.stderr or "")
-    if proc.returncode != 0:
+        output = (out or "") + (err or "")
+    if code != 0:
         tail = "\n".join(output.strip().splitlines()[-_OUTPUT_TAIL_LINES:])
-        raise ToolExecutionError(cmd, proc.returncode, tail or None)
+        raise ToolExecutionError(cmd, code, tail or None)
     return output
+
+
+def _run(
+    cmd: list[str], *, stdout: IO[str] | int, timeout: float | None,
+    env: dict[str, str] | None,
+) -> tuple[int, str | None, str | None]:
+    """Run ``cmd`` in a process group of its own; on a timeout stop the whole group.
+
+    Several of the tools here are wrappers that do their work in children of their own
+    (the SibeliaZ shell script, Cactus through Toil, the EDirect perl scripts).
+    ``subprocess.run``'s timeout signals only the process it started, so those children
+    outlived the run that had given up on them -- reparented to init, still holding CPU
+    and scratch space, which on a shared machine is somebody else's problem. Starting a
+    new session makes the tool a process-group leader, so one ``killpg`` reaches
+    everything it spawned.
+    """
+    with subprocess.Popen(
+        cmd, stdin=subprocess.DEVNULL, stdout=stdout, stderr=subprocess.PIPE,
+        text=True, env=env, start_new_session=True,
+    ) as proc:
+        try:
+            out, err = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _kill_group(proc)
+            proc.communicate()  # reap the group, so no zombie is left behind
+            raise
+        return proc.returncode, out, err
+
+
+def _kill_group(proc: subprocess.Popen[str]) -> None:
+    """SIGKILL the tool's whole process group, falling back to the tool alone."""
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        proc.kill()
 
 
 def _missing_binary(cmd: list[str], exc: FileNotFoundError) -> Exception:
@@ -150,6 +181,7 @@ def _missing_binary(cmd: list[str], exc: FileNotFoundError) -> Exception:
 def _timeout_error(cmd: list[str], timeout: float | None) -> ToolExecutionError:
     return ToolExecutionError(
         cmd, -1,
-        f"No output within {timeout:g}s; the tool was stopped. Raise or remove the "
+        f"Still running after {timeout:g}s; the tool was stopped, with every process "
+        f"it had started. Raise or remove the "
         f"limit with ${_TIMEOUT_ENV} (seconds, or 'none') if it needs longer.",
     )

@@ -167,25 +167,32 @@ def _read_alignment(msa_path: str) -> dict[str, np.ndarray]:
     rows: dict[str, np.ndarray] = {}
     duplicates: list[str] = []
     width: int | None = None
-    for record in SeqIO.parse(msa_path, "fasta"):
-        text = str(record.seq).upper().replace("U", "T")
-        try:
-            seq = np.frombuffer(text.encode("ascii"), dtype=np.uint8)
-        except UnicodeEncodeError as exc:
-            raise UserInputError(
-                f"Sequence '{record.id}' contains non-ASCII characters; "
-                "the input must be a plain nucleotide FASTA."
-            ) from exc
-        if width is None:
-            width = seq.size
-        elif seq.size != width:
-            raise UserInputError(
-                f"Sequence '{record.id}' length {seq.size} != alignment width {width}; "
-                "the input must be an aligned FASTA (all rows equal length)."
-            )
-        if record.id in rows:
-            duplicates.append(record.id)
-        rows[record.id] = seq
+    # The file is opened here rather than by SeqIO: given a path it opens the file in
+    # the locale's encoding, so an alignment carrying a non-ASCII label (an accented
+    # place name in a strain designation) could not be read at all under LC_ALL=C,
+    # which is an ordinary setting on a compute node. The sequences themselves must
+    # still be ASCII, and are checked below.
+    with open(msa_path, encoding="utf-8") as handle:
+        records = SeqIO.parse(handle, "fasta")
+        for record in records:
+            text = str(record.seq).upper().replace("U", "T")
+            try:
+                seq = np.frombuffer(text.encode("ascii"), dtype=np.uint8)
+            except UnicodeEncodeError as exc:
+                raise UserInputError(
+                    f"Sequence '{record.id}' contains non-ASCII characters; "
+                    "the input must be a plain nucleotide FASTA."
+                ) from exc
+            if width is None:
+                width = seq.size
+            elif seq.size != width:
+                raise UserInputError(
+                    f"Sequence '{record.id}' length {seq.size} != alignment width {width}; "
+                    "the input must be an aligned FASTA (all rows equal length)."
+                )
+            if record.id in rows:
+                duplicates.append(record.id)
+            rows[record.id] = seq
     if duplicates:
         listed = ", ".join(sorted(set(duplicates)))
         raise UserInputError(

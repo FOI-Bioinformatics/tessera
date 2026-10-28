@@ -111,7 +111,7 @@ class SibeliazAligner(Aligner):
         # SibeliaZ may find blocks yet write a MAF with no alignment rows: its
         # wrapper runs spoa per block with stderr suppressed, so an OOM-killed
         # spoa is silent and yields an empty MAF.
-        if not any(line.startswith("s") for line in maf.read_text().splitlines()):
+        if not any(line.startswith("s") for line in maf.read_text(encoding="utf-8").splitlines()):
             raise OutputError(
                 f"SibeliaZ wrote an empty MAF (no alignment rows) at {maf}. Its "
                 "blocks were found but the per-block alignment step wrote nothing; "
@@ -149,7 +149,7 @@ def _sibeliaz_invocation(out_dir: Path, logger: logging.Logger) -> list[str]:
     real = shutil.which("sibeliaz")
     if real is None:
         return ["sibeliaz"]
-    script = Path(real).read_text()
+    script = Path(real).read_text(encoding="utf-8")
     if "-printf" not in script:  # already BSD-friendly / unexpected layout
         return ["sibeliaz"]
 
@@ -158,7 +158,7 @@ def _sibeliaz_invocation(out_dir: Path, logger: logging.Logger) -> list[str]:
         if old in patched:
             patched = patched.replace(old, new)
     patched_path = out_dir / "sibeliaz_bsd.sh"
-    patched_path.write_text(patched)
+    patched_path.write_text(patched, encoding="utf-8")
     logger.info("Using BSD-compatible SibeliaZ wrapper on macOS: %s", patched_path)
     return ["bash", str(patched_path)]
 
@@ -168,7 +168,7 @@ def _build_seqid_map(genomes) -> dict[str, str]:
     name_map: dict[str, str] = {}
     for genome in genomes:
         stem = genome.stem
-        with open(genome) as fo:
+        with open(genome, encoding="utf-8") as fo:
             for lineno, line in enumerate(fo, start=1):
                 if line.startswith(">"):
                     tokens = line[1:].split()

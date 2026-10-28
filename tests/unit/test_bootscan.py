@@ -128,21 +128,62 @@ def test_block_permutations_with_fewer_windows_than_one_block() -> None:
     wins = np.array([1, 0, 1, 1, 0], dtype=bool)
     perms = _block_permutations(wins, 5, 50, np.random.default_rng(0))
     assert perms.shape == (50, 5)
-    assert (perms == wins).all()  # one block: the only arrangement is the observed one
-    assert run_pvalue(wins, 2, block=50) == 1.0  # block is clamped to n_win
+    assert set(perms.sum(axis=1)) == {3}  # block clamped to n_win; every win kept
+    # A single block offers only its grid-phase rotations as arrangements, so a run
+    # of two among five windows is close to chance and is never called.
+    assert run_pvalue(wins, 2, block=50) > 0.5
 
 
-def test_block_permutations_unchanged_when_windows_are_a_multiple_of_the_block() -> None:
+def test_run_pvalue_does_not_depend_on_the_grid_phase() -> None:
+    """The same run must score the same wherever it falls relative to the block grid.
+
+    With a fixed grid a 10-window run that started on a block boundary was intact in
+    every permutation (p = 1.0), while the same run shifted by three windows was cut
+    in two and scored about 0.1. The phase is now random per permutation.
+    """
+    from tessera.recomb.bootscan import run_pvalue
+
+    n_win, block, run = 91, 10, 10
+    pvalues = []
+    for offset in (0, 3, 5, 10, 15):
+        wins = np.zeros(n_win, dtype=bool)
+        wins[offset:offset + run] = True
+        pvalues.append(run_pvalue(wins, run, block=block))
+    assert max(pvalues) - min(pvalues) < 0.05, pvalues
+    assert max(pvalues) < 0.5, pvalues  # a block-aligned run is no longer p = 1
+
+
+def test_a_run_shorter_than_one_block_is_not_significant_at_any_phase() -> None:
+    """The phase used to decide the answer in both directions.
+
+    A 6-window run with a 10-window block scored 0.08 at one offset and 1.00 at
+    another: significant by luck of the grid at one end, impossible at the other. It
+    now scores about 0.5 wherever it sits, which is what a run shorter than the
+    correlation length is worth.
+    """
+    from tessera.recomb.bootscan import run_pvalue
+
+    for offset in (0, 3, 5, 10, 17):
+        wins = np.zeros(111, dtype=bool)
+        wins[offset:offset + 6] = True
+        assert 0.3 < run_pvalue(wins, 6, block=10) < 0.7
+
+
+def test_block_permutations_hold_every_phase_to_the_win_count() -> None:
+    """Every row keeps the observed number of wins, at every grid phase.
+
+    The win count is what the null holds fixed -- it asks only whether the wins are
+    more contiguous than chance -- so a row that lost or gained one would be testing a
+    different vector. Rotating before the cut must not drop a win off either end.
+    """
     from tessera.recomb.bootscan import _block_permutations
 
     wins = np.zeros(30, dtype=bool)
     wins[[3, 4, 5, 20]] = True
-    rng = np.random.default_rng(7)
-    got = _block_permutations(wins, 10, 20, rng)
-    ref_rng = np.random.default_rng(7)
-    order = np.argsort(ref_rng.random((20, 3)), axis=1)
-    expected = wins.reshape(3, 10)[order].reshape(20, 30)
-    assert (got == expected).all()
+    got = _block_permutations(wins, 10, 200, np.random.default_rng(7))
+    assert got.shape == (200, 30)
+    assert set(got.sum(axis=1)) == {4}
+    assert not all((row == wins).all() for row in got)  # the wins do move
 
 
 def _redundant_donor_msa(tmp_path: Path) -> Path:

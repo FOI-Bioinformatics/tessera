@@ -208,7 +208,7 @@ def maf_to_fasta(
             f"MAF/name_map sequence names, or that the genomes share alignable regions."
         )
 
-    with open(out_path, "w") as fo:
+    with open(out_path, "w", encoding="utf-8") as fo:
         for s in ordered_species:
             write_fasta_record(fo, s, out[s].decode("latin-1"))
     return out_path
@@ -216,7 +216,7 @@ def maf_to_fasta(
 
 def _iter_blocks(maf_path: Path):
     block: list[_Row] = []
-    with open(maf_path) as fo:
+    with open(maf_path, encoding="utf-8") as fo:
         for lineno, line in enumerate(fo, start=1):
             if line.startswith("a"):
                 if block:

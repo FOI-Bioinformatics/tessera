@@ -258,7 +258,7 @@ def _write_candidates(output: Path, candidates: list[Candidate], logger: logging
         "gap_query_start", "gap_query_end", "gap_kind", "accession",
         "pct_identity", "query_coverage", "evalue", "in_collection", "title",
     ]
-    with open(path, "w") as fo:
+    with open(path, "w", encoding="utf-8") as fo:
         fo.write("\t".join(header) + "\n")
         for c in candidates:
             fo.write("\t".join(map(str, [
@@ -375,7 +375,9 @@ def _curate_download(
         logger.warning("--curate needs --collection (the backbone source); skipping curation.")
         return
     qfasta = params.output / "query.degapped.fasta"
-    qfasta.write_text(f">{query_label}\n{query_row.replace('-', '')}\n")
+    qfasta.write_text(
+        f">{query_label}\n{query_row.replace('-', '')}\n", encoding="utf-8"
+    )
     assert params.download is not None  # only called from the `download is not None` branch
     # When --download is the collection itself, the collection now also holds this run's
     # downloads; leave them out so a downloaded sibling cannot become the backbone.
@@ -407,7 +409,7 @@ def _write_downloaded(
     path = output / "downloaded_references.tsv"
     logger.info("Writing downloaded references: %s", path)
     header = ["accession", "filename", "pct_identity", "gap_query_start", "gap_query_end", "title"]
-    with open(path, "w") as fo:
+    with open(path, "w", encoding="utf-8") as fo:
         fo.write("\t".join(header) + "\n")
         for c in downloaded:
             fo.write("\t".join(map(str, [

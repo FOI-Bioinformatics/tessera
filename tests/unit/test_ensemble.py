@@ -15,13 +15,14 @@ from tessera.recomb.regions import CALLERS, Region, parse_methods
 
 def mk(minor: str, qs: int, qe: int, method: str, *,
        major: str = "A", support: float | None = None,
-       qvalue: float | None = None, breakpoint_lo: int | None = None) -> Region:
+       qvalue: float | None = None, breakpoint_lo: int | None = None,
+       posterior: float | None = None) -> Region:
     return Region(
         minor_parent=minor, major_parent=major, msa_start=qs, msa_end=qe,
         query_start=qs, query_end=qe, n_windows=1,
         mean_sim_minor=0.99, mean_sim_major=0.90, margin=0.0,
         support=support, qvalue=qvalue, breakpoint_lo=breakpoint_lo,
-        breakpoint_hi=breakpoint_lo, methods=(method,),
+        breakpoint_hi=breakpoint_lo, methods=(method,), posterior_support=posterior,
     )
 
 
@@ -69,6 +70,25 @@ def test_overlapping_same_minor_merges_with_agreement_and_best_support() -> None
     assert r.breakpoint_lo == 110                # HMM breakpoint preferred
     assert breakdown[0]["methods"] == ("hmm", "3seq")
     assert set(breakdown[0]["per_method_support"]) == {"hmm", "3seq"}
+
+
+def test_merged_row_keeps_the_hmm_posterior_when_a_site_caller_is_most_significant() -> None:
+    """The posterior is an HMM measurement; `best` here is 3SEQ, which has none.
+
+    The merge used to copy `best`'s field, which for a site caller was the dataclass
+    default 1.0, and discard the HMM's real value.
+    """
+    hmm = mk("B", 100, 220, "hmm", support=0.8, qvalue=1e-3, posterior=0.62)
+    seq = mk("B", 120, 200, "3seq", support=0.95, qvalue=1e-9)
+    merged, _ = consensus_regions({"hmm": [hmm], "3seq": [seq]}, major="A")
+    assert merged[0].qvalue == 1e-9            # 3SEQ is the most significant member
+    assert merged[0].posterior_support == 0.62  # but the posterior is the HMM's
+
+
+def test_a_row_without_an_hmm_member_has_no_posterior() -> None:
+    seq = mk("B", 120, 200, "3seq", support=0.95, qvalue=1e-9)
+    merged, _ = consensus_regions({"3seq": [seq]}, major="A")
+    assert merged[0].posterior_support is None
 
 
 def test_lineage_map_merges_same_lineage_different_genomes() -> None:

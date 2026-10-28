@@ -69,11 +69,24 @@ def blast_subsequence(
     cached = read_blast_cache(cache_path, max_age_days=blast_cache_days())
     if cached is not None:
         payload, age_days = cached
-        logger.info(
-            "Reusing a cached BLAST result (%d hit(s), %.1f day(s) old). Delete %s to "
-            "force a fresh search.", len(payload), age_days, cache_path,
-        )
-        return [Hit(**row) for row in payload]
+        try:
+            cached_hits = [Hit(**row) for row in payload]
+        except TypeError as exc:
+            # A cache entry written by a version whose Hit had different fields. The
+            # search is reproducible, so an unreadable entry is a reason to search
+            # again, not to end the run: unhandled here, it was a TypeError the
+            # callers' `except BlastError` could not catch, for the fortnight the
+            # entry stays valid.
+            logger.warning(
+                "Ignoring a cached BLAST result Tessera cannot read (%s); searching "
+                "again and replacing it: %s", exc, cache_path,
+            )
+        else:
+            logger.info(
+                "Reusing a cached BLAST result (%d hit(s), %.1f day(s) old). Delete %s "
+                "to force a fresh search.", len(cached_hits), age_days, cache_path,
+            )
+            return cached_hits
 
     try:
         from Bio.Blast import NCBIWWW, NCBIXML
@@ -87,7 +100,13 @@ def blast_subsequence(
         # Sets the contact address for Entrez calls. Note that Biopython's `qblast`
         # takes neither an email nor an api_key parameter, so the BLAST URL API below
         # is unauthenticated whatever is passed here; pacing is the only lever we have.
-        Entrez.email = resolved_email  # type: ignore[assignment]
+        #
+        # Through setattr because Biopython declares `Entrez.email` as `None`, so a
+        # plain assignment is a type error. mypy 2.4 reports it and 2.3 does not, and
+        # `warn_unused_ignores` is on, so a `type: ignore` fails whichever of the two
+        # does not need it -- as it did here, passing locally and failing CI. This
+        # suppresses nothing and cannot go stale with a mypy release.
+        setattr(Entrez, "email", resolved_email)  # noqa: B010
 
     logger.info("Submitting %d bp to NCBI %s/%s (this can take minutes)...",
                 len(seq), program, database)
