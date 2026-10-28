@@ -38,6 +38,28 @@ def test_plurality_major_tiebreak_by_mean_similarity():
     assert plurality_major(_wsim({"A": a, "B": b}), ["A", "B"]) == "B"
 
 
+def test_plurality_major_counts_a_shared_best_for_every_label_that_shares_it():
+    # A and B tie in 7 windows; B is the sole best in 2, A in 1. B is the major, and
+    # the answer must not change with the order the references are listed in. (The
+    # old strict argmax gave every tie to the first label, so [A, B] said A.)
+    a = [1.0] * 7 + [0.9, 0.9, 1.0]
+    b = [1.0] * 7 + [1.0, 1.0, 0.9]
+    assert plurality_major(_wsim({"A": a, "B": b}), ["A", "B"]) == "B"
+    assert plurality_major(_wsim({"B": b, "A": a}), ["B", "A"]) == "B"
+
+
+def test_plurality_major_agrees_with_the_window_vote_the_site_callers_use():
+    from tessera.recomb.analyze import analyze, rank_by_wins
+
+    a = [1.0] * 7 + [0.9, 0.9, 1.0]
+    b = [1.0] * 7 + [1.0, 1.0, 0.9]
+    for labels in (["A", "B"], ["B", "A"]):
+        sims = {"A": a, "B": b} if labels[0] == "A" else {"B": b, "A": a}
+        result = _wsim(sims)
+        vote = rank_by_wins(analyze(result).winners_with_ties, 2)[0]
+        assert plurality_major(result, labels) == vote == "B"
+
+
 def test_plurality_major_none_when_no_informative_window():
     nan = float("nan")
     assert plurality_major(_wsim({"A": [nan, nan], "B": [nan, nan]}), ["A", "B"]) is None
@@ -80,6 +102,24 @@ def test_hmm_finds_one_clean_breakpoint():
     # the second segment carries a breakpoint uncertainty interval
     assert segments[1].breakpoint_lo is not None
     assert segments[1].breakpoint_lo <= segments[1].breakpoint_hi
+
+
+def test_breakpoint_interval_contains_the_switch_when_both_sides_are_confident():
+    """The band spans the two windows between which the path switched.
+
+    On a clean switch the posterior is confident on both sides, and the band used to
+    collapse to the first window of the new state -- after the breakpoint, so the
+    documented uncertainty interval did not contain the breakpoint.
+    """
+    result = _two_state_result()
+    segments, _ = segment_query(result, jump_rate=1e-3)
+    seg = segments[1]
+    last_old = result.positions[seg.start_window - 1]
+    first_new = result.positions[seg.start_window]
+    assert seg.breakpoint_lo <= last_old
+    assert seg.breakpoint_hi >= first_new
+    # the true breakpoint (500) lies between the two window centres (475, 525)
+    assert seg.breakpoint_lo <= 500 <= seg.breakpoint_hi
 
 
 def test_partial_reference_is_not_preferred_where_it_is_gapped():

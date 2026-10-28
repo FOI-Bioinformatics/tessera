@@ -6,6 +6,48 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Bootscan's run-length null no longer depends on the block grid's phase
+
+- **The defect.** The null permutes windows in blocks one window wide so that the
+  autocorrelation of overlapping windows survives, but the grid was fixed at window 0. A
+  donor run that happened to sit inside one block was carried intact into every
+  permutation and scored p = 1.0 whatever its length, while the same run shifted by three
+  windows was cut in two and scored about 0.1. Measured on 91 windows with block 10: a
+  10-window run starting at window 0 or 10 gave 1.000, at window 3 or 5 gave 0.097. The
+  verdict depended on where the tract fell, not on the tract.
+- **The fix.** The grid's phase is drawn at random per permutation (offset 0 to block-1),
+  the partial blocks at either end travel as blocks of their own, and every row keeps all
+  of its wins. The same 10-window run now scores 0.18 to 0.20 at every offset; a
+  20-window run 0.03 at every offset. Runs that used to score well only by luck of the
+  phase now score honestly, which is slightly less often than their best case and far
+  more often than their worst.
+
+### The HMM breakpoint interval always contains the switch
+
+- **The defect.** The band was searched outward from the first window of the new state,
+  so when the posterior was already confident on both sides it collapsed to that one
+  window centre, which is after the breakpoint. On a clean 10 kb A/B fixture with the tract
+  at 4000-7000 the HMM reported (4100, 4100) while 3SEQ and MaxChi reported (3999, 4004).
+  Its own test checked only `lo <= hi`.
+- **The fix.** The band runs from the last window before the switch at which the outgoing
+  parent is confident to the first window at or after it at which the incoming parent
+  is, so it spans the two window centres the path switched between and is never
+  narrower than one window step. A test now asserts the planted breakpoint lies inside
+  it. Issue #96 (an interval measured on a different basis from the span it belongs
+  to) is a separate symptom and stays open.
+
+### The HMM's major parent no longer depends on reference order
+
+- **The defect.** `plurality_major` counted window wins with `nanargmax`, which hands a
+  shared best similarity to whichever label comes first, while the window vote the other
+  callers rank their major by counts a tie for every label that shares it. On a panel
+  where two references tie in most windows the HMM and the site callers could name
+  opposite majors, and swapping the order of the references in the alignment swapped
+  the HMM's answer.
+- **The fix.** A shared best counts for every label that shares it, the mean-similarity
+  tiebreak is unchanged, and a test asserts the HMM major equals the window vote's
+  winner under both label orders.
+
 ### The report says when the backbone is degraded (issue #82, second half)
 
 - **The defect.** `donor_undercovered` reported on the minor parent alone. A backbone

@@ -70,7 +70,10 @@ parents) and does not invent regions from noise.
 Each region carries a **support** (the share of distinguishing sites favouring the
 donor), a sign-test **p-value** with a Benjamini-Hochberg **q-value**
 (false-discovery-rate across the segments tested), and a **breakpoint uncertainty
-interval**. A high support with a small q-value is a confident call; a region with
+interval**: in query coordinates, from the last window before the switch at which the
+outgoing parent's posterior is confident (0.9) to the first window at or after it at which
+the incoming parent's is, so it always spans the two windows between which the path
+switched and is never narrower than one window step. A high support with a small q-value is a confident call; a region with
 strong directional support but a large q-value (few distinguishing sites, e.g. a
 recombination between near-identical lineages) is flagged as marginal rather than
 dropped. The legacy `--method heuristic` (margin / merge-gap / min-region) is kept
@@ -281,7 +284,11 @@ and asks whether they are more contiguous than chance -- a recombinant tract is 
 chance flips are scattered. Windows are permuted in **blocks** one window wide, because
 sliding windows overlap and their winners are autocorrelated even with no recombination;
 an element-wise shuffle would destroy that structure and make every short run look
-significant. The resulting p-values are Benjamini-Hochberg corrected across candidates
+significant. The grid's phase is drawn at random for every permutation: with a fixed
+grid a run that sat inside one block was intact in every permutation and could never be
+significant whatever its length, while the same run shifted by a few windows was cut in
+two and could, so the verdict depended on where the tract fell rather than on the tract.
+The resulting p-values are Benjamini-Hochberg corrected across candidates
 and gated on the q-value, exactly as the other callers are. A consequence worth knowing:
 with a real null Bootscan clears FDR far less often than its raw support suggested, and
 on small tracts it may stay silent.
