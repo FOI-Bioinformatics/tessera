@@ -6,6 +6,28 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### A breakpoint interval is no longer reported outside the region it belongs to (issue #96)
+
+- **The defect.** The interval and the span were derived on different bases: the
+  interval from the HMM's window grid and posterior, the span from the first column that
+  distinguishes the parents. Where those sites are sparse the first of them can lie far
+  beyond the window where the path switched, so the interval could end thousands of
+  bases before its own region. On the clonal mpox pool run behind the issue, region 1
+  spanned 64305-91737 while its interval sat at 50680-55657: 8.6 kb short of the region,
+  and 5 kb wide. Both numbers were individually defensible; printing them side by side
+  was what misled.
+- **The fix.** The interval runs on to meet the span. Nothing between the end of the
+  band and the first distinguishing column rules out the switch having happened there,
+  so stopping short claimed a precision the sites do not support. It is deliberately
+  **not** clipped into the span, which would discard the genuine uncertainty before the
+  region's first informative column, and where it already reaches the span -- 59 of the
+  70 regions on disk when the issue was filed -- nothing changes. The 11 that sat just
+  outside, by 2 to 99 bp, are extended by that much.
+- **A guard, not only a fix.** A test asserts the rule on the issue's own numbers, and a
+  property test over every region of both example datasets, across four callers, asserts
+  that no reported interval fails to touch its own region. Which regions are called is
+  untouched: only the coordinates reported for them change.
+
 ### A draft query could not be aligned at all by MAFFT 7.525
 
 - **The defect.** MAFFT 7.525 segfaults inside `pairlocalalign` whenever

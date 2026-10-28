@@ -482,16 +482,18 @@ def _call_regions_hmm(
         # The window count and the posterior describe the reported span too, not the
         # segment it was trimmed from: the segment's windows that overlap the span.
         n_windows, posterior = _span_windows(work, window_size, seg, lo, hi)
+        q_start, q_end = work.column_to_query(lo), work.column_to_query(hi)
+        bp_lo, bp_hi = breakpoint_meets_span(seg.breakpoint_lo, seg.breakpoint_hi, q_start)
         regions.append(
             Region(
                 minor_parent=seg.state, major_parent=major,
                 msa_start=lo, msa_end=hi,
-                query_start=work.column_to_query(lo), query_end=work.column_to_query(hi),
+                query_start=q_start, query_end=q_end,
                 n_windows=n_windows,
                 mean_sim_minor=round(mean_minor, 4), mean_sim_major=round(mean_major, 4),
                 margin=round(mean_minor - mean_major, 4),
                 posterior_support=posterior,
-                breakpoint_lo=seg.breakpoint_lo, breakpoint_hi=seg.breakpoint_hi,
+                breakpoint_lo=bp_lo, breakpoint_hi=bp_hi,
                 support=round(support, 3),
                 pvalue=pvalue, qvalue=q,
                 test="sign test on discordant sites (one-sided)",
@@ -537,6 +539,31 @@ def _span_windows(
         return seg.n_windows, seg.mean_posterior
     post = [seg.window_posteriors[i - seg.start_window] for i in idx]
     return len(idx), round(float(sum(post) / len(post)), 4)
+
+
+def breakpoint_meets_span(
+    bp_lo: int | None, bp_hi: int | None, query_start: int
+) -> tuple[int | None, int | None]:
+    """The segment's breakpoint band, extended to reach the span it belongs to.
+
+    The band and the span are measured on different bases, which is what issue #96
+    reported: the band comes from the window grid and the posterior, the reported span
+    from the first column that distinguishes the parents. Where those sites are sparse
+    the first of them can lie far beyond the window where the path switched, and the
+    band then ended thousands of bases before the region it describes -- 8.6 kb before,
+    on the mpox run behind the issue, with the band itself 5 kb wide. A reader given
+    both numbers could not reconcile them.
+
+    Nothing between the end of the band and that first distinguishing column rules out
+    the switch having happened there, so the band runs on to meet the span rather than
+    stopping short: an interval that stops short claims a precision the sites do not
+    support. The band is never narrowed -- clipping it into the span would discard the
+    genuine uncertainty before the region's first informative column -- and where it
+    already reaches the span this changes nothing, which is the ordinary case.
+    """
+    if bp_hi is None:
+        return bp_lo, bp_hi
+    return bp_lo, max(bp_hi, query_start)
 
 
 def _tract_span(work: WindowSimilarity, seg: Segment, major: str) -> tuple[int, int]:
