@@ -103,7 +103,7 @@ def reassort(
         group_of = {seg: i for i, g in enumerate(result.groups) for seg in g.segments}
 
         tsv = output / "reassortment.tsv"
-        with open(tsv, "w") as fo:
+        with open(tsv, "w", encoding="utf-8") as fo:
             fo.write("segment\tdataset\tnearest_strain\tclade\tani\tstatus\tparent_group\n")
             for s in result.segments:
                 grp = group_of.get(s.segment, "")
@@ -111,7 +111,7 @@ def reassort(
                          f"{s.ani:.1f}\t{s.status}\t{grp}\n")
 
         ctsv = output / "constellation.tsv"
-        with open(ctsv, "w") as fo:
+        with open(ctsv, "w", encoding="utf-8") as fo:
             fo.write("group_index\tsegments\tparent_strains\n")
             for i, g in enumerate(result.groups):
                 fo.write(f"{i}\t{','.join(g.segments)}\t{','.join(g.parent_strains)}\n")
@@ -123,7 +123,7 @@ def reassort(
         # The pairwise evidence behind the verdict, for every verdict: which pair
         # disagreed, and on which strains, is what a reader needs to check a call.
         ptsv = output / "segment_pairs.tsv"
-        with open(ptsv, "w") as fo:
+        with open(ptsv, "w", encoding="utf-8") as fo:
             fo.write("segment_a\tsegment_b\trelation\tnote\n")
             for pair in result.pairs:
                 fo.write(f"{pair.segment_a}\t{pair.segment_b}\t{pair.relation}\t"
@@ -137,7 +137,7 @@ def reassort(
 
         if result.scans:
             stsv = output / "segment_scan.tsv"
-            with open(stsv, "w") as fo:
+            with open(stsv, "w", encoding="utf-8") as fo:
                 fo.write("segment\tintragenic_recombination\tn_regions\tnote\n")
                 for sc in result.scans:
                     flag = "yes" if sc.recombinant else ("no" if sc.scanned else "n/a")

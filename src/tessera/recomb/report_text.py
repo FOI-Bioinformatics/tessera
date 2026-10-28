@@ -206,7 +206,7 @@ def write_windows_tsv(
     datasets = list(result.similarities)
     path = output_dir / "similarity_windows.tsv"
     logger.info("Writing per-window similarity matrix: %s", path)
-    with open(path, "w") as fo:
+    with open(path, "w", encoding="utf-8") as fo:
         fo.write("\t".join(["msa_position", "query_position", "winner", *datasets]) + "\n")
         for i, (msa_pos, q_pos) in enumerate(
             zip(result.positions, result.query_positions, strict=True)
@@ -234,7 +234,7 @@ def write_site_windows_tsv(
     datasets = list(site_result.similarities)
     path = output_dir / "informative_site_windows.tsv"
     logger.info("Writing informative-site window matrix: %s", path)
-    with open(path, "w") as fo:
+    with open(path, "w", encoding="utf-8") as fo:
         fo.write("\t".join(
             ["msa_position", "query_position", "msa_start", "msa_end", "winner", *datasets]
         ) + "\n")
@@ -254,7 +254,7 @@ def write_site_windows_tsv(
 def write_stats_tsv(analysis: AnalysisResult, output_dir: Path, logger: logging.Logger) -> None:
     path = output_dir / "similarity_stats.tsv"
     logger.info("Writing per-dataset similarity stats: %s", path)
-    with open(path, "w") as fo:
+    with open(path, "w", encoding="utf-8") as fo:
         fo.write("\t".join(analysis.stats_header) + "\n")
         for dataset, values in sorted(analysis.stats.items(), key=stats_sort_key, reverse=True):
             fo.write("\t".join(map(str, [dataset, *values])) + "\n")
@@ -263,7 +263,7 @@ def write_stats_tsv(analysis: AnalysisResult, output_dir: Path, logger: logging.
 def write_winners_tsv(analysis: AnalysisResult, output_dir: Path, logger: logging.Logger) -> None:
     path = output_dir / "window_winners.tsv"
     logger.info("Writing window winners: %s", path)
-    with open(path, "w") as fo:
+    with open(path, "w", encoding="utf-8") as fo:
         fo.write("Dataset\tNumber of windows (ties included)\n")
         for dataset, num in sorted(
             analysis.winners_with_ties.items(), key=lambda x: x[1], reverse=True
@@ -303,7 +303,7 @@ def write_regions_tsv(
     # that does not know to skip it. The FDR method ("multiple testing") and the
     # coordinate convention ("coordinates") are in run_provenance.json and the
     # documentation instead.
-    with open(path, "w") as fo:
+    with open(path, "w", encoding="utf-8") as fo:
         fo.write("\t".join(header) + "\n")
         for r in regions:
             fo.write(
@@ -343,7 +343,7 @@ def write_methods_tsv(
     """
     path = output_dir / "recombination_methods.tsv"
     logger.info("Writing method comparison: %s", path)
-    with open(path, "w") as fo:
+    with open(path, "w", encoding="utf-8") as fo:
         fo.write("\t".join(["minor_parent", "query_start", "query_end",
                             *methods_run, "parent_free_support"]) + "\n")
         for b in breakdown:
@@ -368,7 +368,7 @@ def write_coverage_tsv(
         "msa_start", "msa_end", "query_start", "query_end", "length_bp",
         "n_windows", "best_reference", "mean_best_similarity", "kind",
     ]
-    with open(path, "w") as fo:
+    with open(path, "w", encoding="utf-8") as fo:
         fo.write(f"# best-similarity threshold\t{threshold:.4f}\n")
         fo.write("\t".join(header) + "\n")
         for g in gaps:
@@ -384,7 +384,7 @@ def write_profile_tsv(
     """Write the per-informative-site PHI profile (the parent-free signal track)."""
     path = output_dir / "recombination_profile.tsv"
     logger.info("Writing recombination signal profile: %s", path)
-    with open(path, "w") as fo:
+    with open(path, "w", encoding="utf-8") as fo:
         # "NA" when the PHI test could not have rejected (too few informative sites
         # for the window). The Rmin stays last in the note: the harness reads it there.
         phi_p = "NA" if signal.phi_p is None else f"{signal.phi_p:.4g}"

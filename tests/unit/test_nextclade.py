@@ -452,3 +452,24 @@ def test_build_pool_consensus_skips_every_non_clade_marker(monkeypatch, tmp_path
     genomes = nc.build_pool(_dataset(), cache_dir=tmp_path / "c", logger=logger,
                             per_clade_consensus=True)
     assert [g.stem for g in genomes] == ["Z_consensus"]
+
+
+def test_a_dataset_without_a_tree_is_refused_by_name(logger) -> None:
+    """It raised a bare KeyError, which reached the user as a traceback and, through
+    `reassort`, aborted a whole multi-segment run on one tree-less segment."""
+    dataset = nc.NextcladeDataset(path="x/y", tag="t", files={"reference": "ref.fasta"})
+    with pytest.raises(UserInputError, match="publishes no 'treeJson' file"):
+        nc._dataset_file_url(dataset, "treeJson")
+
+
+def test_a_cut_transfer_is_reported_as_an_input_problem(monkeypatch, logger) -> None:
+    """IncompleteRead is an HTTPException, neither URLError nor OSError, so a
+    truncated download surfaced as a traceback rather than the clean message."""
+    from http.client import IncompleteRead
+
+    def fake_urlopen(url, timeout=0):
+        raise IncompleteRead(b"half a file")
+
+    monkeypatch.setattr(nc, "urlopen", fake_urlopen)
+    with pytest.raises(UserInputError, match="Could not fetch the Nextclade dataset index"):
+        nc.fetch_index()

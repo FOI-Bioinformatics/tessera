@@ -21,6 +21,7 @@ import logging
 import re
 import shutil
 from dataclasses import dataclass
+from http.client import HTTPException
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -159,7 +160,9 @@ def fetch_index() -> dict[str, dict]:
     try:
         with urlopen(_INDEX_URL, timeout=60) as resp:  # noqa: S310 - fixed https URL
             data = json.loads(resp.read())
-    except (URLError, OSError, json.JSONDecodeError) as exc:
+    except (URLError, OSError, HTTPException, json.JSONDecodeError) as exc:
+        # HTTPException covers a cut transfer (IncompleteRead), which is neither an
+        # URLError nor an OSError and so surfaced as a traceback.
         raise UserInputError(f"Could not fetch the Nextclade dataset index: {exc}") from exc
     out: dict[str, dict] = {}
 
@@ -175,7 +178,19 @@ def fetch_index() -> dict[str, dict]:
 
 
 def _dataset_file_url(dataset: NextcladeDataset, role: str) -> str:
-    filename = dataset.files[role]
+    """The download URL for one of a dataset's files.
+
+    A dataset that does not publish the file raised a bare ``KeyError`` from here,
+    which reached the user as a traceback under "Unexpected error" and, through
+    ``reassort``, aborted a whole multi-segment run on one tree-less segment dataset.
+    """
+    filename = dataset.files.get(role)
+    if not filename:
+        raise UserInputError(
+            f"The Nextclade dataset '{dataset.path}' publishes no '{role}' file, which "
+            f"Tessera needs to build a pool from it. Pass --nextclade-dataset with "
+            f"another dataset, or supply the panel with --candidate-pool."
+        )
     return f"{_BASE_URL}/{dataset.path}/{dataset.tag}/{filename}"
 
 
@@ -200,7 +215,7 @@ def _sort_dataset(query: Path, index: dict[str, dict], logger) -> str | None:
             return None
         if not out.exists():
             return None
-        rows = out.read_text().splitlines()
+        rows = out.read_text(encoding="utf-8").splitlines()
     if len(rows) < 2:
         return None
     header = rows[0].split("\t")
@@ -253,7 +268,7 @@ def _download_text(dataset: NextcladeDataset, role: str, logger: logging.Logger)
     try:
         with urlopen(url, timeout=120) as resp:  # noqa: S310 - fixed https URL
             return resp.read().decode("utf-8", "replace")
-    except (URLError, OSError) as exc:
+    except (URLError, OSError, HTTPException) as exc:
         raise UserInputError(f"Could not download {url}: {exc}") from exc
 
 
@@ -265,7 +280,7 @@ def _write_genome(out_dir: Path, label: str, note: str, seq: str, floor: int) ->
     if len(seq) < floor:  # a truncated reconstruction
         return None
     path = out_dir / f"{label}.fasta"
-    with open(path, "w") as fo:
+    with open(path, "w", encoding="utf-8") as fo:
         write_fasta_record(fo, f"{label} {note}", seq)
     return path
 

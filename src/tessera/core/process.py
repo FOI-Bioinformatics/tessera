@@ -96,7 +96,7 @@ def run_tool(
         # be read by the next stage as though the tool had finished.
         partial = Path(stdout_path).with_name(Path(stdout_path).name + ".partial")
         try:
-            with open(partial, "w") as sink:
+            with open(partial, "w", encoding="utf-8") as sink:
                 code, _, err = _run(cmd, stdout=sink, timeout=timeout, env=env)
         except subprocess.TimeoutExpired as exc:
             partial.unlink(missing_ok=True)

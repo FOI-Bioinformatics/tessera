@@ -10,7 +10,7 @@ from tessera.converters.maf_to_fasta import maf_to_fasta
 def _read_fasta(path: Path) -> dict[str, str]:
     out: dict[str, str] = {}
     name = None
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         if line.startswith(">"):
             name = line[1:]
             out[name] = ""

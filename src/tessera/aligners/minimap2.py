@@ -87,7 +87,7 @@ class Minimap2Aligner(Aligner):
 
         warn_unplaced(rows, reference.stem, logger)
         msa = out_dir / "msa.fasta"
-        with open(msa, "w") as out:
+        with open(msa, "w", encoding="utf-8") as out:
             write_fasta_record(out, reference.stem, ref_seq)
             for stem, row in rows:
                 write_fasta_record(out, stem, row)

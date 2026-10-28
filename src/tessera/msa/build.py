@@ -116,7 +116,7 @@ def _write_provenance(
         "threads": params.threads,
     }
     path = provenance_path(output)
-    path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+    path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return path
 
 
@@ -127,7 +127,7 @@ def read_provenance(msa: Path) -> dict | None:
     reports what it has rather than requiring the sidecar.
     """
     try:
-        loaded = json.loads(provenance_path(msa).read_text())
+        loaded = json.loads(provenance_path(msa).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
     return loaded if isinstance(loaded, dict) else None

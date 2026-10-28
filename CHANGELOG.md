@@ -6,6 +6,49 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Text IO is UTF-8 whatever the locale says
+
+- **The defect.** `report.html` declares UTF-8 in its own meta tag, but it and every
+  TSV were written in the locale's encoding, and the alignment was handed to Biopython
+  as a path, which opens it the same way. Under `LC_ALL=C` -- an ordinary setting on a
+  compute node -- an alignment carrying a non-ASCII label could not be read at all, and
+  the report could not be written even without one, because the plotly bundle inlined
+  in it is not ASCII. The run died at its last step.
+- **The fix.** Every text read and write in the package names its encoding, the
+  alignment is opened by Tessera rather than by Biopython, and ruff's
+  `unspecified-encoding` rule is switched on so a new call site cannot reintroduce it
+  (`explicit-preview-rules` keeps the rest of the preview set out). A test runs a whole
+  analysis under `LC_ALL=C` on an alignment whose donor is labelled `Ebola/Guéckédou`,
+  in a child interpreter because the locale is fixed at startup; it fails on the
+  previous commit and passes here.
+
+### Four ways a broken or unexpected input ended a run
+
+- **A Pango alias key that is not JSON was cached before it was parsed**, so a proxy
+  error page or a truncated read stayed in the cache and every later call -- online or
+  not -- warned that the cache was unreadable and returned nothing. One bad response
+  disabled the lineage cross-check until somebody deleted the file by hand. The body is
+  parsed first and only then cached.
+- **A Nextclade dataset that publishes no tree raised a bare `KeyError`**, which
+  reached the user as a traceback and, through `reassort`, ended a whole multi-segment
+  run on one tree-less segment dataset. It is refused by name, naming the dataset and
+  the file it lacks. A cut transfer (`IncompleteRead`) is an `HTTPException` rather than
+  an `OSError`, so it escaped the handler that exists for it; both download paths now
+  catch it.
+- **A cached BLAST result whose row fields no longer match `Hit` raised `TypeError`**,
+  which is not the `BlastError` the callers catch to skip a gap and carry on, so the run
+  ended -- for the fortnight the entry stays valid. An unreadable entry is now a cache
+  miss: the search runs again and replaces it.
+- **A FASTA header or an accession named a file without being sanitised.** An empty
+  header raised `IndexError` while splitting a downloaded archive, one beginning `../`
+  wrote outside the destination directory, and `efetch` took the same route. Both go
+  through `safe_filename_stem`, which `reassort` already used for this. The inputs come
+  from NCBI rather than from a user, so this is defence in depth.
+- **An unnamed record could take a named segment's place.** `reassort` named an unnamed
+  record `segment_N` by position, which could equal a real header: the two then shared
+  one key, so one was never scanned and the other was typed twice under the same name.
+  The synthetic name now skips names the query already uses.
+
 ### Inputs that were accepted and then ignored, or accepted and then failed
 
 - **`msa --output <directory>`** warned "Overwriting the existing alignment", ran the

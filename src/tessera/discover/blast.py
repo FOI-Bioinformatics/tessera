@@ -69,11 +69,24 @@ def blast_subsequence(
     cached = read_blast_cache(cache_path, max_age_days=blast_cache_days())
     if cached is not None:
         payload, age_days = cached
-        logger.info(
-            "Reusing a cached BLAST result (%d hit(s), %.1f day(s) old). Delete %s to "
-            "force a fresh search.", len(payload), age_days, cache_path,
-        )
-        return [Hit(**row) for row in payload]
+        try:
+            cached_hits = [Hit(**row) for row in payload]
+        except TypeError as exc:
+            # A cache entry written by a version whose Hit had different fields. The
+            # search is reproducible, so an unreadable entry is a reason to search
+            # again, not to end the run: unhandled here, it was a TypeError the
+            # callers' `except BlastError` could not catch, for the fortnight the
+            # entry stays valid.
+            logger.warning(
+                "Ignoring a cached BLAST result Tessera cannot read (%s); searching "
+                "again and replacing it: %s", exc, cache_path,
+            )
+        else:
+            logger.info(
+                "Reusing a cached BLAST result (%d hit(s), %.1f day(s) old). Delete %s "
+                "to force a fresh search.", len(cached_hits), age_days, cache_path,
+            )
+            return cached_hits
 
     try:
         from Bio.Blast import NCBIWWW, NCBIXML

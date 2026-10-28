@@ -125,7 +125,7 @@ def test_minimap2_forwards_preset_and_threads(monkeypatch, tmp_path: Path) -> No
 def _read_msa(path: Path) -> dict[str, str]:
     out: dict[str, str] = {}
     name = None
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         if line.startswith(">"):
             name = line[1:]
             out[name] = ""
@@ -171,7 +171,7 @@ def test_progressivemauve_concatenation_is_rectangular(monkeypatch, tmp_path: Pa
             f"#Sequence2File\t{query_path}\n"
             f"> 1:1-{extent} + {ref_path}\n{bases}\n"
             f"> 2:1-{extent} + {query_path}\n{bases}\n"
-            "=\n"
+            "=\n", encoding="utf-8"
         )
         return ""
 
@@ -389,15 +389,15 @@ def _fake_mauve(caps, cmd, **kw):
     cmd = [str(c) for c in cmd]
     xmfa = Path(cmd[cmd.index("--output") + 1])
     ref_path, query_path = cmd[-2], cmd[-1]
-    ref_seq = "".join(
-        line for line in Path(ref_path).read_text().splitlines() if not line.startswith(">")
-    )
-    qry_seq = "".join(
-        line for line in Path(query_path).read_text().splitlines() if not line.startswith(">")
-    )
+    def _bases(path: str) -> str:
+        text = Path(path).read_text(encoding="utf-8")
+        return "".join(line for line in text.splitlines() if not line.startswith(">"))
+
+    ref_seq = _bases(ref_path)
+    qry_seq = _bases(query_path)
     xmfa.write_text(
         f"#Sequence1File\t{ref_path}\n#Sequence2File\t{query_path}\n"
-        f"> 1:1-8 + {ref_path}\n{ref_seq}\n> 2:1-8 + {query_path}\n{qry_seq}\n=\n"
+        f"> 1:1-8 + {ref_path}\n{ref_seq}\n> 2:1-8 + {query_path}\n{qry_seq}\n=\n", encoding="utf-8"
     )
     return ""
 
@@ -464,7 +464,10 @@ def test_progressivemauve_rejects_a_projection_that_is_not_pairwise(
         cmd = [str(c) for c in cmd]
         xmfa = Path(cmd[cmd.index("--output") + 1])
         ref_path = cmd[-2]
-        xmfa.write_text(f"#Sequence1File\t{ref_path}\n> 1:1-8 + {ref_path}\nACGTACGT\n=\n")
+        xmfa.write_text(
+            f"#Sequence1File\t{ref_path}\n> 1:1-8 + {ref_path}\nACGTACGT\n=\n",
+            encoding="utf-8",
+        )
         return ""
 
     monkeypatch.setattr(pm_mod, "run_tool", one_sequence_xmfa)
@@ -591,10 +594,10 @@ def test_progressivemauve_names_a_genome_in_no_block(monkeypatch, tmp_path: Path
         ref_path, query_path = cmd[-2], cmd[-1]
         header = f"#Sequence1File\t{ref_path}\n#Sequence2File\t{query_path}\n"
         if "far" in query_path:  # the reference aligned to nothing
-            xmfa.write_text(header + f"> 1:1-12 + {ref_path}\nACGTACGTACGT\n=\n")
+            xmfa.write_text(header + f"> 1:1-12 + {ref_path}\nACGTACGTACGT\n=\n", encoding="utf-8")
         else:
             xmfa.write_text(header + f"> 1:1-12 + {ref_path}\nACGTACGTACGT\n"
-                            f"> 2:1-12 + {query_path}\nACGTACGTACGT\n=\n")
+                            f"> 2:1-12 + {query_path}\nACGTACGTACGT\n=\n", encoding="utf-8")
         return ""
 
     monkeypatch.setattr(pm_mod, "run_tool", fake_run)

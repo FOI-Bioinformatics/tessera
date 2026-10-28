@@ -203,7 +203,7 @@ def test_a_failed_download_leaves_no_file_in_the_collection(
     monkeypatch, tmp_path: Path
 ) -> None:
     def empty_output(caps, command, *, stdout_path, **kwargs):
-        Path(stdout_path).write_text("")
+        Path(stdout_path).write_text("", encoding="utf-8")
         return ""
 
     monkeypatch.setattr(fetch, "run_tool", empty_output)
@@ -434,7 +434,7 @@ def test_sibeliaz_bsd_wrapper_rewrites_paste_and_xargs(monkeypatch, tmp_path: Pa
     monkeypatch.setattr(sibeliaz.sys, "platform", "darwin")
     monkeypatch.setattr(sibeliaz.shutil, "which", lambda name: str(wrapper))
     cmd = sibeliaz._sibeliaz_invocation(tmp_path, _LOG)
-    patched = Path(cmd[-1]).read_text()
+    patched = Path(cmd[-1]).read_text(encoding="utf-8")
     assert "--delimiters" not in patched
     assert "paste -d ' ' <(echo \"$header\") <(echo \"$output\")" in patched
     # BSD xargs caps an -I replacement at 255 bytes; two absolute paths exceed it.

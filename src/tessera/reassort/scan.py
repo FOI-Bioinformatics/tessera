@@ -70,7 +70,7 @@ def _summarize_regions(path: Path) -> tuple[int, bool]:
     """Count present (non ``donor_absent``) regions in a recomb TSV -> ``(n, n > 0)``."""
     if not path.exists():
         return 0, False
-    lines = path.read_text().splitlines()
+    lines = path.read_text(encoding="utf-8").splitlines()
     if len(lines) < 2:
         return 0, False
     header = lines[0].split("\t")
@@ -145,7 +145,7 @@ def scan_segment(
         # build_msa labels the query leaf by the file's stem, so name the file after the
         # segment; run_recomb must then look the query up by that same stem.
         query = seg_dir / f"{seg_name}.fasta"
-        with open(query, "w") as fo:
+        with open(query, "w", encoding="utf-8") as fo:
             write_fasta_record(fo, seg_name, seq)
         rows.append((seg_name, seg_name, "query"))  # the query's lineage label is the segment name
         write_lineage_map(seg_dir / LINEAGES_TSV, rows)

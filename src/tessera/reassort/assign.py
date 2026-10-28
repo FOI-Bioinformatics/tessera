@@ -114,7 +114,7 @@ def _type_segment(seg, seq, overrides, ani_floor, margin, email, cache_dir, tmp,
     # ("A/California/07/2009|HA") or climb out of the temp directory ("../x").
     safe = safe_filename_stem(strip_sequence_extension(seg), fallback="segment")
     seg_fasta = Path(tmp) / f"{safe}.fasta"
-    with open(seg_fasta, "w") as fo:
+    with open(seg_fasta, "w", encoding="utf-8") as fo:
         write_fasta_record(fo, seg, seq)
     try:
         dataset = resolve_dataset(seg_fasta, overrides.get(seg), email=email, logger=logger)
@@ -201,13 +201,27 @@ def assign_segments(
             f"distinct segment with a unique name."
         )
 
+    # An unnamed record used to be called segment_N by position, which could collide
+    # with a real header of that name: the two then shared one key, so one of them was
+    # never scanned and the other was typed twice under the same name.
+    taken = set(names)
+    synthetic: dict[int, str] = {}
+    for i, (name, _) in enumerate(records):
+        if name:
+            continue
+        n = len(synthetic) + 1
+        while f"segment_{n}" in taken:
+            n += 1
+        synthetic[i] = f"segment_{n}"
+        taken.add(synthetic[i])
+
     result = ReassortmentResult()
     candidates: dict[str, list[tuple[str, float]]] = {}
     universes: dict[str, set[str]] = {}
     to_scan: dict[str, tuple[str, object]] = {}  # segment -> (seq, dataset) for assigned segments
     with tempfile.TemporaryDirectory() as tmp:
-        for name, seq in records:
-            seg = name or f"segment_{len(result.segments) + 1}"
+        for index, (name, seq) in enumerate(records):
+            seg = name or synthetic[index]
             assignment, cand, universe, dataset = _type_segment(
                 seg, seq, overrides, ani_floor, margin, email, cache_dir, tmp, logger)
             result.segments.append(assignment)

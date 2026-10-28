@@ -187,7 +187,7 @@ def false_positive_rate(n_with_false: int, n_runs: int) -> tuple[float, float, f
 # --- running ---------------------------------------------------------------------
 
 def _write_fasta(path: Path, seqs: dict[str, str]) -> None:
-    with path.open("w") as fh:
+    with path.open("w", encoding="utf-8") as fh:
         for label, seq in seqs.items():
             fh.write(f">{label}\n")
             for i in range(0, len(seq), 70):
@@ -197,7 +197,7 @@ def _write_fasta(path: Path, seqs: dict[str, str]) -> None:
 def _read_regions(path: Path) -> list[dict]:
     if not path.exists():
         return []
-    lines = [x for x in path.read_text().splitlines() if x.strip()]
+    lines = [x for x in path.read_text(encoding="utf-8").splitlines() if x.strip()]
     if len(lines) < 2:
         return []
     header = lines[0].split("\t")

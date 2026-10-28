@@ -120,7 +120,7 @@ def run_openrdp(msa: Path, cmd: list[str], work: Path, query_label: str,
                 methods: tuple[str, ...], logger: logging.Logger) -> dict[str, bool] | None:
     """Run OpenRDP on a sanitized copy of ``msa``; return per-method detections or ``None``."""
     clean = work / "clean.fasta"
-    clean.write_text(sanitize_alignment(msa.read_text()))
+    clean.write_text(sanitize_alignment(msa.read_text(encoding="utf-8")))
     out_csv = work / "openrdp.csv"
     try:
         proc = subprocess.run([*cmd, str(clean), "-o", str(out_csv), "-m", *methods],

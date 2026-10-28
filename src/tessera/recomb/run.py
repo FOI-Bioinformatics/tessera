@@ -306,7 +306,9 @@ def _write_run_provenance(
     output_dir.mkdir(parents=True, exist_ok=True)
     record = {"run": dict(provenance), "msa": msa_record}
     path = output_dir / "run_provenance.json"
-    path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+    path.write_text(
+        json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     logger.info("Writing run provenance: %s", path)
     return path
 

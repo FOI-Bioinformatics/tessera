@@ -120,9 +120,18 @@ line-length = 100
 target-version = "py313"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+select = ["E", "F", "I", "UP", "B", "PLW1514"]
 # B008: Typer declares options as call-valued argument defaults by design.
 ignore = ["B008"]
+# PLW1514 (unspecified text encoding) is a preview rule. It is selected because the
+# outputs declare UTF-8 -- report.html says so in a meta tag -- while text IO without
+# an explicit encoding uses the locale's: under LC_ALL=C the report cannot be written
+# at all (its inlined plotly bundle is not ASCII) and a non-ASCII sequence label breaks
+# the TSVs. Enforced rather than fixed once, so a new call site cannot reintroduce it.
+# `explicit-preview-rules` keeps the rest of the preview set out, so only the preview
+# rules named in `select` are active and this brings no unrelated churn with it.
+preview = true
+explicit-preview-rules = true
 
 [tool.ruff.lint.per-file-ignores]
 # Subcommands are registered by importing the cmd_* modules for their side

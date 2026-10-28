@@ -74,7 +74,7 @@ def _alive(pid: int) -> bool:
         return True
     # A zombie still answers signal 0; on Linux its state says it is finished.
     try:
-        status = Path(f"/proc/{pid}/stat").read_text().split(")")[-1].split()[0]
+        status = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").split(")")[-1].split()[0]
     except (FileNotFoundError, IndexError):
         return True
     return status not in {"Z", "X"}

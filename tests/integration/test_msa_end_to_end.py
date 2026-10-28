@@ -37,7 +37,7 @@ def _derive_genomes(msa: Path, out_dir: Path) -> Path:
     ``collection/`` of the reference genomes. Returns the query path."""
     records: dict[str, list[str]] = {}
     label: str | None = None
-    for line in msa.read_text().splitlines():
+    for line in msa.read_text(encoding="utf-8").splitlines():
         if line.startswith(">"):
             label = line[1:].strip().split()[0]
             records[label] = []
