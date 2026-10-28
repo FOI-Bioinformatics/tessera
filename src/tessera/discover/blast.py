@@ -100,7 +100,13 @@ def blast_subsequence(
         # Sets the contact address for Entrez calls. Note that Biopython's `qblast`
         # takes neither an email nor an api_key parameter, so the BLAST URL API below
         # is unauthenticated whatever is passed here; pacing is the only lever we have.
-        Entrez.email = resolved_email
+        #
+        # Through setattr because Biopython declares `Entrez.email` as `None`, so a
+        # plain assignment is a type error. mypy 2.4 reports it and 2.3 does not, and
+        # `warn_unused_ignores` is on, so a `type: ignore` fails whichever of the two
+        # does not need it -- as it did here, passing locally and failing CI. This
+        # suppresses nothing and cannot go stale with a mypy release.
+        setattr(Entrez, "email", resolved_email)  # noqa: B010
 
     logger.info("Submitting %d bp to NCBI %s/%s (this can take minutes)...",
                 len(seq), program, database)

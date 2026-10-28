@@ -72,8 +72,15 @@ All notable changes to Tessera are recorded here. The format follows
   that dataset covers; an unqualified name keeps its old mapping, and a longer trailing
   word ("strain", "isolate") is not a qualifier. An unmappable taxon is refused by name
   rather than guessed at.
-- **`mypy` passes.** A stale `type: ignore` in the BLAST client was the one error on
-  the default branch, so the type-check step of CI was red with no code change.
+- **The BLAST client's `Entrez.email` assignment no longer depends on the mypy
+  release.** Biopython declares the attribute as `None`, so assigning an address is a
+  type error -- which mypy 2.4 reports and 2.3 does not. With `warn_unused_ignores` on,
+  a `type: ignore` fails under whichever of the two does not need it, so the check's
+  result depended on which patch release `mypy>=1.11,<3.0` happened to resolve to. It
+  goes through `setattr` instead, which suppresses nothing and cannot go stale with a
+  release. (An earlier revision of this branch removed the suppression on the strength
+  of a local mypy 2.3.1 and reddened CI, which runs 2.4.0; the default branch was green
+  throughout.)
 
 ### Four output columns now say what their headers say
 
