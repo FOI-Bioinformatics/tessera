@@ -6,6 +6,30 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### A draft query could not be aligned at all by MAFFT 7.525
+
+- **The defect.** MAFFT 7.525 segfaults inside `pairlocalalign` whenever
+  `--addfragments` is given more than one record and the pairwise-local path is taken.
+  Tessera adds every genome with `--addfragments`, and only reaches for `--6merpair`
+  above 20 kb, so on that release **no** multi-contig query of a smaller genome could be
+  aligned: the run died with the aligner's exit 1 and a segfault line.
+- **It is the release, not the input.** Measured against 7.525 and 7.526 here: two
+  300 bp fragments crash as readily as three 2 kb ones; it crashes with and without
+  `--adjustdirection` and with and without `--keeplength`, so neither the strand
+  handling nor the length rule is involved; a single-record file is fine; and 7.526
+  aligns every one of those inputs cleanly.
+- **The fix.** Where the reported MAFFT version is older than 7.526, a genome holding
+  more than one record is added with `--6merpair`, which derives its guide distances
+  from k-mer counts and never enters the crashing routine. It is the same escape the
+  memory rule already uses, and on anything above 20 kb -- most real genomes -- Tessera
+  asks for it anyway. The run logs which genomes were affected and that upgrading MAFFT
+  restores the pairwise alignment. A version string that cannot be parsed is left on the
+  pairwise path: a clear failure from the tool beats quietly coarsening every alignment.
+- **Why it mattered beyond a draft query.** `ubuntu-latest` installs 7.525 from apt, so
+  this had been failing CI's `requires_binary` step on the default branch since
+  2026-10-25, on `test_draft_query_with_one_reversed_contig_aligns`. The same test now
+  passes under 7.525 and under 7.526, verified against both.
+
 ### Text IO is UTF-8 whatever the locale says
 
 - **The defect.** `report.html` declares UTF-8 in its own meta tag, but it and every

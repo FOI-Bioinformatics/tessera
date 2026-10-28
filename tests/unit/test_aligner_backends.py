@@ -103,6 +103,76 @@ def test_mafft_forwards_keeplength_and_tuning(monkeypatch, tmp_path: Path) -> No
     assert cmd[cmd.index("--maxiterate") + 1] == "1000"
 
 
+# --- MAFFT 7.525 cannot add several fragments on the pairwise path ----------
+#
+# It segfaults inside pairlocalalign whenever --addfragments carries more than one
+# record, at any length and whatever the strand, so an unpatched 7.525 could not align
+# any draft assembly of a genome below the 20 kb --6merpair threshold. --6merpair avoids
+# the crashing routine, so a multi-record genome takes that path on an older MAFFT.
+
+def _draft_genomes(tmp_path: Path) -> list[Path]:
+    ref = tmp_path / "ref.fasta"
+    ref.write_text(">ref\nACGTACGTACGT\n", encoding="utf-8")
+    draft = tmp_path / "draft.fasta"
+    draft.write_text(">c1\nACGTAC\n>c2\nGTACGT\n", encoding="utf-8")  # two contigs
+    return [ref, draft]
+
+
+def _capture_mafft(monkeypatch, tmp_path: Path, genomes: list[Path], version: str) -> list[str]:
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(caps, cmd, **kw):
+        captured["cmd"] = [str(c) for c in cmd]
+        raise RuntimeError("stop after capture")
+
+    monkeypatch.setattr(mafft_mod, "run_tool", fake_run)
+    monkeypatch.setattr(mafft_mod, "check_binaries", lambda specs: {"mafft": version})
+    with pytest.raises(RuntimeError):
+        mafft_mod.MafftAligner().align(
+            genomes, genomes[0], tmp_path / "out", AlignParams(threads=1), _LOG
+        )
+    return captured["cmd"]
+
+
+def test_mafft_adds_sixmerpair_for_a_multi_contig_genome_on_the_broken_version(
+    monkeypatch, tmp_path: Path, caplog
+) -> None:
+    with caplog.at_level(logging.WARNING, logger="tessera.test"):
+        cmd = _capture_mafft(monkeypatch, tmp_path, _draft_genomes(tmp_path), "7.525")
+    assert "--6merpair" in cmd
+    assert "segfaults" in caplog.text  # the run says why it coarsened the distances
+
+
+def test_mafft_leaves_a_fixed_version_on_the_pairwise_path(monkeypatch, tmp_path: Path) -> None:
+    cmd = _capture_mafft(monkeypatch, tmp_path, _draft_genomes(tmp_path), "7.526")
+    assert "--6merpair" not in cmd
+
+
+def test_mafft_leaves_a_single_contig_genome_alone_even_on_the_broken_version(
+    monkeypatch, tmp_path: Path
+) -> None:
+    # One record per --addfragments call never reaches the crash.
+    cmd = _capture_mafft(monkeypatch, tmp_path, _two_genomes(tmp_path), "7.525")
+    assert "--6merpair" not in cmd
+
+
+def test_mafft_does_not_coarsen_on_an_unreadable_version(monkeypatch, tmp_path: Path) -> None:
+    """A clear failure from the tool beats quietly coarsening every alignment."""
+    cmd = _capture_mafft(monkeypatch, tmp_path, _draft_genomes(tmp_path), "unknown")
+    assert "--6merpair" not in cmd
+
+
+def test_mafft_version_comparison() -> None:
+    at_least = mafft_mod._mafft_at_least
+    assert at_least("7.526", (7, 526)) is True
+    assert at_least("7.525", (7, 526)) is False
+    assert at_least("7.4", (7, 526)) is False
+    assert at_least("8.0", (7, 526)) is True
+    assert at_least("v7.526", (7, 526)) is True   # a leading "v" is still a version
+    assert at_least("unknown", (7, 526)) is None
+    assert at_least("", (7, 526)) is None
+
+
 def test_minimap2_forwards_preset_and_threads(monkeypatch, tmp_path: Path) -> None:
     captured: dict[str, list[str]] = {}
 
