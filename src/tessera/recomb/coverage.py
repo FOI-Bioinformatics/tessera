@@ -60,7 +60,7 @@ class CoverageParams:
     # panels: the three where the fixed drop carries no information sit 0.0000-0.0010
     # from perfect, and the two where it is simply never reached sit 0.0408 and 0.0670.
     near_identical_deficit: float
-    min_gap: int  # drop gaps shorter than this many bp
+    min_gap: int  # drop gaps narrower than this many alignment columns
     merge_gap: int  # merge gaps separated by at most this many alignment columns
 
     @classmethod
@@ -218,12 +218,15 @@ def call_coverage_gaps(
             kind = LOCAL_DIP_KIND
         else:
             kind = DIVERGENT_KIND
+        q_start = result.column_to_query(block["start"])
+        q_end = result.column_to_query(block["end"])
         gaps.append(
             CoverageGap(
                 msa_start=block["start"], msa_end=block["end"],
-                query_start=result.column_to_query(block["start"]),
-                query_end=result.column_to_query(block["end"]),
-                length_bp=length, n_windows=len(idx),
+                query_start=q_start, query_end=q_end,
+                # Query bases, as the column name says and as Region.length_bp is
+                # measured; this used to be the alignment-column span, gaps included.
+                length_bp=q_end - q_start, n_windows=len(idx),
                 best_label=best_label,
                 mean_best=round(mean_best, 4) if sims else float("nan"),
                 kind=kind,

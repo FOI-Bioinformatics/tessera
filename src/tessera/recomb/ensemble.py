@@ -207,7 +207,10 @@ def _merge_group(
         mean_sim_minor=sim_minor,
         mean_sim_major=sim_major,
         margin=margin,
-        posterior_support=best.posterior_support,
+        # The posterior is an HMM quantity: the HMM member's where there is one (as for
+        # the breakpoint), absent otherwise. `best` is often a site caller, whose
+        # value here would be the dataclass default rather than a measurement.
+        posterior_support=(hmm_member or best).posterior_support,
         breakpoint_lo=bp_lo,
         breakpoint_hi=bp_hi,
         support=best.support,

@@ -114,6 +114,15 @@ def _pvalue_str(x: float) -> str:
     return repr(float(x))
 
 
+def _na_if_nan(x: float | None) -> str | float:
+    """The file's one marker for an absent value, ``NA``, for a nan as well as a None.
+
+    A donor-absent row built with no major parent carries nan similarities, which
+    used to print as ``nan`` beside the ``NA`` every other optional column uses.
+    """
+    return "NA" if x is None or isnan(x) else x
+
+
 def _region_row(region: Region) -> tuple[str, list]:
     support = "-" if region.support is None else f"{region.support:.2f}"
     qval = "-" if region.qvalue is None else f"{region.qvalue:.2g}"
@@ -301,13 +310,14 @@ def write_regions_tsv(
                 "\t".join(map(str, [
                     r.minor_parent, r.major_parent, r.msa_start, r.msa_end,
                     r.query_start, r.query_end, r.length_bp, r.length_msa, r.n_windows,
-                    r.mean_sim_minor, r.mean_sim_major, r.margin,
+                    _na_if_nan(r.mean_sim_minor), _na_if_nan(r.mean_sim_major),
+                    _na_if_nan(r.margin),
                     "NA" if r.support is None else r.support,
                     "NA" if r.pvalue is None else _pvalue_str(r.pvalue),
                     "NA" if r.qvalue is None else _pvalue_str(r.qvalue),
                     r.test or "NA",
                     r.statistic or "NA",
-                    r.posterior_support,
+                    "NA" if r.posterior_support is None else r.posterior_support,
                     "NA" if r.breakpoint_lo is None else r.breakpoint_lo,
                     "NA" if r.breakpoint_hi is None else r.breakpoint_hi,
                     "yes" if r.donor_undercovered else "no",

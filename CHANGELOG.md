@@ -6,6 +6,29 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Four output columns now say what their headers say
+
+- **`posterior`** in `recombination_regions.tsv` is an HMM measurement, but the field's
+  default was 1.0, so every 3SEQ, MaxChi, Bootscan, GENECONV and donor-absent row
+  reported a posterior of 1.0 it never had, indistinguishable from a measured 1.0. When
+  a merged row's most significant member was a site caller the HMM member's real value
+  was discarded for that default. The column is now `NA` on a row no HMM segment
+  contributed to, and a merged row carries its HMM member's value, as it already did
+  for the breakpoint.
+- **`margin` and `minor_cluster_size` after donor re-attribution.** Re-labelling a
+  region's donor to a better clade replaced `minor_parent` and `mean_sim_minor` and left
+  `margin` and the cluster size from the previous donor, so a row could read
+  `mean_sim_minor 1.0, mean_sim_major 0.9, margin -0.3`. The new `mean_sim_minor` was
+  also the clade consensus score, on a different scale from `mean_sim_major`. The row
+  now describes the genome it names: identity over the span, the margin as their
+  difference, and the size of that genome's clade.
+- **`length_bp` in `coverage_gaps.tsv`** was the alignment-column span, gaps included,
+  under a header that says bases, while `Region.length_bp` is query bases. It is now
+  `query_end - query_start`. The `min_gap` filter, which compares alignment columns,
+  says so in its comment instead of claiming bp; its behaviour is unchanged.
+- **`nan` similarities** on a donor-absent row built with no major parent printed as
+  `nan` beside the `NA` every other optional column uses. They print as `NA`.
+
 ### Bootscan's run-length null no longer depends on the block grid's phase
 
 - **The defect.** The null permutes windows in blocks one window wide so that the

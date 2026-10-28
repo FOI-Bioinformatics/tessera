@@ -16,7 +16,7 @@ from dataclasses import replace
 import numpy as np
 
 from .regions import Region
-from .similarity import CANONICAL_BASES, WindowSimilarity
+from .similarity import CANONICAL_BASES, WindowSimilarity, region_identity
 from .typing import LineageMap, lineage_of
 
 _BASES = np.array(sorted(CANONICAL_BASES), dtype=np.uint8)  # A C G T byte codes
@@ -25,8 +25,8 @@ _BASES = np.array(sorted(CANONICAL_BASES), dtype=np.uint8)  # A C G T byte codes
 def _clade_consensus(
     rows: dict[str, np.ndarray], query: str, lineage_map: LineageMap
 ) -> tuple[dict[str, np.ndarray], dict[str, str]]:
-    """Per-clade majority canonical base per column (0 where no canonical base), and a
-    representative member label per clade."""
+    """Per-clade majority canonical base per column (0 where no canonical base), a
+    representative member label per clade, and each clade's member count."""
     by_clade: dict[str, list[str]] = {}
     for label in rows:
         if label == query:
@@ -36,13 +36,15 @@ def _clade_consensus(
             by_clade.setdefault(clade, []).append(label)
     cons: dict[str, np.ndarray] = {}
     rep: dict[str, str] = {}
+    size: dict[str, int] = {}
     for clade, members in by_clade.items():
+        size[clade] = len(members)
         stack = np.array([rows[m] for m in members])  # (n_members, width)
         counts = np.stack([(stack == b).sum(axis=0) for b in _BASES])  # (4, width)
         majority = _BASES[np.argmax(counts, axis=0)]
         cons[clade] = np.where(counts.sum(axis=0) > 0, majority, 0).astype(np.uint8)
         rep[clade] = members[0]
-    return cons, rep
+    return cons, rep, size
 
 
 def reattribute_donors(
@@ -65,7 +67,7 @@ def reattribute_donors(
     """
     if not lineage_map:
         return regions
-    cons, rep = _clade_consensus(result.rows, result.query, lineage_map)
+    cons, rep, size = _clade_consensus(result.rows, result.query, lineage_map)
     if len(cons) < 2:
         return regions
     query = result.rows[result.query]
@@ -108,8 +110,17 @@ def reattribute_donors(
                     "vs %.3f).", region.minor_parent, rep[best], region.query_start,
                     region.query_end, best_score, cur,
                 )
-            out.append(replace(region, minor_parent=rep[best],
-                               mean_sim_minor=round(best_score, 4)))
+            # The row now names ``rep[best]``, so its similarity, margin and cluster
+            # size describe that genome and its clade. The consensus score decided the
+            # re-attribution (and is logged above); the row's ``mean_sim_minor`` stays
+            # on the same scale as ``mean_sim_major``, identity over the span, and the
+            # margin is their difference, as it is on every other row.
+            sim_minor = round(region_identity(result.rows, result.query, rep[best], lo, hi), 4)
+            out.append(replace(
+                region, minor_parent=rep[best], mean_sim_minor=sim_minor,
+                margin=round(sim_minor - region.mean_sim_major, 4),
+                minor_cluster_size=size[best],
+            ))
         else:
             out.append(region)
     return out
