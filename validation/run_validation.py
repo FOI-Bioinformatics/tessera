@@ -65,7 +65,7 @@ def _resolve_inputs(ds: dict) -> tuple[Path | None, Path | None, str]:
 
 
 def _parse_regions(path: Path) -> list[dict]:
-    lines = path.read_text().splitlines()
+    lines = path.read_text(encoding="utf-8").splitlines()
     if len(lines) < 2:
         return []
     header = lines[0].split("\t")
@@ -73,7 +73,7 @@ def _parse_regions(path: Path) -> list[dict]:
 
 
 def _parse_winners(path: Path) -> list[tuple[str, int]]:
-    lines = path.read_text().splitlines()[1:]
+    lines = path.read_text(encoding="utf-8").splitlines()[1:]
     out = []
     for ln in lines:
         name, num = ln.split("\t")

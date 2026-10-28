@@ -580,11 +580,11 @@ def _record_ncbi_lineages(output: Path, source_dir: Path) -> None:
     if not src.exists():
         return
     merged: dict[str, str] = dict(_read_ncbi_lineages(output) or [])
-    for line in src.read_text().splitlines():
+    for line in src.read_text(encoding="utf-8").splitlines():
         acc, _, lineage = line.partition("\t")
         if acc and lineage:
             merged[acc] = lineage
-    with open(output / NCBI_LINEAGES_TSV, "w") as fo:
+    with open(output / NCBI_LINEAGES_TSV, "w", encoding="utf-8") as fo:
         for acc, lineage in sorted(merged.items()):
             fo.write(f"{acc}\t{lineage}\n")
 
@@ -596,7 +596,7 @@ def _read_ncbi_lineages(output: Path) -> list[tuple[str, str]] | None:
     if not path.exists():
         return None
     rows: list[tuple[str, str]] = []
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         acc, _, lineage = line.partition("\t")
         if acc and lineage:
             rows.append((acc, lineage))
@@ -615,7 +615,7 @@ def _record_pool_labels(output: Path, genomes: list[Path]) -> None:
     if not merged:
         return
     output.mkdir(parents=True, exist_ok=True)
-    with open(output / POOL_LABELS_TSV, "w") as fo:
+    with open(output / POOL_LABELS_TSV, "w", encoding="utf-8") as fo:
         for label, clade in sorted(merged.items()):
             fo.write(f"{label}\t{clade}\n")
 
@@ -626,7 +626,7 @@ def _read_pool_labels(output: Path) -> dict[str, str]:
     if not path.exists():
         return {}
     labels: dict[str, str] = {}
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         label, _, clade = line.partition("\t")
         if label and clade:
             labels[label] = clade
@@ -1203,7 +1203,7 @@ def _write_trace(output: Path, trace: list[RoundResult], logger: logging.Logger)
     logger.info("Writing fill summary: %s", path)
     header = ["round", "n_gaps", "undercovered_bp", "worst_best_similarity",
               "threshold", "references_added", "coverage_shortfall"]
-    with open(path, "w") as fo:
+    with open(path, "w", encoding="utf-8") as fo:
         fo.write("\t".join(header) + "\n")
         for r in trace:
             fo.write("\t".join(map(str, [

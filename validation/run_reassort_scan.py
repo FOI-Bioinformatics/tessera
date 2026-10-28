@@ -70,7 +70,7 @@ def _run_probe(out_dir: Path, logger: logging.Logger) -> int:
     na_clade, na_query = _clonal_na(tips_na, ref_na, rh.reconstruct_gapped, rh._largest_clade)
 
     query = out_dir / "query.fasta"
-    with open(query, "w") as fo:
+    with open(query, "w", encoding="utf-8") as fo:
         write_fasta_record(fo, "HA", ha_query)
         write_fasta_record(fo, "NA", na_query)
     logger.info("HA insert: clade %s in clade %s backbone (true span %d-%d); NA clonal %s",

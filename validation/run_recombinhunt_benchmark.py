@@ -82,7 +82,7 @@ def _run(dataset: str, reps: int, logger: logging.Logger) -> int:
         collection = Path(tmp) / "collection"
         collection.mkdir()
         for label, seq in (("A", parent_a), ("B", parent_b)):
-            with open(collection / f"{label}.fasta", "w") as fo:
+            with open(collection / f"{label}.fasta", "w", encoding="utf-8") as fo:
                 write_fasta_record(fo, label, seq)
         for rep in range(reps):
             clean, q0, q1 = rh.make_hybrid(ref, a_muts, b_muts)
@@ -91,7 +91,7 @@ def _run(dataset: str, reps: int, logger: logging.Logger) -> int:
                 out = Path(tmp) / f"r{rep}_k{k}"
                 out.mkdir()
                 qf = out / "query.fasta"
-                with open(qf, "w") as fo:
+                with open(qf, "w", encoding="utf-8") as fo:
                     write_fasta_record(fo, "query", query_seq)
                 window, step, _ = rh.window_params(len(query_seq))
                 msa = out / "msa.fasta"

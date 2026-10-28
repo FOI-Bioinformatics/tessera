@@ -6,6 +6,184 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### A draft query could not be aligned at all by MAFFT 7.525
+
+- **The defect.** MAFFT 7.525 segfaults inside `pairlocalalign` whenever
+  `--addfragments` is given more than one record and the pairwise-local path is taken.
+  Tessera adds every genome with `--addfragments`, and only reaches for `--6merpair`
+  above 20 kb, so on that release **no** multi-contig query of a smaller genome could be
+  aligned: the run died with the aligner's exit 1 and a segfault line.
+- **It is the release, not the input.** Measured against 7.525 and 7.526 here: two
+  300 bp fragments crash as readily as three 2 kb ones; it crashes with and without
+  `--adjustdirection` and with and without `--keeplength`, so neither the strand
+  handling nor the length rule is involved; a single-record file is fine; and 7.526
+  aligns every one of those inputs cleanly.
+- **The fix.** Where the reported MAFFT version is older than 7.526, a genome holding
+  more than one record is added with `--6merpair`, which derives its guide distances
+  from k-mer counts and never enters the crashing routine. It is the same escape the
+  memory rule already uses, and on anything above 20 kb -- most real genomes -- Tessera
+  asks for it anyway. The run logs which genomes were affected and that upgrading MAFFT
+  restores the pairwise alignment. A version string that cannot be parsed is left on the
+  pairwise path: a clear failure from the tool beats quietly coarsening every alignment.
+- **Why it mattered beyond a draft query.** `ubuntu-latest` installs 7.525 from apt, so
+  this had been failing CI's `requires_binary` step on the default branch since
+  2026-10-25, on `test_draft_query_with_one_reversed_contig_aligns`. The same test now
+  passes under 7.525 and under 7.526, verified against both.
+
+### Text IO is UTF-8 whatever the locale says
+
+- **The defect.** `report.html` declares UTF-8 in its own meta tag, but it and every
+  TSV were written in the locale's encoding, and the alignment was handed to Biopython
+  as a path, which opens it the same way. Under `LC_ALL=C` -- an ordinary setting on a
+  compute node -- an alignment carrying a non-ASCII label could not be read at all, and
+  the report could not be written even without one, because the plotly bundle inlined
+  in it is not ASCII. The run died at its last step.
+- **The fix.** Every text read and write in the package names its encoding, the
+  alignment is opened by Tessera rather than by Biopython, and ruff's
+  `unspecified-encoding` rule is switched on so a new call site cannot reintroduce it
+  (`explicit-preview-rules` keeps the rest of the preview set out). A test runs a whole
+  analysis under `LC_ALL=C` on an alignment whose donor is labelled `Ebola/Guéckédou`,
+  in a child interpreter because the locale is fixed at startup; it fails on the
+  previous commit and passes here.
+
+### Four ways a broken or unexpected input ended a run
+
+- **A Pango alias key that is not JSON was cached before it was parsed**, so a proxy
+  error page or a truncated read stayed in the cache and every later call -- online or
+  not -- warned that the cache was unreadable and returned nothing. One bad response
+  disabled the lineage cross-check until somebody deleted the file by hand. The body is
+  parsed first and only then cached.
+- **A Nextclade dataset that publishes no tree raised a bare `KeyError`**, which
+  reached the user as a traceback and, through `reassort`, ended a whole multi-segment
+  run on one tree-less segment dataset. It is refused by name, naming the dataset and
+  the file it lacks. A cut transfer (`IncompleteRead`) is an `HTTPException` rather than
+  an `OSError`, so it escaped the handler that exists for it; both download paths now
+  catch it.
+- **A cached BLAST result whose row fields no longer match `Hit` raised `TypeError`**,
+  which is not the `BlastError` the callers catch to skip a gap and carry on, so the run
+  ended -- for the fortnight the entry stays valid. An unreadable entry is now a cache
+  miss: the search runs again and replaces it.
+- **A FASTA header or an accession named a file without being sanitised.** An empty
+  header raised `IndexError` while splitting a downloaded archive, one beginning `../`
+  wrote outside the destination directory, and `efetch` took the same route. Both go
+  through `safe_filename_stem`, which `reassort` already used for this. The inputs come
+  from NCBI rather than from a user, so this is defence in depth.
+- **An unnamed record could take a named segment's place.** `reassort` named an unnamed
+  record `segment_N` by position, which could equal a real header: the two then shared
+  one key, so one was never scanned and the other was typed twice under the same name.
+  The synthetic name now skips names the query already uses.
+
+### Inputs that were accepted and then ignored, or accepted and then failed
+
+- **`msa --output <directory>`** warned "Overwriting the existing alignment", ran the
+  aligner to completion and only then failed moving the result into place, with
+  `Is a directory` under "Unexpected error". Every other command takes a directory
+  there, so this is an easy slip, and it cost the whole alignment. It is rejected
+  before any work starts, as are a `--collection` that is not a directory and a
+  missing `--query`.
+- **`find-references --collection <typo>`** was silently ignored, so every BLAST hit
+  read as a reference the collection lacked -- the opposite of what the command
+  reports. A `--download` path that is an existing file is checked too.
+- **`recomb --min-region 0`, `--min-region -5`, `--merge-gap -500`** all ran to a clean
+  exit 0 having quietly meant something else. They are range-checked like every other
+  numeric option on the command.
+- **A taxon was mapped to a Nextclade dataset by bare substring**, so on the
+  BLAST-detection fallback (no `--nextclade-dataset`, no `nextclade` binary) "human
+  immunodeficiency virus 2" resolved to the HIV-1 dataset and "human respiratory
+  syncytial virus b" to the RSV-A one: the wrong subtype's clade tree became the
+  recruitment pool without a word. Where a keyword names one member of a family whose
+  siblings have their own datasets, a serotype or subtype token following it must be one
+  that dataset covers; an unqualified name keeps its old mapping, and a longer trailing
+  word ("strain", "isolate") is not a qualifier. An unmappable taxon is refused by name
+  rather than guessed at.
+- **The BLAST client's `Entrez.email` assignment no longer depends on the mypy
+  release.** Biopython declares the attribute as `None`, so assigning an address is a
+  type error -- which mypy 2.4 reports and 2.3 does not. With `warn_unused_ignores` on,
+  a `type: ignore` fails under whichever of the two does not need it, so the check's
+  result depended on which patch release `mypy>=1.11,<3.0` happened to resolve to. It
+  goes through `setattr` instead, which suppresses nothing and cannot go stale with a
+  release. (An earlier revision of this branch removed the suppression on the strength
+  of a local mypy 2.3.1 and reddened CI, which runs 2.4.0; the default branch was green
+  throughout.)
+
+### Four output columns now say what their headers say
+
+- **`posterior`** in `recombination_regions.tsv` is an HMM measurement, but the field's
+  default was 1.0, so every 3SEQ, MaxChi, Bootscan, GENECONV and donor-absent row
+  reported a posterior of 1.0 it never had, indistinguishable from a measured 1.0. When
+  a merged row's most significant member was a site caller the HMM member's real value
+  was discarded for that default. The column is now `NA` on a row no HMM segment
+  contributed to, and a merged row carries its HMM member's value, as it already did
+  for the breakpoint.
+- **`margin` and `minor_cluster_size` after donor re-attribution.** Re-labelling a
+  region's donor to a better clade replaced `minor_parent` and `mean_sim_minor` and left
+  `margin` and the cluster size from the previous donor, so a row could read
+  `mean_sim_minor 1.0, mean_sim_major 0.9, margin -0.3`. The new `mean_sim_minor` was
+  also the clade consensus score, on a different scale from `mean_sim_major`. The row
+  now describes the genome it names: identity over the span, the margin as their
+  difference, and the size of that genome's clade.
+- **`length_bp` in `coverage_gaps.tsv`** was the alignment-column span, gaps included,
+  under a header that says bases, while `Region.length_bp` is query bases. It is now
+  `query_end - query_start`. The `min_gap` filter, which compares alignment columns,
+  says so in its comment instead of claiming bp; its behaviour is unchanged.
+- **`nan` similarities** on a donor-absent row built with no major parent printed as
+  `nan` beside the `NA` every other optional column uses. They print as `NA`.
+
+### Bootscan's run-length null no longer depends on the block grid's phase
+
+- **The defect.** The null permutes windows in blocks one window wide so that the
+  autocorrelation of overlapping windows survives, but the grid was fixed at window 0. A
+  donor run that happened to sit inside one block was carried intact into every
+  permutation and scored p = 1.0 whatever its length, while the same run shifted by three
+  windows was cut in two and scored about 0.1. Measured on 111 windows with block 10, the
+  same 6-window run scored 0.0755 at one offset and 1.0000 at another, and the same
+  10-window run likewise. The answer came from where the tract happened to fall.
+- **The fix.** The phase is a nuisance parameter, so the null averages over it instead of
+  fixing one: each permutation rotates the win vector circularly by a random amount
+  before the blocks are cut and shuffled. Every row still keeps exactly its own number of
+  wins. The spread across offsets falls from 0.925 to under 0.01, and the all-wins and
+  single-block guards are unchanged.
+- **It was wrong in both directions, and the cost is real.** A favourable phase made a
+  short run look significant as surely as an unfavourable one made it look impossible: a
+  6-window run (shorter than one window width) scored 0.0755 at one offset and now scores
+  about 0.52 wherever it sits, which is what a run shorter than the correlation length is
+  worth. The same averaging makes longer runs somewhat harder to call: an 18-window run
+  that scored 0.005 at its lucky phase now scores 0.03. One test case changed verdict
+  because of this -- on a panel of eight references 0.1 % apart, Bootscan's 18-window run
+  reached q = 0.06 and no longer clears FDR, so it stops naming a donor there. On a panel
+  0.25 % apart all four callers still agree on the planted donor at q = 2e-14.
+- **Measured against the harness that can see this.** `validation/run_specificity.py
+  --reps 3` is unchanged by the fix: 0 of 12 runs report a false region before and after,
+  and the positive control is detected 3/3 with the correct donor and a median breakpoint
+  error of 13 bp in both. A sensitivity re-measurement on `run_hybrids.py` needs an
+  aligner and has not been run.
+
+### The HMM breakpoint interval always contains the switch
+
+- **The defect.** The band was searched outward from the first window of the new state,
+  so when the posterior was already confident on both sides it collapsed to that one
+  window centre, which is after the breakpoint. On a clean 10 kb A/B fixture with the tract
+  at 4000-7000 the HMM reported (4100, 4100) while 3SEQ and MaxChi reported (3999, 4004).
+  Its own test checked only `lo <= hi`.
+- **The fix.** The band runs from the last window before the switch at which the outgoing
+  parent is confident to the first window at or after it at which the incoming parent
+  is, so it spans the two window centres the path switched between and is never
+  narrower than one window step. A test now asserts the planted breakpoint lies inside
+  it. Issue #96 (an interval measured on a different basis from the span it belongs
+  to) is a separate symptom and stays open.
+
+### The HMM's major parent no longer depends on reference order
+
+- **The defect.** `plurality_major` counted window wins with `nanargmax`, which hands a
+  shared best similarity to whichever label comes first, while the window vote the other
+  callers rank their major by counts a tie for every label that shares it. On a panel
+  where two references tie in most windows the HMM and the site callers could name
+  opposite majors, and swapping the order of the references in the alignment swapped
+  the HMM's answer.
+- **The fix.** A shared best counts for every label that shares it, the mean-similarity
+  tiebreak is unchanged, and a test asserts the HMM major equals the window vote's
+  winner under both label orders.
+
 ### The report says when the backbone is degraded (issue #82, second half)
 
 - **The defect.** `donor_undercovered` reported on the minor parent alone. A backbone

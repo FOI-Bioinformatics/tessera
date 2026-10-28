@@ -56,6 +56,27 @@ def test_reattributes_to_better_clade_above_margin():
     assert out[0].mean_sim_minor == 1.0
 
 
+def test_reattributed_row_describes_the_genome_it_now_names():
+    """`margin` and `minor_cluster_size` used to be left from the previous donor.
+
+    The row read `mean_sim_minor 1.0, mean_sim_major 0.9, margin -0.4`, and still
+    carried clade B's cluster size beside clade C's representative.
+    """
+    rows = {"q": _enc(_QUERY), "a1": _enc(_A), "b1": _enc(_B),
+            "c1": _enc(_C), "c2": _enc(_C)}
+    lm = {"a1": "A", "b1": "B", "c1": "C", "c2": "C"}
+    region = Region(minor_parent="b1", major_parent="a1", msa_start=5, msa_end=15,
+                    query_start=5, query_end=15, n_windows=1,
+                    mean_sim_minor=0.6, mean_sim_major=0.9, margin=-0.3,
+                    minor_cluster_size=3)
+    out = reattribute_donors([region], _Result(rows, "q"), lm, "A", margin=0.1, min_sites=4)
+    r = out[0]
+    assert r.minor_parent == "c1"
+    assert r.mean_sim_minor == 1.0            # identity of c1 over the span
+    assert r.margin == round(r.mean_sim_minor - r.mean_sim_major, 4) == 0.1
+    assert r.minor_cluster_size == 2          # clade C has two members, not B's three
+
+
 def test_unchanged_below_margin():
     result, lm = _panel()
     regions = [_region("b1", "a1", 5, 15)]

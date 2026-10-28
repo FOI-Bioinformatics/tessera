@@ -386,3 +386,41 @@ def test_clades_within_margin_lists_every_clade_in_the_near_best_window(tmp_path
            tips[3]: (97.0, 90.0)}
     assert assign.clades_within_margin(tips, ani, 0.5) == ["3C.2a", "3C.3a"]
     assert assign.clades_within_margin(tips, ani, 0.05) == ["3C.2a"]
+
+
+def test_an_unnamed_record_does_not_collide_with_a_named_segment(tmp_path, monkeypatch) -> None:
+    """The positional fallback name could equal a real header.
+
+    `>segment_2` followed by an unnamed record both became "segment_2", so the two
+    shared one key: one was never scanned and the other was typed twice under the
+    same name.
+    """
+    import logging
+
+    from tessera.reassort import assign as assign_mod
+
+    query = tmp_path / "q.fasta"
+    query.write_text(">segment_2 first\nACGTACGT\n>\nTTTTTTTT\n", encoding="utf-8")
+
+    typed: list[str] = []
+
+    def fake_type_segment(seg, seq, *args, **kwargs):
+        typed.append(seg)
+        assignment = assign_mod.SegmentAssignment(
+            segment=seg, dataset="d", strain=None, clade=None, ani=0.0,
+            status="unassigned",
+        )
+        return assignment, [], set(), None
+
+    monkeypatch.setattr(assign_mod, "skani_available", lambda: True)
+    monkeypatch.setattr(assign_mod, "_type_segment", fake_type_segment)
+    result = assign_mod.assign_segments(
+        query, ani_floor=0.0, margin=0.5, email=None, cache_dir=tmp_path / "cache",
+        logger=logging.getLogger("reassort-test"),
+    )
+
+    names = [s.segment for s in result.segments]
+    assert len(names) == 2
+    assert len(set(names)) == 2, names        # two distinct keys, so neither is lost
+    assert "segment_2" in names               # the real header keeps its name
+    assert typed == names                     # each record typed once, under its own name

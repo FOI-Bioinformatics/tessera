@@ -25,7 +25,7 @@ def example_data() -> Path:
 
 def write_fasta(path: Path, records: dict[str, str]) -> Path:
     """Write a simple (aligned) FASTA from a label -> sequence mapping."""
-    with open(path, "w") as fo:
+    with open(path, "w", encoding="utf-8") as fo:
         for name, seq in records.items():
             fo.write(f">{name}\n{seq}\n")
     return path

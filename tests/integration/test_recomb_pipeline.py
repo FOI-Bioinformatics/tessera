@@ -33,7 +33,7 @@ def _synthetic_msa(path: Path) -> None:
         "variola": variola,
         "other": mutate(base, 0.18),
     }
-    with open(path, "w") as fo:
+    with open(path, "w", encoding="utf-8") as fo:
         for name, seq in records.items():
             fo.write(f">{name}\n{seq}\n")
 
@@ -103,7 +103,7 @@ def _clonal_msa(path: Path, seed: int = 5) -> None:
         records[f"sib{i}"] = mutate(base, 0.02)
     for i in range(3):
         records[f"out{i}"] = mutate(base, 0.15)
-    with open(path, "w") as fo:
+    with open(path, "w", encoding="utf-8") as fo:
         for name, seq in records.items():
             fo.write(f">{name}\n{seq}\n")
 
@@ -158,14 +158,14 @@ def _near_identical_msa(path: Path, seed: int = 67) -> dict[str, str]:
     query = list(records["ref1"])
     query[8000:14000] = list(records["ref3"][8000:14000])
     records = {"query": "".join(query), **records}
-    with open(path, "w") as fo:
+    with open(path, "w", encoding="utf-8") as fo:
         for name, seq in records.items():
             fo.write(f">{name}\n{seq}\n")
     return records
 
 
 def _read_tsv(path: Path) -> list[dict[str, str]]:
-    lines = [x for x in path.read_text().splitlines() if x]
+    lines = [x for x in path.read_text(encoding="utf-8").splitlines() if x]
     header = lines[0].split("\t")
     return [dict(zip(header, x.split("\t"), strict=True)) for x in lines[1:]]
 
@@ -270,7 +270,7 @@ def _near_identical_with_an_imperfect_donor(path: Path, seed: int = 67) -> None:
     tract = mutate(records["ref3"][14000:16000], 0.003)
     query = list(records["ref1"])
     query[14000:16000] = list(tract)
-    with open(path, "w") as fo:
+    with open(path, "w", encoding="utf-8") as fo:
         fo.write(f">query\n{''.join(query)}\n")
         for name, seq in records.items():
             fo.write(f">{name}\n{seq}\n")

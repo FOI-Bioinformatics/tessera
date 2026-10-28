@@ -38,7 +38,8 @@ WINDOW, STEP = 1000, 100
 
 
 def _read_tsv(path: Path) -> list[dict[str, str]]:
-    lines = [x for x in path.read_text().splitlines() if x and not x.startswith("#")]
+    text = path.read_text(encoding="utf-8")
+    lines = [x for x in text.splitlines() if x and not x.startswith("#")]
     return list(csv.DictReader(lines, delimiter="\t"))
 
 

@@ -62,12 +62,15 @@ def _estimate_identity(result: WindowSimilarity) -> float:
 
 
 def plurality_major(result: WindowSimilarity, labels: list[str]) -> str | None:
-    """The label that is the strict best match in the most informative windows.
+    """The label that is the best match in the most informative windows.
 
     This is the major parent as defined for the query -- the reference it most
     resembles across the genome -- rather than the state an HMM path happens to occupy
-    most (which a uniformly-mediocre genome, best in no window, can win). Ties are broken
-    by the highest mean similarity over each label's comparable windows, then by label
+    most (which a uniformly-mediocre genome, best in no window, can win). A window
+    whose best similarity is shared counts for every label that shares it, the same
+    rule as the window vote the other callers rank their major by, so the answer does
+    not depend on the order of the references in the alignment. Ties are broken by
+    the highest mean similarity over each label's comparable windows, then by label
     order. Returns ``None`` when no window is informative.
     """
     if not labels:
@@ -77,7 +80,7 @@ def plurality_major(result: WindowSimilarity, labels: list[str]) -> str | None:
     for i in range(matrix.shape[1]):
         col = matrix[:, i]
         if np.isfinite(col).any():
-            wins[int(np.nanargmax(col))] += 1
+            wins[col == np.nanmax(col)] += 1
     if not wins.any():
         return None
     means = [
@@ -223,9 +226,17 @@ def _breakpoint_interval(
     post: np.ndarray, path: np.ndarray, switch_i: int,
     prev_state: int, new_state: int, result: WindowSimilarity,
 ) -> tuple[int, int]:
-    """Query-coord band around a switch where neither flanking state is confident."""
-    lo = switch_i
-    while lo > 0 and post[lo - 1, prev_state] < _CONF:
+    """Query-coord band around a switch where neither flanking state is confident.
+
+    The band runs from the last window before the switch at which the outgoing state
+    is confident to the first window at or after it at which the incoming state is,
+    so it always spans the two windows between which the path switched. Starting the
+    search at the switch window itself collapsed the band to that one window centre
+    whenever both sides were already confident, which put the true breakpoint, which
+    lies before that centre, outside its own uncertainty interval.
+    """
+    lo = switch_i - 1
+    while lo > 0 and post[lo, prev_state] < _CONF:
         lo -= 1
     hi = switch_i
     while hi < len(path) - 1 and post[hi, new_state] < _CONF:

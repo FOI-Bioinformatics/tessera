@@ -16,7 +16,7 @@ from tessera.recomb.run import RecombParams, run_recomb
 
 
 def _rows(path: Path) -> list[dict[str, str]]:
-    lines = [x for x in path.read_text().splitlines() if x.strip()]
+    lines = [x for x in path.read_text(encoding="utf-8").splitlines() if x.strip()]
     if len(lines) < 2:
         return []
     header = lines[0].split("\t")

@@ -21,6 +21,7 @@ import logging
 import re
 import shutil
 from dataclasses import dataclass
+from http.client import HTTPException
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -116,6 +117,36 @@ _ALIAS: dict[str, str] = {
     "metapneumovirus": "nextstrain/hmpv/all-clades/NC_039199",
 }
 
+# Keywords above that name one member of a family whose other members have datasets of
+# their own, with the qualifier tokens the keyword's dataset actually covers. A plain
+# substring test mapped "human immunodeficiency virus 2" onto the HIV-1 dataset and
+# "human respiratory syncytial virus b" onto the RSV-A one, so recruitment was handed
+# the wrong subtype's clade tree and said nothing. The serotype or subtype token is
+# exactly what distinguishes them, so where one follows the keyword it has to be a
+# token the dataset covers. A longer word ("strain", "isolate", "subtype") is not a
+# qualifier and is ignored, and a name carrying no qualifier at all keeps its old
+# mapping -- an unqualified "human immunodeficiency virus" has long meant HIV-1.
+_ALIAS_QUALIFIERS: dict[str, frozenset[str]] = {
+    "human immunodeficiency virus": frozenset({"1"}),
+    "respiratory syncytial virus": frozenset({"a"}),
+}
+_MAX_QUALIFIER_LEN = 2  # "1", "2", "a", "b": longer words are not serotypes
+
+
+def _alias_applies(keyword: str, taxon: str) -> bool:
+    """Does ``keyword`` occur in ``taxon`` as the organism its dataset is for?"""
+    allowed = _ALIAS_QUALIFIERS.get(keyword)
+    at = taxon.find(keyword)
+    while at != -1:
+        if allowed is None:
+            return True
+        rest = taxon[at + len(keyword):].strip().split()
+        token = rest[0] if rest else ""
+        if not token or len(token) > _MAX_QUALIFIER_LEN or token in allowed:
+            return True
+        at = taxon.find(keyword, at + 1)
+    return False
+
 
 @dataclass
 class NextcladeDataset:
@@ -129,7 +160,9 @@ def fetch_index() -> dict[str, dict]:
     try:
         with urlopen(_INDEX_URL, timeout=60) as resp:  # noqa: S310 - fixed https URL
             data = json.loads(resp.read())
-    except (URLError, OSError, json.JSONDecodeError) as exc:
+    except (URLError, OSError, HTTPException, json.JSONDecodeError) as exc:
+        # HTTPException covers a cut transfer (IncompleteRead), which is neither an
+        # URLError nor an OSError and so surfaced as a traceback.
         raise UserInputError(f"Could not fetch the Nextclade dataset index: {exc}") from exc
     out: dict[str, dict] = {}
 
@@ -145,7 +178,19 @@ def fetch_index() -> dict[str, dict]:
 
 
 def _dataset_file_url(dataset: NextcladeDataset, role: str) -> str:
-    filename = dataset.files[role]
+    """The download URL for one of a dataset's files.
+
+    A dataset that does not publish the file raised a bare ``KeyError`` from here,
+    which reached the user as a traceback under "Unexpected error" and, through
+    ``reassort``, aborted a whole multi-segment run on one tree-less segment dataset.
+    """
+    filename = dataset.files.get(role)
+    if not filename:
+        raise UserInputError(
+            f"The Nextclade dataset '{dataset.path}' publishes no '{role}' file, which "
+            f"Tessera needs to build a pool from it. Pass --nextclade-dataset with "
+            f"another dataset, or supply the panel with --candidate-pool."
+        )
     return f"{_BASE_URL}/{dataset.path}/{dataset.tag}/{filename}"
 
 
@@ -170,7 +215,7 @@ def _sort_dataset(query: Path, index: dict[str, dict], logger) -> str | None:
             return None
         if not out.exists():
             return None
-        rows = out.read_text().splitlines()
+        rows = out.read_text(encoding="utf-8").splitlines()
     if len(rows) < 2:
         return None
     header = rows[0].split("\t")
@@ -205,8 +250,11 @@ def resolve_dataset(
             return _entry_to_dataset(path, index[path])
 
     taxon = detect_taxon(query, email=email, logger=logger).lower()
-    for keyword, path in _ALIAS.items():
-        if keyword in taxon and path in index:
+    # Longest keyword first, so a more specific name is not captured by a shorter one,
+    # and each candidate checked against the subtype its dataset is for.
+    for keyword in sorted(_ALIAS, key=len, reverse=True):
+        path = _ALIAS[keyword]
+        if path in index and _alias_applies(keyword, taxon):
             logger.info("Mapped '%s' to the Nextclade dataset '%s'.", taxon, path)
             return _entry_to_dataset(path, index[path])
     raise UserInputError(
@@ -220,7 +268,7 @@ def _download_text(dataset: NextcladeDataset, role: str, logger: logging.Logger)
     try:
         with urlopen(url, timeout=120) as resp:  # noqa: S310 - fixed https URL
             return resp.read().decode("utf-8", "replace")
-    except (URLError, OSError) as exc:
+    except (URLError, OSError, HTTPException) as exc:
         raise UserInputError(f"Could not download {url}: {exc}") from exc
 
 
@@ -232,7 +280,7 @@ def _write_genome(out_dir: Path, label: str, note: str, seq: str, floor: int) ->
     if len(seq) < floor:  # a truncated reconstruction
         return None
     path = out_dir / f"{label}.fasta"
-    with open(path, "w") as fo:
+    with open(path, "w", encoding="utf-8") as fo:
         write_fasta_record(fo, f"{label} {note}", seq)
     return path
 

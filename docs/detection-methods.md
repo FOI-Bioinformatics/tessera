@@ -70,7 +70,10 @@ parents) and does not invent regions from noise.
 Each region carries a **support** (the share of distinguishing sites favouring the
 donor), a sign-test **p-value** with a Benjamini-Hochberg **q-value**
 (false-discovery-rate across the segments tested), and a **breakpoint uncertainty
-interval**. A high support with a small q-value is a confident call; a region with
+interval**: in query coordinates, from the last window before the switch at which the
+outgoing parent's posterior is confident (0.9) to the first window at or after it at which
+the incoming parent's is, so it always spans the two windows between which the path
+switched and is never narrower than one window step. A high support with a small q-value is a confident call; a region with
 strong directional support but a large q-value (few distinguishing sites, e.g. a
 recombination between near-identical lineages) is flagged as marginal rather than
 dropped. The legacy `--method heuristic` (margin / merge-gap / min-region) is kept
@@ -281,7 +284,11 @@ and asks whether they are more contiguous than chance -- a recombinant tract is 
 chance flips are scattered. Windows are permuted in **blocks** one window wide, because
 sliding windows overlap and their winners are autocorrelated even with no recombination;
 an element-wise shuffle would destroy that structure and make every short run look
-significant. The resulting p-values are Benjamini-Hochberg corrected across candidates
+significant. The grid's phase is drawn at random for every permutation: with a fixed
+grid a run that sat inside one block was intact in every permutation and could never be
+significant whatever its length, while the same run shifted by a few windows was cut in
+two and could, so the verdict depended on where the tract fell rather than on the tract.
+The resulting p-values are Benjamini-Hochberg corrected across candidates
 and gated on the q-value, exactly as the other callers are. A consequence worth knowing:
 with a real null Bootscan clears FDR far less often than its raw support suggested, and
 on small tracts it may stay silent.
@@ -482,7 +489,7 @@ These rows are logged with the backbone that was rejected, and counted in
 | File | Contents |
 |---|---|
 | `report.html` | Self-contained report: run provenance, the region table, the per-dataset stats, and an embedded interactive plot |
-| `recombination_regions.tsv` | Called regions: minor/major parent, start/end in **both MSA columns and query bases**, `length_bp` / `length_msa`, `posterior` (the best contributing caller's value over its own span, not the whole row's span), `support`, `pvalue` / `qvalue` with the `test` and `statistic` that produced them, `n_windows` (base-pair scan windows overlapping the region, the same unit for every caller), mean similarities (identity over the region's own span, for a merged row the whole merged span), the calling `methods`, `donor_undercovered` (the donor is itself a poor match, so it may be standing in for an absent true donor), `major_degraded` (the backbone is gappier over this region than across the rest of its own genome, so the comparison behind the region was not between comparably aligned sequences), and `parent_free_support` (`not run` when the PHI test gave no result) |
+| `recombination_regions.tsv` | Called regions: minor/major parent, start/end in **both MSA columns and query bases**, `length_bp` / `length_msa`, `posterior` (the HMM's mean donor posterior over its own segment, not the whole row's span; `NA` on a row no HMM segment contributed to, since no other caller measures one), `support`, `pvalue` / `qvalue` with the `test` and `statistic` that produced them, `n_windows` (base-pair scan windows overlapping the region, the same unit for every caller), mean similarities (identity over the region's own span, for a merged row the whole merged span), the calling `methods`, `donor_undercovered` (the donor is itself a poor match, so it may be standing in for an absent true donor), `major_degraded` (the backbone is gappier over this region than across the rest of its own genome, so the comparison behind the region was not between comparably aligned sequences), and `parent_free_support` (`not run` when the PHI test gave no result) |
 | `recombination_methods.tsv` | Ensemble breakdown (only when several methods run): one row per row of `recombination_regions.tsv`, in the same order (a donor-absent region reads `no` for every caller that ran), with `yes` / `no` per method (`not run` for a selected caller that could not run) and the parent-free flag; the parent-free flag is `not run` likewise |
 | `recombination_profile.tsv` | Parent-free signal: header with the PHI p-value (`NA` when not testable) and Rmin, then per-informative-site local incompatibility (the PHI profile) |
 | `similarity_windows.tsv` | Full per-window matrix: `msa_position`, `query_position`, `winner`, and one similarity column per dataset. Always base-pair windows (identity over all comparable columns) |

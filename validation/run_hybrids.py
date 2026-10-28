@@ -421,7 +421,7 @@ def consensus_panel(
         cons = consensus_sequence(seqs).replace("-", "").upper()
         label = consensus_label(clade)
         path = out_dir / f"{label}.fasta"
-        with open(path, "w") as fo:
+        with open(path, "w", encoding="utf-8") as fo:
             write_fasta_record(fo, label, cons)
         paths.append(path)
         label_to_clade[label] = clade
@@ -652,7 +652,7 @@ def _prepare_frontier_species(case, logger):
     # they do not align at all -> identity 0 -> KNOWN-LIMIT, which is honest.
     ga_f, gb_f = out / "_src_a.fasta", out / "_src_b.fasta"
     for f, s in ((ga_f, genome_a), (gb_f, genome_b)):
-        with open(f, "w") as fo:
+        with open(f, "w", encoding="utf-8") as fo:
             write_fasta_record(fo, f.stem, s)
     identity = skani_query_ani(ga_f, [gb_f], logger).get(gb_f, (0.0, 0.0))[0] / 100.0
     query_seq, q_start, q_end = make_cross_hybrid(genome_a, genome_b)
@@ -661,7 +661,7 @@ def _prepare_frontier_species(case, logger):
 
     clade_a, clade_b = f"A:{clade_a0}", f"B:{clade_b0}"
     query = out / "hybrid.fasta"
-    with open(query, "w") as fo:
+    with open(query, "w", encoding="utf-8") as fo:
         write_fasta_record(fo, f"hybrid_{clade_a0}_{clade_b0}", query_seq)
 
     pool_a, ta, ma = _species_pool(ga, tips_a, "A", src_a)
@@ -732,7 +732,7 @@ def _prepare_frontier_reassortant(case, logger):
     x = max(ha, key=lambda c: len(ha[c]))
     y = max(na, key=lambda c: len(na[c]))
     query = out / "query.fasta"
-    with open(query, "w") as fo:
+    with open(query, "w", encoding="utf-8") as fo:
         write_fasta_record(fo, "HA", ha[x])
         write_fasta_record(fo, "NA", na[y])
     logger.info("[%s] reassortant probe: HA:%s + NA:%s -> typing each segment", name, x, y)
@@ -781,7 +781,7 @@ def pick_parents_n(tips, reference, n, *, floor=0.0):
 
 
 def parse_regions(path: Path) -> list[dict]:
-    lines = path.read_text().splitlines()
+    lines = path.read_text(encoding="utf-8").splitlines()
     if len(lines) < 2:
         return []
     header = lines[0].split("\t")
@@ -793,7 +793,7 @@ def parse_signal(path: Path) -> tuple[str, str]:
     ``# PHI p-value\t<p>\t(window ..., <n> sites, Rmin <rmin>)``."""
     if not path.exists():
         return "-", "-"
-    head = path.read_text().splitlines()[0]
+    head = path.read_text(encoding="utf-8").splitlines()[0]
     fields = head.split("\t")
     phi_p = fields[1] if len(fields) > 1 else "-"
     tail = fields[2] if len(fields) > 2 else ""
@@ -987,7 +987,7 @@ def _prepare_case(case: dict, logger: logging.Logger) -> CaseSetup:
     window, step, sel_window = window_params(len(query_seq))
     aligner = case.get("aligner", "mafft")
     query = out / "hybrid.fasta"
-    with open(query, "w") as fo:
+    with open(query, "w", encoding="utf-8") as fo:
         write_fasta_record(fo, f"hybrid_{clade_a}_{clade_b}", query_seq)
     query_label = strip_sequence_extension(query.name)
 

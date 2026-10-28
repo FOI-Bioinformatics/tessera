@@ -866,6 +866,9 @@ def write_html_report(
     )
 
     out = output_dir / "report.html"
-    out.write_text(doc)
+    # Explicit, and not only for tidiness: the document declares UTF-8 in its own meta
+    # tag, and the inlined plotly bundle is not ASCII, so under a non-UTF-8 locale the
+    # report could not be written at all -- the run died at its last step.
+    out.write_text(doc, encoding="utf-8")
     logger.info("Report written: %s", out)
     return out

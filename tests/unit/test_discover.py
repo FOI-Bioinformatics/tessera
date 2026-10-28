@@ -439,3 +439,45 @@ def test_a_local_dip_is_not_searched_for(monkeypatch, tmp_path, logger):
 
     assert find_references(params, logger) == []
     assert (tmp_path / "out" / "candidate_references.tsv").exists()
+
+
+def test_a_cached_blast_row_with_unknown_fields_is_searched_again(tmp_path, monkeypatch) -> None:
+    """A cache entry from a version whose Hit had other fields raised TypeError.
+
+    The callers catch BlastError so they can skip a gap and carry on; a TypeError is
+    not one, so the whole run ended -- for the fortnight the entry stays valid. It is
+    now treated as a miss, and the search is attempted again (mocked here to fail, so
+    the test needs no network: reaching it at all is the point).
+    """
+    import json
+    import logging
+    from datetime import UTC, datetime
+
+    from tessera.core.cache import blast_cache_path
+    from tessera.discover import blast as blast_mod
+
+    key = ("blastn", "nt", 5, "", "ACGT")
+    path = blast_cache_path(key, override=tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "fetched (UTC)": datetime.now(UTC).isoformat(),
+        "hits": [{"accession": "X1", "title": "t", "pct_identity": 99.0,
+                  "query_coverage": 1.0, "evalue": 0.0,
+                  "field_added_by_a_later_version": 1}],
+    }), encoding="utf-8")
+
+    reached = []
+
+    def fake_qblast(*args, **kwargs):
+        reached.append(True)
+        raise RuntimeError("no network in tests")
+
+    from Bio.Blast import NCBIWWW
+    monkeypatch.setattr(NCBIWWW, "qblast", fake_qblast)
+
+    with pytest.raises(blast_mod.BlastError):
+        blast_mod.blast_subsequence(
+            "ACGT", logger=logging.getLogger("blast-test"), cache_dir=tmp_path,
+            program="blastn", database="nt", max_hits=5,
+        )
+    assert reached, "the unreadable cache entry was not treated as a miss"

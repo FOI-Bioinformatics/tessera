@@ -26,8 +26,8 @@ SEQUENCE_EXTENSIONS = (".fna", ".fasta", ".fa")
 def _open_text(path: str | Path) -> TextIO:
     """Open a plain or gzip-compressed text file for reading."""
     if str(path).endswith(".gz"):
-        return gzip.open(path, "rt")
-    return open(path)
+        return gzip.open(path, "rt", encoding="utf-8")
+    return open(path, encoding="utf-8")
 
 
 def read_fasta(path: str | Path) -> list[tuple[str, str]]:
@@ -172,7 +172,7 @@ def _mark_working_copy(dest: Path) -> None:
     (dest.parent / _WORKING_COPY_MARKER).write_text(
         "The collection/ directory here is Tessera's working copy; it is cleared and "
         "rebuilt at the start of every run.\n"
-    )
+    , encoding="utf-8")
 
 
 def new_working_collection(dest: Path) -> None:

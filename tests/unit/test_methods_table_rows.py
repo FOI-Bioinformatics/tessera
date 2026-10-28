@@ -37,7 +37,7 @@ def _panel_with_an_absent_donor(tmp_path: Path) -> Path:
 
 
 def _rows(path: Path) -> list[dict[str, str]]:
-    return list(csv.DictReader(path.open(), delimiter="\t"))
+    return list(csv.DictReader(path.open(encoding="utf-8"), delimiter="\t"))
 
 
 def test_methods_rows_match_regions_rows_with_a_donor_absent_region(

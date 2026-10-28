@@ -44,7 +44,7 @@ def _efetch(accession: str, dest: Path) -> bool:
     if not out.stdout.startswith(">"):
         print(f"    ! {accession}: no FASTA returned")
         return False
-    dest.write_text(out.stdout)
+    dest.write_text(out.stdout, encoding="utf-8")
     return True
 
 

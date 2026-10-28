@@ -30,7 +30,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from ..converters.mafft_merge import merge_added_fragments
-from ..core.binaries import BinarySpec
+from ..core.binaries import BinarySpec, check_binaries
 from ..core.executors import parallel_map
 from ..core.io import normalize_reference, read_fasta, write_fasta_record
 from ..core.plugins import ToolCapabilities
@@ -56,6 +56,21 @@ _VALUE_TUNING = {
 # An explicit ``sixmerpair=true|false`` aligner argument overrides the rule.
 SIXMER_MIN_BACKBONE = 20_000
 
+# MAFFT 7.525 segfaults inside `pairlocalalign` whenever `--addfragments` is given more
+# than one record and the pairwise-local path is taken. Measured against 7.525 here: it
+# crashes on two 300 bp fragments as readily as on three 2 kb ones, with and without
+# `--adjustdirection` and `--keeplength`, so neither the strand handling nor the length
+# rule above has anything to do with it; a single-record file is fine, and 7.526 aligns
+# every one of those inputs cleanly. Since SIXMER_MIN_BACKBONE only engages above 20 kb,
+# an unpatched 7.525 could not align *any* draft assembly of a smaller genome.
+#
+# `--6merpair` derives its guide distances from k-mer counts and never enters the
+# crashing routine, so a multi-record genome added by a MAFFT older than this takes that
+# path. It is the same escape the memory rule above already uses, which is what makes it
+# an acceptable substitution rather than a new mode: on anything over 20 kb -- most real
+# genomes -- Tessera is already asking for it.
+MULTIFRAGMENT_PAIRWISE_FIXED_IN = (7, 526)
+
 # Upper estimate of the memory one ``--multipair`` job needs, per cell (backbone length
 # times added-sequence length).
 # Measured peaks were 7-20 bytes (8.5-30 kb genome pairs, MAFFT 7.526).
@@ -63,6 +78,17 @@ _MULTIPAIR_BYTES_PER_CELL = 24
 # Share of physical memory the concurrent ``--multipair`` jobs may be estimated to use.
 _MEMORY_SHARE = 0.5
 _FALLBACK_MEMORY = 8 * 2**30
+
+
+def _mafft_at_least(version: str, minimum: tuple[int, ...]) -> bool | None:
+    """Is the reported MAFFT ``version`` at least ``minimum``? ``None`` if unreadable."""
+    parts: list[int] = []
+    for field_text in version.split(".")[: len(minimum)]:
+        digits = "".join(c for c in field_text if c.isdigit())
+        if not digits:
+            return None
+        parts.append(int(digits))
+    return tuple(parts) >= minimum if len(parts) == len(minimum) else None
 
 
 def _physical_memory() -> int:
@@ -105,7 +131,7 @@ class MafftAligner(Aligner):
         # reference so the output stays one reference row.
         ref_seq = "".join(seq for _, seq in read_fasta(reference))
         ref_fasta = out_dir / "reference.fasta"
-        ref_fasta.write_text(f">{reference.stem}\n{ref_seq}\n")
+        ref_fasta.write_text(f">{reference.stem}\n{ref_seq}\n", encoding="utf-8")
 
         tuning: list[str] = []
         for key, flag in _VALUE_TUNING.items():
@@ -113,10 +139,16 @@ class MafftAligner(Aligner):
                 tuning += [flag, str(params.extra[key])]
         queries = [g for g in genomes if g != reference]
         # Pairwise memory grows with backbone length times the length of the sequence
-        # added, so the rule looks at the longest sequence on either side.
-        longest_added = max(
-            (len(seq) for g in queries for _, seq in read_fasta(g)), default=0
-        )
+        # added, so the rule looks at the longest sequence on either side. The record
+        # count is kept from the same read, for the 7.525 workaround below.
+        fragments: dict[Path, int] = {}
+        longest_added = 0
+        for genome in queries:
+            records = read_fasta(genome)
+            fragments[genome] = len(records)
+            longest_added = max(
+                longest_added, max((len(seq) for _, seq in records), default=0)
+            )
         longest = max(len(ref_seq), longest_added)
         sixmer = params.flag("sixmerpair", default=longest > SIXMER_MIN_BACKBONE)
         if sixmer:
@@ -127,6 +159,25 @@ class MafftAligner(Aligner):
                     "(--6merpair) to bound memory; override with --aligner-arg "
                     "sixmerpair=false.",
                     longest, SIXMER_MIN_BACKBONE,
+                )
+
+        # A MAFFT too old to add several fragments on the pairwise path (see
+        # MULTIFRAGMENT_PAIRWISE_FIXED_IN) would crash on a draft assembly, so those
+        # genomes take the k-mer path instead. An unreadable version is left alone: a
+        # clear failure from the tool is better than quietly coarsening every alignment
+        # on the strength of a version string nobody could parse.
+        multifragment_sixmer: set[Path] = set()
+        if not sixmer and any(count > 1 for count in fragments.values()):
+            reported = check_binaries(self.capabilities.required_binaries).get("mafft", "")
+            if _mafft_at_least(reported, MULTIFRAGMENT_PAIRWISE_FIXED_IN) is False:
+                multifragment_sixmer = {g for g, count in fragments.items() if count > 1}
+                logger.warning(
+                    "MAFFT %s segfaults when it adds more than one fragment on the "
+                    "pairwise path (fixed in %s); using k-mer distances (--6merpair) "
+                    "for %d multi-contig genome(s). Upgrade MAFFT to keep the pairwise "
+                    "alignment for them.",
+                    reported, ".".join(map(str, MULTIFRAGMENT_PAIRWISE_FIXED_IN)),
+                    len(multifragment_sixmer),
                 )
 
         # The thread budget is shared: concurrent jobs each get a slice of it rather than
@@ -144,10 +195,14 @@ class MafftAligner(Aligner):
 
         def add_genome(genome: Path) -> tuple[str, str]:
             aligned = out_dir / f"{genome.stem}.aln.fasta"
+            per_genome = [*tuning]
+            if genome in multifragment_sixmer:
+                per_genome.append("--6merpair")
             run_tool(
                 self.capabilities,
                 ["mafft", "--thread", threads, "--keeplength", "--adjustdirection",
-                 *tuning, "--addfragments", str(genome.resolve()), str(ref_fasta.resolve())],
+                 *per_genome, "--addfragments", str(genome.resolve()),
+                 str(ref_fasta.resolve())],
                 logger=logger,
                 log_prefix=f"mafft:{genome.stem}",
                 stdout_path=aligned,
@@ -159,7 +214,7 @@ class MafftAligner(Aligner):
 
         warn_unplaced(rows, reference.stem, logger)
         msa = out_dir / "msa.fasta"
-        with open(msa, "w") as out:
+        with open(msa, "w", encoding="utf-8") as out:
             write_fasta_record(out, reference.stem, ref_seq)
             for stem, row in rows:
                 write_fasta_record(out, stem, row)

@@ -108,6 +108,19 @@ def _require_output_directory(path: Path) -> None:
         raise UserInputError(f"Output path exists and is not a directory: {path}")
 
 
+def _require_output_file(path: Path, label: str) -> None:
+    """Reject an output path that is an existing directory.
+
+    The inverse of :func:`_require_output_directory`, for the one command whose output
+    is a file. Every other command takes a directory there, so passing one is an easy
+    slip, and it used to be found only after the aligner had finished: the run warned
+    "Overwriting the existing alignment", aligned the whole panel, and then failed with
+    ``[Errno 21] Is a directory`` when it moved the result into place.
+    """
+    if Path(path).is_dir():
+        raise UserInputError(f"{label} is a directory, not a file: {path}")
+
+
 def _require_scan_windows(window_size: int, window_step: int) -> None:
     """The window options every scanning command shares; see :func:`_require_range`."""
     _require_range(window_size, "--window-size", lo=1)

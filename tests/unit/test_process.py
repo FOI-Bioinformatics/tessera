@@ -8,7 +8,10 @@ being checked is the interaction with the process itself.
 from __future__ import annotations
 
 import logging
+import os
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 import pytest
@@ -33,6 +36,48 @@ def test_timeout_stops_a_wedged_tool_instead_of_hanging() -> None:
         run_tool(CAPS, _python("import time", "time.sleep(30)"), logger=LOG, timeout=0.4)
     assert "was stopped" in str(exc.value)
     assert "TESSERA_TOOL_TIMEOUT" in str(exc.value)  # says how to raise the limit
+
+
+def test_a_timeout_stops_the_children_the_tool_started() -> None:
+    """A wrapper's workers must not outlive the run that gave up on them.
+
+    subprocess's own timeout signals only the process it started, so a tool that does
+    its work in children (the SibeliaZ script, Cactus through Toil, the EDirect perl
+    scripts) left them running, reparented to init. The tool now leads a process group
+    of its own and the whole group is stopped.
+    """
+    marker = Path(tempfile.mkdtemp()) / "child.pid"
+    code = [
+        "import os, subprocess, sys, time",
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])",
+        f"open({str(marker)!r}, 'w').write(str(child.pid))",
+        "time.sleep(60)",
+    ]
+    with pytest.raises(ToolExecutionError):
+        run_tool(CAPS, _python(*code), logger=LOG, timeout=2.0)
+
+    child_pid = int(marker.read_text())
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        if not _alive(child_pid):
+            break
+        time.sleep(0.1)
+    assert not _alive(child_pid), f"child {child_pid} survived the timeout"
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    # A zombie still answers signal 0; on Linux its state says it is finished.
+    try:
+        status = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").split(")")[-1].split()[0]
+    except (FileNotFoundError, IndexError):
+        return True
+    return status not in {"Z", "X"}
 
 
 def test_no_timeout_by_default_lets_a_slow_tool_finish() -> None:

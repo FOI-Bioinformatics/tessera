@@ -188,7 +188,7 @@ def read_lineage_rows(path: Path) -> list[tuple[str, str, str]]:
     rows: list[tuple[str, str, str]] = []
     if not Path(path).exists():
         return rows
-    for line in Path(path).read_text().splitlines():
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
         if not line.strip() or line.startswith("#"):
             continue
         fields = line.split("\t")
@@ -205,7 +205,7 @@ def write_lineage_map(path: Path, rows: Iterable[tuple[str, str, str]]) -> None:
     """Write ``(label, genotype, source)`` rows to a lineages TSV."""
     lines = [_TSV_HEADER]
     lines += [f"{label}\t{genotype}\t{source}" for label, genotype, source in rows]
-    Path(path).write_text("\n".join(lines) + "\n")
+    Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def lineage_map_from_rows(rows: Iterable[tuple[str, str, str]]) -> LineageMap:

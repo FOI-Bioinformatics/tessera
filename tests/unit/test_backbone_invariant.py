@@ -33,7 +33,7 @@ BACKBONE = C1 + C2
 def _read_msa(path: Path) -> dict[str, str]:
     out: dict[str, str] = {}
     name = None
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         if line.startswith(">"):
             name = line[1:]
             out[name] = ""
@@ -63,7 +63,8 @@ def _run_progressivemauve(monkeypatch, genomes: list[Path], out: Path) -> Path:
         bases = BACKBONE[lo - 1:hi]
         xmfa.write_text(
             f"#Sequence1File\t{ref_path}\n#Sequence2File\t{query_path}\n"
-            f"> 1:{lo}-{hi} + {ref_path}\n{bases}\n> 2:1-10 + {query_path}\n{bases}\n=\n"
+            f"> 1:{lo}-{hi} + {ref_path}\n{bases}\n> 2:1-10 + {query_path}\n{bases}\n=\n",
+            encoding="utf-8",
         )
         return ""
 
@@ -129,7 +130,7 @@ def _run_cactus(monkeypatch, genomes: list[Path], out: Path) -> Path:
         # hal2maf names rows <sample>.<contig>.
         Path(maf).write_text(
             f"a\ns ref.c1 0 10 + 10 {C1}\ns qryA.a1 0 10 + 10 {C1}\n\n"
-            f"a\ns ref.c2 0 10 + 10 {C2}\ns qryB.b1 0 10 + 10 {C2}\n"
+            f"a\ns ref.c2 0 10 + 10 {C2}\ns qryB.b1 0 10 + 10 {C2}\n", encoding="utf-8"
         )
         return Path(maf)
 
@@ -176,7 +177,8 @@ def test_progressivemauve_rejects_a_projection_wider_than_the_backbone(
         bases = BACKBONE + "ACGT"
         xmfa.write_text(
             f"#Sequence1File\t{ref_path}\n#Sequence2File\t{query_path}\n"
-            f"> 1:1-24 + {ref_path}\n{bases}\n> 2:1-24 + {query_path}\n{bases}\n=\n"
+            f"> 1:1-24 + {ref_path}\n{bases}\n> 2:1-24 + {query_path}\n{bases}\n=\n",
+            encoding="utf-8",
         )
         return ""
 

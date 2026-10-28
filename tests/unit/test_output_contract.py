@@ -131,6 +131,20 @@ def test_regions_tsv_marks_absent_values_na(tmp_path: Path) -> None:
     assert row["qvalue"] == "NA"
     assert row["test"] == "NA"
     assert row["statistic"] == "NA"
+    # No HMM segment behind this row, so there is no posterior to report. It used
+    # to print the dataclass default, 1.0, indistinguishable from a measured 1.0.
+    assert row["posterior"] == "NA"
+
+
+def test_regions_tsv_marks_a_nan_similarity_na_not_nan(tmp_path: Path) -> None:
+    """A donor-absent row built with no major parent has nan similarities."""
+    nan = float("nan")
+    r = mk()
+    r.mean_sim_major, r.margin = nan, nan
+    row = next(csv.DictReader(_write(tmp_path, [r]).open(), delimiter="\t"))
+    assert row["mean_sim_major"] == "NA"
+    assert row["margin"] == "NA"
+    assert row["mean_sim_minor"] == "0.99"
 
 
 # --- the other output files -----------------------------------------------

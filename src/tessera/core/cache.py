@@ -106,7 +106,7 @@ def read_blast_cache(path: Path, *, max_age_days: float) -> tuple[list[dict], fl
     invisible staleness this codebase is trying to remove, not add.
     """
     try:
-        payload = json.loads(path.read_text())
+        payload = json.loads(path.read_text(encoding="utf-8"))
         fetched = datetime.fromisoformat(payload["fetched (UTC)"])
         hits = payload["hits"]
     except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
@@ -128,7 +128,7 @@ def write_blast_cache(path: Path, hits: Sequence[dict]) -> Path:
             "hits": list(hits),
         }
         tmp = path.with_suffix(".partial")
-        tmp.write_text(json.dumps(payload, indent=2))
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         os.replace(tmp, path)
     except OSError:
         pass  # a cache that cannot be written must not fail the search it served
@@ -189,7 +189,9 @@ def write_cache_manifest(directory: Path, **fields: object) -> Path:
         **fields,
     }
     path = directory / CACHE_MANIFEST
-    path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     return path
 
 
@@ -197,7 +199,7 @@ def read_cache_manifest(directory: Path) -> dict | None:
     """The cache manifest for ``directory``, or ``None`` if absent or unreadable."""
     path = directory / CACHE_MANIFEST
     try:
-        loaded = json.loads(path.read_text())
+        loaded = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
     return loaded if isinstance(loaded, dict) else None

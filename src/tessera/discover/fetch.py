@@ -13,7 +13,7 @@ from pathlib import Path
 
 from ..core.binaries import BinarySpec
 from ..core.errors import OutputError
-from ..core.io import strip_sequence_extension
+from ..core.io import safe_filename_stem, strip_sequence_extension
 from ..core.ncbi import eutils_env, eutils_throttle, with_retries
 from ..core.plugins import ToolCapabilities
 from ..core.process import QUERY_TIMEOUT, default_timeout, run_tool
@@ -36,7 +36,10 @@ def efetch_fasta(accession: str, collection_dir: Path, logger: logging.Logger) -
     stages cleanly as a collection genome later.
     """
     collection_dir.mkdir(parents=True, exist_ok=True)
-    label = strip_sequence_extension(accession)
+    # The accession comes from BLAST output or the on-disk BLAST cache, so it names a
+    # file only after sanitising; unchecked, one carrying a path separator resolved
+    # outside the collection directory.
+    label = safe_filename_stem(strip_sequence_extension(accession), fallback="sequence")
     dest = collection_dir / f"{label}.fasta"
 
     def _fetch() -> None:
@@ -51,7 +54,12 @@ def efetch_fasta(accession: str, collection_dir: Path, logger: logging.Logger) -
         )
 
     with_retries(_fetch, what=f"efetch {accession}", logger=logger)
-    if not dest.exists() or dest.stat().st_size == 0 or not dest.read_text().startswith(">"):
+    looks_like_fasta = (
+        dest.exists()
+        and dest.stat().st_size > 0
+        and dest.read_text(encoding="utf-8").startswith(">")
+    )
+    if not looks_like_fasta:
         # Callers log the failure and carry on, so an empty or non-FASTA file left here
         # would be staged as a genome by the next round.
         dest.unlink(missing_ok=True)

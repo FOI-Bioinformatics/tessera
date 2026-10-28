@@ -218,3 +218,25 @@ def test_candidate_pool_refuses_a_file_that_is_not_fasta(tmp_path):
 
     with pytest.raises(UserInputError, match="does not look like a FASTA file"):
         pool.iter_pool_genomes(tmp_path)
+
+
+def test_a_hostile_or_empty_fasta_header_cannot_name_a_file_outside_the_destination(
+    tmp_path,
+) -> None:
+    """The header comes from a downloaded archive, so it names a file only after
+    sanitising: an empty one raised IndexError here, and one beginning "../" wrote
+    outside the destination directory."""
+    from tessera.discover.pool import _split_fasta
+
+    fna = tmp_path / "genomic.fna"
+    fna.write_text(">../escaped description\nACGT\n>\nTTTT\n>ok.1 fine\nGGGG\n",
+                   encoding="utf-8")
+    dest = tmp_path / "dest"
+    dest.mkdir()
+
+    written = _split_fasta(fna, dest, labels={})
+
+    assert len(written) == 3
+    for path in written:
+        assert path.parent.resolve() == dest.resolve(), path
+    assert not list(tmp_path.glob("*.fasta"))  # nothing landed beside dest

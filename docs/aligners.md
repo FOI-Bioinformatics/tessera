@@ -35,6 +35,18 @@ between the concurrent jobs rather than given to each. The estimate uses the hos
 physical memory; under a container or scheduler memory limit lower `--threads` or pass
 `sixmerpair=true`.
 
+MAFFT 7.525 and a draft query: that release segfaults inside `pairlocalalign` whenever
+`--addfragments` carries more than one record and the pairwise path is taken, so an
+unpatched 7.525 could not align any multi-contig query of a genome below the 20 kb
+threshold above. Measured against it: two 300 bp fragments crash as readily as three
+2 kb ones, with and without `--adjustdirection` and `--keeplength`, a single-record file
+is fine, and 7.526 aligns all of them cleanly. Where Tessera finds a MAFFT older than
+7.526 it therefore adds a multi-contig genome with `--6merpair`, the same escape the
+memory rule uses, and says so in the log. Upgrading MAFFT restores the pairwise
+alignment for those genomes; a MAFFT whose version string cannot be read is left on the
+pairwise path, since a clear failure from the tool is better than quietly coarsening
+every alignment.
+
 Threads with `minimap2`: genomes are mapped concurrently, and `--threads` is shared
 between the concurrent `minimap2` processes rather than given to each, as with `mafft`.
 
