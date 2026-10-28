@@ -73,7 +73,14 @@ donor), a sign-test **p-value** with a Benjamini-Hochberg **q-value**
 interval**: in query coordinates, from the last window before the switch at which the
 outgoing parent's posterior is confident (0.9) to the first window at or after it at which
 the incoming parent's is, so it always spans the two windows between which the path
-switched and is never narrower than one window step. A high support with a small q-value is a confident call; a region with
+switched and is never narrower than one window step. It then runs on, where it has to,
+to reach the region's own start: the band is measured on the window grid while the
+reported span starts at the first column that distinguishes the parents, and where those
+sites are sparse the first of them can lie well beyond the window where the path
+switched. Nothing in between rules out the switch having happened there, so an interval
+that stopped short would claim a precision the sites do not support (issue #96). The
+band is never narrowed to fit the span, since that would discard the uncertainty before
+the region's first informative column. A high support with a small q-value is a confident call; a region with
 strong directional support but a large q-value (few distinguishing sites, e.g. a
 recombination between near-identical lineages) is flagged as marginal rather than
 dropped. The legacy `--method heuristic` (margin / merge-gap / min-region) is kept
