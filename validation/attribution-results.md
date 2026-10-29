@@ -21,6 +21,20 @@ with `--compare`).
 > tips. Only `oropouche` remains SKIP -- its L-segment genomes are all > 98 % ANI, so no
 > distinct lineages can be formed (a documented data limit, not forced).
 
+> **Update (2026-10-29, commit `4a49bfd`, after the post-1.2.0 audit).** Re-run because the
+> audit changed what two callers report: Bootscan's run-length null no longer depends on the
+> block grid's phase, and the HMM's major parent no longer depends on the order the references
+> are listed in. The headline is unchanged -- **23 PASS, 0 FAIL, 1 SKIP** over the 24 pathogen
+> cases, `oropouche` still the only SKIP, `rsv_a` and `flu_h3n2_ha` still passing -- so
+> neither change cost a detection or an attribution here. The whole gate is **39 of 41, 1
+> skipped, 0 errors**, with sensitivity 29/30 and specificity 10/10 at no false calls. Both
+> non-passes are pre-existing and expected: `donorabsent_rsv` is issue #90, whose premise and
+> measurements are recorded on the issue and whose remaining options are in
+> `docs/superpowers/specs/2026-10-29-issue-90-donor-absent-design.md`; `neg_hiv1` is the
+> documented known limitation, reported rather than gating. The `--compare` grid below was
+> **not** re-run: it measured the barcode caller and the consensus panel, neither of which the
+> audit touched.
+
 ## Result
 
 | config | PASS | donor attribution improved vs baseline |

@@ -201,8 +201,9 @@ panels of near-identical references (about 0.2 % apart; 20 replicates of
 `validation/run_regimes.py`) the rates were 1 of 20 (CI 1-24 %) and 0 of 20 (CI 0-16 %). The
 default stays at 1 because an earlier, reverted attempt to default to a gate of two (PR #47)
 lost three true detections on the curated hybrid benchmark (`rsv_a`, `mpox`, `masksib_rsv`),
-where at very low divergence only the HMM has power; a rerun of `run_hybrids.py` at the
-present gate has not been done. For a panel holding several near-equidistant relatives of
+where at very low divergence only the HMM has power. A rerun of `run_hybrids.py` at the
+present gate and on the present callers (2026-10-29, commit `4a49bfd`) keeps all three of
+those detections and the whole 24-pathogen headline: 23 PASS, 0 FAIL, 1 SKIP. For a panel holding several near-equidistant relatives of
 the query, consider `--min-methods 2`, and treat a region found by one caller as a candidate
 to confirm. These are simulation results with modest replicate counts; see
 `validation/README.md` and

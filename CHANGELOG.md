@@ -17,11 +17,16 @@ All notable changes to Tessera are recorded here. The format follows
 > a false region, positive control 9/10, median breakpoint error 10 bp), and
 > `validation/run_regimes.py` improved its near-identical clonal control from 1 of 10
 > runs reporting false regions to 0 of 10, with detection unchanged at 10 of 10 on every
-> case. **The 24-pathogen attribution headline was not re-measured.** The 23 PASS,
-> 0 FAIL, 1 SKIP figure in `validation/attribution-results.md` and the README predates
-> the Bootscan change: `run_hybrids.py` needs the Nextclade and NCBI hosts, and the
-> environment this release was prepared in denies them. Treat that headline as measured
-> on 1.2.0 behaviour until it is run again.
+> case. **The 24-pathogen attribution headline was then re-measured too, and holds.**
+> `run_hybrids.py` on `4a49bfd` reproduces **23 PASS, 0 FAIL, 1 SKIP** across the 24
+> pathogen cases: every one that runs is detected with both parents named correctly, the
+> single SKIP is `oropouche` (its L-segment genomes are all > 98 % ANI, a documented data
+> limit), and the two cases that used to fail attribution, `rsv_a` and `flu_h3n2_ha`,
+> both pass. The whole gate, positives and negatives together, is **39 of 41 with 1
+> skipped and 0 errors**: sensitivity 29/30, specificity 10/10 with no false call. The
+> two non-passes are both pre-existing and known -- `donorabsent_rsv` (issue #90) and
+> `neg_hiv1`, which is reported as a known limitation rather than gating. So the Bootscan
+> change cost no detection and no attribution on the curated set.
 
 ### The low-severity findings of the post-1.3 audit
 
