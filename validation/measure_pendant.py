@@ -75,6 +75,10 @@ HYBRIDS = HERE / "data" / "hybrids"
 PROBE = HERE / "data" / "donor_absent_probe"  # written by probe_donor_absent.py
 QUERY_LABEL = "hybrid"
 MIN_PANEL = 4  # fewer tips than this and a pendant length is not worth reading
+# probe_donor_absent.py rebuilds the harness's own donor-absent case from scratch, which is
+# what validates the probe -- but it is the same case, so counting both would double-count it.
+# It is kept for the side-by-side check and excluded from the donor-absent group.
+PROBE_REPLICATE = {"absent_rsv_a": "donorabsent_rsv"}
 
 COLUMNS = (
     "case", "klass", "region", "variant", "n_panel", "n_dropped", "dropped_clades",
@@ -409,6 +413,90 @@ def _separation(present: np.ndarray, absent: np.ndarray) -> Separation:
     return Separation(auc, best[1], best[0], cost_of_all, sens_at_clean)
 
 
+def _rho(xs: list[float], ys: list[float]) -> float:
+    """Spearman rank correlation, so a heavy tail in a ratio cannot drive it."""
+    x, y = np.asarray(xs, dtype=float), np.asarray(ys, dtype=float)
+    ok = np.isfinite(x) & np.isfinite(y)
+    if int(ok.sum()) < 4:
+        return float("nan")
+    rx = np.argsort(np.argsort(x[ok])).astype(float)
+    ry = np.argsort(np.argsort(y[ok])).astype(float)
+    return float(np.corrcoef(rx, ry)[0, 1])
+
+
+def _value(row: dict[str, object], stat: str) -> float:
+    """One scaling's value for one region, including the negated identity control."""
+    if stat == CONTROL:
+        return -float(row["mean_sim_minor"])
+    return float(row[stat])
+
+
+def _geometry(
+    present: list[dict[str, object]], absent: list[dict[str, object]]
+) -> None:
+    """Whether each scaling actually self-calibrates, and what pooling costs.
+
+    The design note claims the panel's own pendant lengths make the statistic "scale-free
+    across pathogens and divergences". That is testable: a scaling that self-calibrates
+    carries no residual correlation with the panel's geometry *within* either group. Where
+    it does carry one, a single global threshold has to mis-serve one end of the range, and
+    splitting the cases by geometry separates them better than pooling them.
+    """
+    if len(present) < 4 or len(absent) < 4:
+        return
+    print("\n=== does the statistic really self-calibrate? ===")
+    print("Rank correlation of each scaling with the panel's spread share, within each group.")
+    print("A scaling that self-calibrates sits near zero in BOTH columns; a non-zero entry is")
+    print("panel geometry leaking into the statistic, which no single threshold can absorb.")
+    print(f"\n{'scaling':>24}  {'donor-present':>13}  {'donor-absent':>12}  {'|sum|':>6}")
+    for stat in (*STATS, CONTROL):
+        a = _rho([float(r["panel_spread_share"]) for r in present],
+                 [_value(r, stat) for r in present])
+        b = _rho([float(r["panel_spread_share"]) for r in absent],
+                 [_value(r, stat) for r in absent])
+        tag = f"{stat} (control)" if stat == CONTROL else stat
+        print(f"{tag:>24}  {a:>+13.3f}  {b:>+12.3f}  {abs(a) + abs(b):>6.3f}")
+
+    cut = float(np.median([float(r["panel_spread_share"]) for r in present + absent]))
+
+    def stratum_of(stat: str, stratum: str) -> tuple[Separation, int] | None:
+        def keep(row: dict[str, object]) -> bool:
+            share = float(row["panel_spread_share"])
+            return (stratum == "all" or (share <= cut) == (stratum == "dense"))
+        pv = np.array([_value(r, stat) for r in present if keep(r)])
+        av = np.array([_value(r, stat) for r in absent if keep(r)])
+        if pv.size == 0 or av.size == 0:
+            return None
+        return _separation(pv, av), int(pv.size + av.size)
+
+    def auc(stat: str, stratum: str) -> float:
+        got = stratum_of(stat, stratum)
+        return got[0].auc if got else float("nan")
+
+    print(f"\nPooled against geometry-stratified AUC, split at the median spread share "
+          f"{cut:.4f}")
+    print("over all measured cases -- chosen from panel geometry alone, before any verdict.")
+    print("AUC needs no threshold, so neither column can be overfitted by choosing one.")
+    print(f"\n{'scaling':>24}  {'pooled':>6}  {'dense':>6}  {'sparse':>6}")
+    for stat in (*STATS, CONTROL):
+        tag = f"{stat} (control)" if stat == CONTROL else stat
+        print(f"{tag:>24}  {auc(stat, 'all'):>6.3f}  {auc(stat, 'dense'):>6.3f}  "
+              f"{auc(stat, 'sparse'):>6.3f}")
+
+    print("\nThe cut each stratum would take, and what it still gets wrong. These cuts ARE")
+    print("fitted to this data: they say how far apart the strata sit, not what to threshold on.")
+    print(f"\n{'scaling':>24}  {'stratum':>7}  {'cut':>9}  {'errors':>8}")
+    for stat in (*STATS, CONTROL):
+        for stratum in ("dense", "sparse"):
+            got = stratum_of(stat, stratum)
+            if got is None:
+                continue
+            sep, total = got
+            tag = f"{stat} (control)" if stat == CONTROL else stat
+            print(f"{tag:>24}  {stratum:>7}  {sep.best_cut:>9.4f}  "
+                  f"{sep.best_errors:>3d}/{total:<4d}")
+
+
 def _report(
     by_case: dict[str, list[dict[str, object]]],
     undefined: list[tuple[str, int, str, int, str]],
@@ -420,6 +508,15 @@ def _report(
             subset = [r for r in rows if r["variant"] == variant]
             prim[(name, variant)] = primary(subset)
 
+    present = [r for r in prim.values()
+               if r["variant"] == "full" and r["klass"] == "positive"
+               and r["donor_lineage_present"] == "yes"]
+    real_absent = [r for r in prim.values()
+                   if r["klass"] == "donor_absent" and r["variant"] == "full"
+                   and r["case"] not in PROBE_REPLICATE]
+    replicate = [r for r in prim.values() if r["case"] in PROBE_REPLICATE
+                 and r["variant"] == "full"]
+
     if undefined:
         print("\n=== regions where the statistic is undefined ===")
         print("Option A calibrates against the panel's own pendant lengths, so these carry no")
@@ -429,6 +526,20 @@ def _report(
             print(f"  {case:<20} region {region} [{variant:<10}] n_panel={n_panel}: {why}")
             seen.add(case)
         print(f"  -> {len(seen)} case(s) affected")
+
+    if replicate:
+        print("\n=== probe validation: the harness's own donor-absent case, rebuilt ===")
+        print("probe_donor_absent.py reproduces donorabsent_rsv from scratch. Matching numbers")
+        print("are what validate the probe; because it is the SAME case, it is then excluded")
+        print("from the donor-absent group rather than counted twice.")
+        for r in sorted([*replicate, *(x for x in prim.values()
+                                       if x["case"] == "donorabsent_rsv"
+                                       and x["variant"] == "full")],
+                        key=lambda r: str(r["case"])):
+            print(f"  {str(r['case']):<20} n_panel={r['n_panel']:<3} "
+                  f"called={str(r['called_donor_clade']):<8} "
+                  f"len={r['length_bp']:<6} ratio_median={float(r['ratio_median']):.4f}  "
+                  f"robust_z={float(r['robust_z']):.3f}")
 
     print("\n=== the paired RSV contrast (same query, same true donor A.D.1.8) ===")
     print("case / variant                 n_panel  pendant_q  panel_med  ratio_median  robust_z"
@@ -454,33 +565,20 @@ def _report(
               f"{r['pendant_panel_median']:.5f}\t{r['quantile']:.4f}\t"
               f"{r['ratio_median']:.4f}\t{r['robust_z']:.3f}")
 
-    present = [r for r in prim.values()
-               if r["variant"] == "full" and r["klass"] == "positive"
-               and r["donor_lineage_present"] == "yes"]
-    real_absent = [r for r in prim.values()
-                   if r["klass"] == "donor_absent" and r["variant"] == "full"]
-
-    print("\n=== why the statistic works on some panels and not others ===")
-    print("ratio_median against the panel's spread share (its own median pendant over its")
-    print("median pairwise distance). A DENSE panel has short pendants -- a small share -- so an")
-    print("unsampled donor's long pendant stands out; a sparse panel's own pendants are already")
-    print("as long as the query's, and the signal has nothing to stand out against.")
-    loo = [r for r in prim.values() if r["variant"] != "full"]
-    if len(loo) >= 3:
-        dens = np.array([float(r["panel_spread_share"]) for r in loo])
-        rat = np.array([float(r["ratio_median"]) for r in loo])
-        ok = np.isfinite(dens) & np.isfinite(rat)
-        if ok.sum() >= 3:
-            # Spearman: rank correlation, so the heavy tail in ratio_median cannot drive it.
-            rd = np.argsort(np.argsort(dens[ok])).astype(float)
-            rr = np.argsort(np.argsort(rat[ok])).astype(float)
-            rho = float(np.corrcoef(rd, rr)[0, 1])
-            print(f"  simulated donor-absent panels: n={int(ok.sum())}, "
-                  f"Spearman rho(panel_spread_share, ratio_median) = {rho:+.3f}")
-        print("  case                 variant     n_panel  spread_share  ratio_median")
-        for r in sorted(loo, key=lambda r: float(r["panel_spread_share"])):
-            print(f"  {r['case']:<20} {r['variant']:<10} {r['n_panel']:>8}  "
-                  f"{float(r['panel_spread_share']):>12.4f}  {float(r['ratio_median']):>12.4f}")
+    if real_absent and present:
+        top = max(float(r["ratio_median"]) for r in present)
+        print("\n=== every real donor-absent run, against the cut that raises no false caveat ===")
+        print(f"the highest ratio_median among the {len(present)} donor-present cases is "
+              f"{top:.4f};")
+        print("a case at or below it cannot be flagged without caveating a correct attribution.")
+        print(f"\n{'case':<26}{'n_panel':>8}{'spread':>9}{'identity':>10}"
+              f"{'ratio_med':>11}{'robust_z':>10}   verdict")
+        for r in sorted(real_absent, key=lambda r: -float(r["ratio_median"])):
+            value = float(r["ratio_median"])
+            print(f"{r['case']:<26}{r['n_panel']:>8}{float(r['panel_spread_share']):>9.4f}"
+                  f"{float(r['mean_sim_minor']):>10.4f}{value:>11.4f}"
+                  f"{float(r['robust_z']):>10.2f}   "
+                  f"{'flagged' if value > top else 'MISSED'}")
 
     blocks: list[tuple[str, list[dict[str, object]]]] = []
     if real_absent:
@@ -492,16 +590,17 @@ def _report(
         if rows:
             blocks.append((label, rows))
 
+    if real_absent:
+        _geometry(present, real_absent)
+
     for label, absent in blocks:
         print(f"\n=== Option A falsification test -- {label} ===")
         print(f"donor-present n={len(present)}   donor-absent n={len(absent)}")
         for stat in (CONTROL, *STATS):
-            def value(row: dict[str, object], stat: str = stat) -> float:
-                if stat == CONTROL:
-                    return -float(row["mean_sim_minor"])
-                return float(row[stat])
-            pv = np.array([value(r) for r in present if np.isfinite(value(r))])
-            av = np.array([value(r) for r in absent if np.isfinite(value(r))])
+            pv = np.array([_value(r, stat) for r in present
+                           if np.isfinite(_value(r, stat))])
+            av = np.array([_value(r, stat) for r in absent
+                           if np.isfinite(_value(r, stat))])
             if pv.size == 0 or av.size == 0:
                 continue
             sep = _separation(pv, av)
