@@ -18,6 +18,7 @@ import html
 import logging
 import shutil
 from dataclasses import dataclass, field
+from math import isnan
 from pathlib import Path
 
 from .. import __version__
@@ -239,8 +240,18 @@ def coverage_shortfall(gaps: list[CoverageGap], threshold: float) -> float:
     which an under-covered base count does not register. A gap that no search reaches
     adds the same amount every round, so it cannot hold the measure still the way it
     held the worst-gap similarity still.
+
+    A gap whose ``mean_best`` is not a number carries no similarity to weigh -- a
+    ``low_information`` stretch has too few comparable bases to judge one -- so it is
+    left out. Counted, ``max(0.0, threshold - nan)`` contributed exactly zero, so a
+    round still holding such gaps measured as a round with nothing left to close, and
+    the loop's "stopped improving" test could never fire while only they remained.
     """
-    return sum(g.length_bp * max(0.0, threshold - g.mean_best) for g in gaps)
+    return sum(
+        g.length_bp * max(0.0, threshold - g.mean_best)
+        for g in gaps
+        if not isnan(g.mean_best)
+    )
 
 
 def fill_references(params: FillParams, logger: logging.Logger) -> list[RoundResult]:
@@ -493,7 +504,10 @@ def _grow_collection(
         # (issue #82).
         gaps = search_targets(found)
         undercovered = sum(max(0, g.query_end - g.query_start) for g in gaps)
-        worst = min((g.mean_best for g in gaps), default=1.0)
+        # The gaps with no comparable bases are skipped: min() over a nan is decided
+        # by the order the gaps arrive in, so the reported worst similarity flipped
+        # between nan and the real worst gap from one panel to the next.
+        worst = min((g.mean_best for g in gaps if not isnan(g.mean_best)), default=1.0)
         shortfall = coverage_shortfall(gaps, threshold)
         rr = RoundResult(
             rnd, len(gaps), undercovered, round(worst, 4), round(threshold, 4),

@@ -6,6 +6,49 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### The low-severity findings of the post-1.3 audit
+
+Seven items, none of which changes a verdict. Each is a number, a name or a message that
+was wrong or misleading, or a failure reported as a traceback rather than as the input
+problem it was.
+
+- **A gap search submitted two near-identical BLAST queries.** `_tiles(601, 400)` gave
+  tiles starting at 200 and 201: two submissions asking almost the same question, each
+  paced at one per ten seconds and each counting against NCBI's load. Where an earlier
+  tile still covers the start the last tile now moves to the end; where there is none, a
+  single tile is stretched over the gap. Coverage of the whole gap is unchanged and
+  tested.
+- **A sequence id equal to the backbone's label could redirect the backbone.**
+  `maf_to_fasta` looked the backbone *label* up in `name_map`, which maps a MAF source
+  name to a genome label. Where another genome carried a sequence id equal to the
+  backbone's label, the backbone was silently swapped for that genome, and the
+  `ref_contigs` check then failed naming the wrong one. A reference that already appears
+  as a label is taken as given.
+- **A version-insensitive accession match treated any dot as a version.**
+  `_base_accession` split on the first dot, so `strain.B.1` was typed by `strain.A.1`'s
+  lineage: both reduced to `strain`. Only a trailing `.<digits>` is a version now, and
+  where two versions of one accession carry different lineages the match is resolved in
+  sorted order rather than by dict order, so a run is reproducible.
+- **A mistyped `$TESSERA_TOOL_TIMEOUT` was ignored silently.** `TESSERA_TOOL_TIMEOUT=30s`
+  fell back to the default and said nothing, so a user could believe their setting was
+  in force. The fallback is unchanged -- it keeps a limit rather than removing one -- and
+  now warns, naming the value it could not read.
+- **An odd `--window-size` left a coverage gap one column short of its own last
+  window.** The gap's span was derived as `centre + half` while the windows it describes
+  run `[centre - half, centre - half + window_size)`, so the breakpoint relabel silently
+  skipped a gap's last window. Both now use the same arithmetic.
+- **A gap with no comparable bases drove the fill loop's convergence measure.** A
+  `low_information` gap has `mean_best = nan`; counted, `max(0.0, threshold - nan)`
+  contributed exactly zero, so a round still holding such gaps measured as a round with
+  nothing left to close, and `--min-improvement` could never fire while only they
+  remained. `min()` over a nan was also decided by the order the gaps arrived in, so the
+  reported worst similarity flipped between `nan` and the real worst gap. Both leave
+  those gaps out; they remain search targets.
+- **An output path that cannot be created reached the user as a traceback.** The run log
+  opens before any command enters the error handler, so a path whose parent does not
+  exist raised its `OSError` out of logging setup under "Unexpected error". It is now
+  the input problem it is, naming the path and what to do.
+
 ### A breakpoint interval is no longer reported outside the region it belongs to (issue #96)
 
 - **The defect.** The interval and the span were derived on different bases: the

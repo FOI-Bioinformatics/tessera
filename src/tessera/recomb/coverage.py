@@ -174,8 +174,12 @@ def call_coverage_gaps(
     half = window_size // 2
 
     def span(index: int) -> tuple[int, int]:
+        # The same arithmetic the scan and the breakpoint relabel use,
+        # ``[pos - half, pos - half + window_size)``. Deriving the end as
+        # ``center + half`` instead left an odd window one column short of its own
+        # last window, so the relabel below silently skipped it.
         center = result.positions[index]
-        return max(0, center - half), min(result.width, center + half)
+        return max(0, center - half), min(result.width, center - half + window_size)
 
     # Runs of consecutive under-covered windows.
     runs: list[list[int]] = []
