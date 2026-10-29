@@ -48,8 +48,18 @@ def is_recombinant_lineage(name: str) -> bool:
 
 
 def _base_accession(label: str) -> str:
-    """Drop the version suffix so 'U54771' and 'U54771.1' compare equal."""
-    return label.split(".")[0].strip()
+    """Drop the version suffix so 'U54771' and 'U54771.1' compare equal.
+
+    Only a trailing ``.<digits>`` is a version. Splitting on the first dot instead
+    matched any two labels sharing a prefix, so a strain-style name was typed by an
+    unrelated one: ``strain.B.1`` took ``strain.A.1``'s lineage because both reduced
+    to ``strain``.
+    """
+    return _VERSION_SUFFIX.sub("", label.strip())
+
+
+# A trailing ".<digits>" on an accession (U54771.1 -> U54771); nothing else is one.
+_VERSION_SUFFIX = re.compile(r"\.\d+$")
 
 
 def organism_from_title(title: str) -> str:
@@ -267,9 +277,11 @@ def lineage_of(label: str, lineage_map: LineageMap | None) -> str | None:
     genotype = lineage_map.get(label)
     if genotype is None:
         base = _base_accession(label)
-        for key, value in lineage_map.items():
+        # Sorted, so two versions of one accession carrying different lineages resolve
+        # the same way on every run rather than by dict order.
+        for key in sorted(lineage_map):
             if _base_accession(key) == base:
-                return value
+                return lineage_map[key]
     return genotype
 
 
