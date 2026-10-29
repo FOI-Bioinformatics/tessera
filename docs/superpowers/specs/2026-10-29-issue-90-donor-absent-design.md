@@ -8,6 +8,33 @@ fixes have already been measured and eliminated on it. The purpose is to record 
 kinds of evidence remain, what would falsify each, and what the decision actually costs
 -- so the next attempt does not re-run the four that failed.
 
+> **Update (2026-10-29, same day): the measurement in item 1 has been run.** Results are
+> in [`validation/pendant-results.md`](../../../validation/pendant-results.md); the
+> scripts are `validation/measure_pendant.py` and `validation/probe_donor_absent.py`.
+> Option A is **not** falsified and is **not** a fix. Against 17 real donor-absent runs
+> (built for the measurement, since one case calibrates nothing) and 20 donor-present
+> cases, its best scaling reaches AUC 0.932 where this note's already-eliminated
+> identity discriminator reaches 0.791 on the same cases -- so it is evidence of a
+> different kind, as the issue demanded. But no threshold both caveats every
+> donor-absent case and leaves every correct attribution alone (catching all costs 9 of
+> 20 false caveats; zero false caveats catches 47%), and the statistic is undefined
+> wherever the panel has 2--3 members, which is 15 cases here.
+>
+> Two claims in this note are corrected by the measurement. **"The prior is not
+> favourable" was wrong** -- the near-equidistant RSV sub-clades that defeat every
+> identity statistic do not defeat this one; `donorabsent_rsv` sits well outside the
+> donor-present range on three of four scalings. And **the "scale-free" claim in
+> Option A below is not supported**: the best-separating scaling correlates -0.654 with
+> panel spread share among donor-absent cases, so calibrating against the panel's own
+> pendant lengths does not remove the panel-geometry dependence, and pooling across
+> geometries is what costs the separation -- the dense and sparse strata want cuts a
+> factor of three apart. That, not the pendant idea, is what a further attempt would
+> have to fix. Note also that the scaling which *is* nearly geometry-free (`ratio_max`)
+> separates almost as well overall yet misses `donorabsent_rsv` itself, so this note's
+> motivating case should not be used to pick the scaling.
+>
+> Nothing below is rewritten; it is the note as written before the measurement.
+
 ## The failure, as isolated on the issue
 
 With the donor's whole sub-clade (`A.D.1`) removed from an RSV-A panel, the scan reports:
@@ -151,3 +178,13 @@ Ordered, and the first item is the only one that should start now.
 pools, and the audit environment's network policy denies both. The measurement needs a
 machine with those hosts allowed, and a warm Nextclade cache. Nothing in this note
 should be built before it runs.
+
+**Resolved the same day.** Those hosts became reachable and the measurement ran; see the
+update at the top and `validation/pendant-results.md`. One note for anyone repeating it:
+the obvious shortcut -- simulating donor-absence by dropping the donor's rows from an
+alignment already on disk, which needs no network and no realignment -- is biased, not
+merely approximate. A real run re-recruits a panel from the lineages that remain, while
+dropping rows leaves a sparser panel whose own pendant lengths are longer, and those are
+the statistic's denominator. On `rsv_a` the shortcut reads 1.02 where the real run reads
+3.22. Use `probe_donor_absent.py`, which builds the runs for real and is validated by
+reproducing the existing `donorabsent_rsv` case exactly.

@@ -25,6 +25,8 @@ validation/
   run_method_comparison.py      per-caller detection on the real recombinants
   run_method_comparison_hybrids.py  GENECONV gap probe on the hard synthetic cases
   run_deep_typing.py   run the real --deep-typing lineage ladder, check nextclade-nn
+  probe_donor_absent.py   build real donor-absent runs for issue #90 (probe, not a case)
+  measure_pendant.py   the pendant-branch statistic for issue #90's Option A (no aligner)
   data/                downloaded sequences + run artifacts (gitignored)
 ```
 
@@ -888,6 +890,36 @@ The first run of this measurement is written up in
 verdict or attribution change) and the consensus panel is a net regression (it improves donor
 attribution on two cases but degrades backbone attribution on two others), so neither was
 promoted -- the value of measuring before committing.
+
+## Donor-absent attribution: issue #90's Option A (`measure_pendant.py`)
+
+When the true donor's lineage is missing from the panel, the scan still names a donor from a
+neighbouring sub-clade -- with four-caller agreement and no caveat. Four candidate
+discriminators were measured on issue #90 and eliminated, all of them functions of pairwise
+identity. The design note
+[`docs/superpowers/specs/2026-10-29-issue-90-donor-absent-design.md`](../docs/superpowers/specs/2026-10-29-issue-90-donor-absent-design.md)
+proposed a fifth of a different kind -- how the query's tract *attaches* to the panel, not how
+well its best reference matches -- and recommended measuring it before building any of it.
+
+`measure_pendant.py` is that measurement: it restricts the alignment to a called region's
+columns, neighbour-joins a p-distance matrix over the panel plus the query's tract (plain
+numpy, no tree library), and scores the tract's pendant branch against the panel's own pendant
+lengths. It re-runs the eliminated identity discriminator on the same cases as a control. It
+needs no aligner, network or downloaded data -- only the artifacts an earlier `run_hybrids.py`
+run left in `data/hybrids/`.
+
+`probe_donor_absent.py` supplies what the harness lacks: it has one donor-absent case, and one
+case calibrates nothing. The probe builds the rest for real (panel re-recruited from the
+surviving lineages, re-aligned), reusing each positive case's dataset and parent pair. It is a
+probe, not a harness case -- `run_hybrids.HYBRIDS` and the must-pass headline are untouched.
+It needs an aligner and the Nextclade datasets.
+
+The result is in [`pendant-results.md`](pendant-results.md): against 17 real donor-absent runs
+and 20 donor-present cases, the statistic reaches AUC 0.932 where identity reaches 0.791 on the
+same cases -- so it is genuinely new information -- but it cannot caveat every donor-absent case
+without falsely caveating 9 of 20 correct attributions, and it is undefined wherever the panel
+holds only 2--3 members. Nothing was built from it. The design note's claim that the statistic
+is scale-free is specifically contradicted, and the write-up says which quantity leaks.
 
 ## Expectation schema (`expected` block)
 
