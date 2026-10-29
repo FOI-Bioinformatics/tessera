@@ -6,6 +6,23 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-29
+
+> **What the validation numbers in this release do and do not cover.** The callers
+> changed in this release, so the evidence behind them is worth stating precisely.
+> Bootscan's run-length null no longer depends on the block grid's phase, which changes
+> what that caller reports. Two offline harnesses were re-measured on the change, both
+> before and after, and both came out equal or better:
+> `validation/run_specificity.py --reps 10` is identical to the digit (1 of 40 runs with
+> a false region, positive control 9/10, median breakpoint error 10 bp), and
+> `validation/run_regimes.py` improved its near-identical clonal control from 1 of 10
+> runs reporting false regions to 0 of 10, with detection unchanged at 10 of 10 on every
+> case. **The 24-pathogen attribution headline was not re-measured.** The 23 PASS,
+> 0 FAIL, 1 SKIP figure in `validation/attribution-results.md` and the README predates
+> the Bootscan change: `run_hybrids.py` needs the Nextclade and NCBI hosts, and the
+> environment this release was prepared in denies them. Treat that headline as measured
+> on 1.2.0 behaviour until it is run again.
+
 ### The low-severity findings of the post-1.3 audit
 
 Seven items, none of which changes a verdict. Each is a number, a name or a message that
