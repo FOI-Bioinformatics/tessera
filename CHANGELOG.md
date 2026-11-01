@@ -28,6 +28,34 @@ All notable changes to Tessera are recorded here. The format follows
 > `neg_hiv1`, which is reported as a known limitation rather than gating. So the Bootscan
 > change cost no detection and no attribution on the curated set.
 
+### Multi-contig query recruitment (post-1.3 audit, second pass)
+
+A second audit pass, after the headline was re-measured, found that panel recruitment
+read only the query's first record. Two fixes, both behavioural and both confined to
+reference recruitment -- the aligner and the scan already handled every contig.
+
+- **References are recruited across every contig of a multi-contig query.** Both
+  recruitment paths -- BLAST seeding (`_seed_collection`) and pool/Nextclade selection
+  (`select_regional`) -- took `records[0]`, so a draft-assembly query's windows, and the
+  references chosen to cover them, spanned the first contig alone. The aligner
+  concatenates the whole query and the scan reads all of it, so the later contigs were
+  scanned but never recruited for, surfacing as coverage gaps that only round-2+ NCBI
+  BLAST could close -- and on an offline `--candidate-pool` or `--nextclade` run, nothing
+  closed them. Recruitment now concatenates the records in file order (the layout the
+  aligner already uses for a multi-contig backbone) and warns when the query has more
+  than one, so the join is not silent.
+- **Taxon detection probes the longest contig, not the first.** `detect_taxon` built its
+  organism-naming BLAST probe from `records[0]`, so a draft assembly whose first contig
+  was a short fragment could fail to name the taxon even with ample sequence on later
+  contigs. It now takes the longest record; the probe stays a single contiguous stretch
+  (never a concatenation), since a window spanning a contig junction would BLAST a
+  chimera of two contigs.
+
+Issue #90 (naming a donor whose lineage is absent from the panel) was also measured this
+pass rather than fixed: `validation/measure_pendant.py` and `validation/pendant-results.md`
+record that the proposed pendant-branch statistic carries real signal but cannot gate a
+caveat, so nothing was built from it. See the measurement for the decision it leaves open.
+
 ### The low-severity findings of the post-1.3 audit
 
 Seven items, none of which changes a verdict. Each is a number, a name or a message that
