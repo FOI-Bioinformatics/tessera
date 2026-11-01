@@ -27,6 +27,7 @@ from ..core.io import (
     collection_genomes,
     copy_collection,
     new_working_collection,
+    query_search_sequence,
     read_fasta,
     strip_sequence_extension,
 )
@@ -789,7 +790,7 @@ def _seed_collection(
     if params.seed_source in ("local", "ncbi-virus", "nextclade"):
         _seed_from_pool(params, collection, logger)
         return
-    query_seq = query_records[0][1].replace("-", "")
+    query_seq = query_search_sequence(query_records, logger)
     if params.seed_mode == "whole":
         accessions, saturated = _seed_whole(query_seq, params, exclude, logger)
     else:

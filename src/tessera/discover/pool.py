@@ -29,6 +29,7 @@ from ..core.errors import UserInputError
 from ..core.io import (
     _require_fasta,
     collection_genomes,
+    query_search_sequence,
     read_fasta,
     safe_filename_stem,
     strip_sequence_extension,
@@ -362,7 +363,7 @@ def select_regional(
     # Drop genomes unrelated to the query (keep everything if the floor removes all).
     related = [g for g in pool if whole[g][0] >= ani_floor] or pool
 
-    query_seq = records[0][1].replace("-", "")
+    query_seq = query_search_sequence(records, logger)
     n_windows = max(1, len(query_seq) // window)
     # Integer division gives a query between one and two windows long a single window
     # over the whole of it, which is whole-genome selection under another name (a 2.9 kb
