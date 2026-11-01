@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from tessera.discover import pool
+from tessera.discover.blast import Hit
 
 
 def _genomes(tmp_path: Path, names: list[str]) -> list[Path]:
@@ -30,6 +31,26 @@ def _fake_ani(by_stem_whole, by_stem_window):
         return out
 
     return ani
+
+
+def test_detect_taxon_probes_the_longest_contig(monkeypatch, tmp_path, logger):
+    # A draft assembly whose first contig is a short fragment must still probe with real
+    # sequence: detect_taxon takes the longest record, not records[0]. The probe is one
+    # contiguous stretch (never a concatenation), so no window spans a contig junction.
+    query = tmp_path / "draft.fasta"
+    query.write_text(">c1\n" + "A" * 40 + "\n>c2\n" + "ACGT" * 500 + "\n")
+    seen: dict[str, str] = {}
+
+    def fake_blast(probe, *, max_hits, logger, email, cache_dir):
+        seen["probe"] = probe
+        return [Hit("NC_1.1", "Example virus, complete genome", 99.0, 99.0, 0.0)]
+
+    monkeypatch.setattr(pool, "blast_subsequence", fake_blast)
+    taxon = pool.detect_taxon(query, email=None, logger=logger)
+
+    assert taxon == "Example virus"
+    assert seen["probe"].startswith("ACGT")  # drawn from the long contig, not the 40 bp one
+    assert len(seen["probe"]) == pool._TAXON_PROBE_BP  # capped at the probe length
 
 
 def test_select_regional_drops_siblings_and_picks_regional_parents(monkeypatch, tmp_path, logger):
