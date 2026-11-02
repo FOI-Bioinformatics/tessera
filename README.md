@@ -197,8 +197,8 @@ event.
 **A donor that is missing from the panel.** Tessera names the closest reference it has,
 and that is not always the true parent. If the donor's own lineage is absent but a
 neighbouring one is present, a region can be attributed to the neighbour with every caller
-agreeing and no caveat: the `donor_undercovered` flag fires only when the named donor is
-itself a poor match, and near-equidistant sub-clades (RSV-A `A.D.*`, for instance) are not.
+agreeing and no caveat: the `donor_undercovered` flag fires where the references match the
+query poorly, and a near-equidistant sub-clade (RSV-A `A.D.*`, for instance) matches it well.
 On the hybrid benchmark no panel-internal signal separated those cases from correct
 attributions without also caveating correct ones (`validation/pendant-results.md`), so
 this is a documented limit rather than something Tessera detects, and the corresponding
@@ -212,10 +212,11 @@ donor's lineage is present. Read a named sub-clade as the closest available refe
 **False regions at the default setting.** In 10-replicate runs of
 `validation/run_specificity.py` on simulated clonal data -- four clades about 16 % apart,
 four tips per clade about 2.4 % apart and a non-recombinant query, so every reported region
-is false -- the default `--min-methods 1` reported at least one false region in 17 of 40
-runs (42 %, 95 % CI 29-58 %); most were HMM switches between two tips of the query's own
-clade. Requiring two agreeing callers (`--min-methods 2`) lowered this to 2 of 40 (5 %, CI
-1-17 %) and detected 9 of 10 simulated 3 kb tracts, against 10 of 10 at the default. On
+is false -- the default `--min-methods 1` reported at least one false region in 16 of 40
+runs (40 %, 95 % CI 26-55 %); 16 of the 19 regions came from the HMM (measured 2026-11-02
+on commit `4ee5020`). Requiring two agreeing
+callers (`--min-methods 2`) lowered this to 1 of 40 (2 %, CI 0-13 %) and detected 9 of 10
+simulated 3 kb tracts, against 10 of 10 at the default. On
 panels of near-identical references (about 0.2 % apart; 20 replicates of
 `validation/run_regimes.py`) the rates were 1 of 20 (CI 1-24 %) and 0 of 20 (CI 0-16 %). The
 default stays at 1 because an earlier, reverted attempt to default to a gate of two (PR #47)

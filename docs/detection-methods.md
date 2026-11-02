@@ -30,7 +30,8 @@ Agreement can also be used as a **gate** (`--min-methods`), the control RDP5 exp
 "list events detected by more than N methods". It is **not on by default**, and the
 measurements say why. On a *redundant* panel -- several near-equidistant relatives of the
 query -- requiring two callers is a large win: on simulated clonal data, where every
-region reported is a false positive, it cuts them from 21 to 2. On the curated,
+region reported is a false positive, it cuts the runs that report one from 16 of 40 to 1
+of 40 (`validation/run_specificity.py --reps 10`, 2026-11-02). On the curated,
 dereplicated panels the hybrid harness builds it is all cost: it loses three true
 detections (`rsv_a`, `mpox`, `masksib_rsv`) and gains nothing, because every negative
 control already passes without it.
