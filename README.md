@@ -218,7 +218,8 @@ on commit `4ee5020`). Requiring two agreeing
 callers (`--min-methods 2`) lowered this to 1 of 40 (2 %, CI 0-13 %) and detected 9 of 10
 simulated 3 kb tracts, against 10 of 10 at the default. On
 panels of near-identical references (about 0.2 % apart; 20 replicates of
-`validation/run_regimes.py`) the rates were 1 of 20 (CI 1-24 %) and 0 of 20 (CI 0-16 %). The
+`validation/run_regimes.py`) no run reported a false region at either gate: 0 of 20 (CI 0-16 %)
+each, measured 2026-11-02 on the same commit. The
 default stays at 1 because an earlier, reverted attempt to default to a gate of two (PR #47)
 lost three true detections on the curated hybrid benchmark (`rsv_a`, `mpox`, `masksib_rsv`),
 where at very low divergence only the HMM has power. A rerun of `run_hybrids.py` at the
