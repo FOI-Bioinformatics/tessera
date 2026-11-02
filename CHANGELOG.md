@@ -6,6 +6,29 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Say when a donor sub-clade is not identifiable from the panel (issue #90)
+
+When reference lineage labels are available, each called region now reports whether the
+query significantly prefers the named donor's lineage over every *other* lineage present
+over that region (a one-sided sign test on the distinguishing sites, at the run's alpha).
+Where it does not, two new columns in `recombination_regions.tsv` --
+`subclade_identifiable` (`no`) and `tied_lineages` -- record that the panel cannot resolve
+which sub-clade the tract came from, and the HTML report flags the region "sub-clade
+unresolved". The scan still names one donor and nothing is withheld or relabelled; this is
+an annotation, since a tie is equally what a genuine close relative produces.
+
+This is Option B from the issue #90 design note, and the measurement there is explicit
+about its reach: it flags a region only when two *present* lineages are statistically
+tied. It does **not** flag the issue's own `donorabsent_rsv` case, whose true lineage is
+absent entirely and whose named stand-in (a different sub-clade) still beats every present
+lineage cleanly -- consistent with the Option A measurement, which found that donor
+absence is not recoverable from the panel's identity geometry. So the harness's
+donor-absent gate stays red; this addresses the part of the report that is about confident
+presentation of an unresolvable sub-clade, not the scored case. Measured across the
+hybrid harness: flagged 8 of 17 judgeable donor-absent runs and 1 of 24 donor-present
+cases (a 6-informative-site region where the caveat is honest). New columns are appended,
+so a reader selecting by name is unaffected.
+
 ## [1.3.0] - 2026-10-29
 
 > **What the validation numbers in this release do and do not cover.** The callers

@@ -21,6 +21,7 @@ from .coverage import (
     CoverageParams,
     call_coverage_gaps,
     coverage_levels,
+    flag_subclade_identifiability,
     flag_undercovered_regions,
     gaps_as_regions,
     mark_breakpoint_gaps,
@@ -656,6 +657,15 @@ def run_recomb(
     # survived withhold_misaligned_backbone, so this describes the band below that bar
     # -- degraded enough to say so, not enough to remove the region (issue #82).
     flag_degraded_backbone(regions, bp_result)
+    # With lineage labels, say when the named donor sub-clade is not distinguishable from
+    # another present lineage over the region: the scan names one donor, but a tract whose
+    # true lineage is missing can be assigned to a neighbour the query does not actually
+    # prefer. This annotates such regions rather than withholding them (issue #90).
+    if lineage_map:
+        flag_subclade_identifiability(
+            regions, bp_result.rows, query_label,
+            lambda label: lineage_of(label, lineage_map), alpha=params.alpha,
+        )
     # A window straddling a called breakpoint matches neither parent well on its own.
     # That is not a missing reference, so such gaps are relabelled before they can
     # caveat a region or be bridged to a donor-absent one. Recruitment
