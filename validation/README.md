@@ -81,6 +81,18 @@ The positive control was detected 3/3 with the correct donor at both gates (medi
 breakpoint error 55 bp). Treat a non-zero total at `--min-methods 2` as a regression to
 explain, and quote the `--min-methods 1` row when describing what a default run reports.
 
+That table is the first measurement and is kept as the record. The current one, at 10
+replicates (40 runs per gate) on 2026-11-02, commit `4ee5020`:
+
+| gate | runs with a false region | false regions | per caller | positive control |
+|---|---|---|---|---|
+| `--min-methods 2` (harness default) | 1/40 (2 %, CI 0-13 %) | 1 | 3seq = 1, maxchi = 1 | 9/10, correct donor 9/10, median breakpoint error 10 bp |
+| `--min-methods 1` (CLI default) | 16/40 (40 %, CI 26-55 %) | 19 | hmm = 16, maxchi = 3, 3seq = 1 | 10/10, correct donor 10/10, median breakpoint error 9 bp |
+
+The per-caller counts are of regions, and a region that two callers found is counted once
+per caller, so they can sum to more than the false-region total. Quote this table, not the
+first one, for what a default run reports.
+
 **Caveat.** JC69 on a fixed topology is simpler than real viral evolution, and modest
 replicate counts carry real sampling error -- hence the intervals. These numbers
 establish whether a failure mode exists and roughly how large it is, not its exact
@@ -709,7 +721,12 @@ measures **specificity** (false positives), not only sensitivity. The default ru
   panel, matching the spliced tract at 0.9854-0.9875 against the true donor's 0.9947. A
   stand-in that close *is* the donor's lineage, so naming it was the right answer at the
   resolution the panel supported, and the case was demanding a `donor_absent` caveat that
-  would have been false. One naming level up removes the close relatives too.
+  would have been false. One naming level up removes the close relatives too. With the
+  whole sub-clade removed the run still names a neighbouring sub-clade and reports no
+  gap, and nothing panel-internal separates that from a correct attribution (issue #90),
+  so its one live entry, `donorabsent_rsv`, is a **known limitation**: reported, not gating
+  (see below). Its scorer still records a FAIL; the results table prints `KNOWN-LIMIT`
+  and the gate leaves it out.
 - `panel_equidistant` -- two candidate donors equally close to the query; the caller must
   attribute the true one (a tie-break guard).
 

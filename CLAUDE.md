@@ -6,14 +6,16 @@ Guidance for agents working in this repository.
 
 Tessera detects recombination in a query genome against a reference panel. It builds a
 reference-anchored pseudo-MSA (one backbone sequence), scans it in sliding windows, and
-calls recombinant regions with three complementary methods. It is a dependency-free
+calls recombinant regions with an ensemble of four callers (HMM, 3SEQ, MaxChi, Bootscan)
+plus a parent-free PHI/Rmin diagnostic. It is a dependency-free
 Python package (numpy / pandas / matplotlib / plotly / biopython / typer); alignment is
 delegated to external aligner binaries through a plugin registry.
 
 For the user-facing overview see [README.md](README.md). For depth:
 
-- [docs/detection-methods.md](docs/detection-methods.md) -- the HMM, 3SEQ, and PHI/Rmin
-  callers, low-divergence informative-site windowing, and every output file.
+- [docs/detection-methods.md](docs/detection-methods.md) -- the ensemble and its callers
+  (HMM, 3SEQ, MaxChi, Bootscan), the PHI/Rmin diagnostic, low-divergence informative-site
+  windowing, and every output file.
 - [docs/reference-panels.md](docs/reference-panels.md) -- recruiting, finding, filling,
   and curating the donor panel; seed modes and sources.
 - [docs/aligners.md](docs/aligners.md) -- the aligner backends.
@@ -23,8 +25,10 @@ For the user-facing overview see [README.md](README.md). For depth:
 - `src/tessera/cli/` -- Typer app; one `cmd_*.py` per command (`detect`, `build-panel`,
   `msa`, `recomb`, `find-references`, `fill-references`, `curate-panel`, `type-lineages`,
   `reassort`). Importing a `cmd_*` module registers its command as a side effect.
-- `src/tessera/recomb/` -- the scan: `similarity` (windowed distances), `hmm`,
-  `threeseq`, `diagnostics` (PHI + Rmin), `regions`, `coverage`, `typing`, `report`,
+- `src/tessera/recomb/` -- the scan: `similarity` (windowed distances), the callers
+  (`hmm`, `threeseq`, `maxchi`, `bootscan`, plus opt-in `geneconv` and `barcode`),
+  `ensemble` (merges the callers' regions), `diagnostics` (PHI + Rmin), `regions`,
+  `coverage` (reference-coverage gaps and the per-region caveats), `typing`, `report`,
   `run` (orchestration).
 - `src/tessera/reassort/` -- per-segment reassortment detection (the `reassort` command):
   type each segment against its Nextclade dataset, call reassortment by nearest-strain
