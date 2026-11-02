@@ -8,11 +8,18 @@ from tessera.recomb.coverage import (
     CoverageGap,
     CoverageParams,
     call_coverage_gaps,
+    flag_subclade_identifiability,
     flag_undercovered_regions,
     gaps_as_regions,
 )
 from tessera.recomb.regions import Region
 from tessera.recomb.similarity import WindowSimilarity
+
+
+def _rows(**seqs):
+    """Alignment rows as the callers see them: label -> uint8 array of bases."""
+    return {label: np.frombuffer(seq.encode("ascii"), dtype=np.uint8)
+            for label, seq in seqs.items()}
 
 
 def _result(best_sim, best_label, informative, *, window=100):
@@ -141,3 +148,64 @@ def test_flag_undercovered_regions():
     flag_undercovered_regions(regions, threshold=0.90)
     assert regions[0].donor_undercovered is False  # donor matches well
     assert regions[1].donor_undercovered is True  # donor itself is a poor match
+
+
+# The query over the region: 12 informative sites. The donor D clearly wins; the near
+# lineage N shares most of them, the far lineage F shares almost none.
+_IDENT_QUERY = "ACGTACGTACGT"
+_IDENT_ROWS = _rows(
+    q=_IDENT_QUERY,
+    backbone="TTTTTTTTTTTT",
+    donor=_IDENT_QUERY,                 # matches the query everywhere
+    near="ACGTACGTACGA",                # 11/12 -- the query does not clearly prefer donor
+    far="TGCATGCATGCA",                 # 0/12 -- the query clearly prefers donor over it
+)
+_LINEAGE = {"backbone": "A", "donor": "D", "near": "D.near", "far": "F"}
+
+
+def _ident_region(minor="donor"):
+    return Region(minor, "backbone", 0, 12, 0, 12, 1, 0.99, 0.10, 0.89, methods=("hmm",))
+
+
+def test_subclade_identifiable_when_donor_clearly_beats_other_lineages():
+    # F is the only competing lineage (near nests under the donor's own lineage D), and
+    # the query prefers the donor over F at every site, so the sub-clade is resolved.
+    lineage = {"backbone": "A", "donor": "D", "near": "D.near", "far": "F"}
+    regions = [_ident_region()]
+    flag_subclade_identifiability(regions, _IDENT_ROWS, "q", lineage.get, alpha=0.05)
+    assert regions[0].subclade_identifiable is True
+    assert regions[0].tied_lineages == ()
+
+
+def test_subclade_unresolved_when_another_lineage_ties_the_donor():
+    # Make F a near-equal match too, so no present lineage is clearly beaten: the panel
+    # cannot resolve which sub-clade the tract came from (issue #90).
+    rows = _rows(
+        q=_IDENT_QUERY, backbone="TTTTTTTTTTTT",
+        donor="ACGTACGTACGA",   # 11/12
+        far="ACGTACGTACTA",     # 10/12 -- within a site of the donor
+    )
+    lineage = {"backbone": "A", "donor": "D", "far": "F"}
+    regions = [_ident_region()]
+    flag_subclade_identifiability(regions, rows, "q", lineage.get, alpha=0.05)
+    assert regions[0].subclade_identifiable is False
+    assert regions[0].tied_lineages == ("D", "F")
+
+
+def test_subclade_identifiability_skips_donor_absent_and_unlabelled():
+    absent = _ident_region()
+    absent.donor_absent = True
+    unlabelled = _ident_region()
+    flag_subclade_identifiability([absent], _IDENT_ROWS, "q", _LINEAGE.get, alpha=0.05)
+    flag_subclade_identifiability([unlabelled], _IDENT_ROWS, "q", lambda _l: None, alpha=0.05)
+    assert absent.subclade_identifiable is None  # already flagged absent
+    assert unlabelled.subclade_identifiable is None  # no lineage labels
+
+
+def test_subclade_identifiability_not_evaluated_without_a_competing_lineage():
+    # Only the donor's own lineage (and the backbone) are present: nothing to be
+    # ambiguous with, so the region is left unevaluated rather than called resolved.
+    lineage = {"backbone": "A", "donor": "D", "near": "D.near"}
+    regions = [_ident_region()]
+    flag_subclade_identifiability(regions, _IDENT_ROWS, "q", lineage.get, alpha=0.05)
+    assert regions[0].subclade_identifiable is None

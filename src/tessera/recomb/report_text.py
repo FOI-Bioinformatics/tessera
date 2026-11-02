@@ -282,6 +282,17 @@ def _parent_free_cell(flag: bool, phi_not_run: bool) -> str:
     return "yes" if flag else "no"
 
 
+def _identifiable_cell(identifiable: bool | None) -> str:
+    """``subclade_identifiable`` for one row.
+
+    ``NA`` when not evaluated -- an unlabelled panel, a donor-absent row, or no other
+    lineage to test the donor's against -- so it is not read as a resolved ``yes``.
+    """
+    if identifiable is None:
+        return "NA"
+    return "yes" if identifiable else "no"
+
+
 def write_regions_tsv(
     regions: list[Region], output_dir: Path, logger: logging.Logger,
     phi_not_run: bool = False,
@@ -296,6 +307,7 @@ def write_regions_tsv(
         "posterior", "breakpoint_lo", "breakpoint_hi",
         "donor_undercovered", "major_degraded", "donor_absent", "methods",
         "parent_free_support",
+        "subclade_identifiable", "tied_lineages",
     ]
     # No comment preamble here, deliberately. The `test` and `statistic` columns make
     # each row self-describing, which is what a consumer actually needs, and this is the
@@ -325,6 +337,8 @@ def write_regions_tsv(
                     "yes" if r.donor_absent else "no",
                     ",".join(r.methods) if r.methods else "NA",
                     _parent_free_cell(r.parent_free_support, phi_not_run),
+                    _identifiable_cell(r.subclade_identifiable),
+                    ",".join(r.tied_lineages) if r.tied_lineages else "NA",
                 ])) + "\n"
             )
 

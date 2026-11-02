@@ -33,6 +33,10 @@ REGION_COLUMNS = [
     "posterior", "breakpoint_lo", "breakpoint_hi",
     "donor_undercovered", "major_degraded", "donor_absent", "methods",
     "parent_free_support",
+    # Appended for issue #90 (Option B): whether the donor's sub-clade is distinguishable
+    # from another present lineage, and the lineages tied with it when not. New columns at
+    # the end, so a reader selecting by name is unaffected.
+    "subclade_identifiable", "tied_lineages",
 ]
 
 

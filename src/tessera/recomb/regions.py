@@ -199,6 +199,14 @@ class Region:
     # most significant member's p-value, and carries that member's names with it.
     test: str = ""
     statistic: str = ""
+    # Set by flag_subclade_identifiability: whether the donor's lineage is distinguishable
+    # from every other lineage present in the panel over this region. ``None`` when not
+    # evaluated -- an unlabelled panel, a donor-absent row, or no other lineage to test
+    # against. ``False`` with ``tied_lineages`` populated means the query does not prefer
+    # the named donor over at least one other present lineage, so naming one sub-clade
+    # would overstate what the panel can resolve (issue #90, Option B).
+    subclade_identifiable: bool | None = None
+    tied_lineages: tuple[str, ...] = ()
 
     @property
     def length_bp(self) -> int:

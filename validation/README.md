@@ -27,6 +27,7 @@ validation/
   run_deep_typing.py   run the real --deep-typing lineage ladder, check nextclade-nn
   probe_donor_absent.py   build real donor-absent runs for issue #90 (probe, not a case)
   measure_pendant.py   the pendant-branch statistic for issue #90's Option A (no aligner)
+  measure_subclade_identifiability.py   issue #90 Option B flag's reach (no aligner)
   data/                downloaded sequences + run artifacts (gitignored)
 ```
 
@@ -920,6 +921,24 @@ same cases -- so it is genuinely new information -- but it cannot caveat every d
 without falsely caveating 9 of 20 correct attributions, and it is undefined wherever the panel
 holds only 2--3 members. Nothing was built from it. The design note's claim that the statistic
 is scale-free is specifically contradicted, and the write-up says which quantity leaks.
+
+## Donor sub-clade identifiability: issue #90's Option B (`measure_subclade_identifiability.py`)
+
+Option B is the part of #90 that was built: `flag_subclade_identifiability` annotates a
+called region when the query does not significantly prefer the named donor's lineage over
+every *other* present lineage, so the report no longer offers one sub-clade with
+four-caller agreement where the panel cannot resolve it. This script runs the shipped
+function over the per-case artifacts of `run_hybrids.py` and `probe_donor_absent.py`, so
+the reach quoted in the changelog is reproducible against the real code. It needs no
+aligner, network or downloaded data.
+
+On the hybrid harness it flags 8 of 17 judgeable donor-absent runs and 1 of 24
+donor-present cases (`sars_cov_2`, a 6-informative-site region where "cannot tell outgroup
+from 22B here" is honest). It does **not** flag the issue's own `donorabsent_rsv`: its true
+lineage is absent entirely and the named stand-in beats every present lineage cleanly, so
+no present lineage ties it -- which is the Option A finding restated, that donor absence is
+not recoverable from panel identity. Option B is an honesty annotation for genuinely
+ambiguous regions, not a fix for the scored donor-absent case.
 
 ## Expectation schema (`expected` block)
 
