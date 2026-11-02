@@ -749,6 +749,19 @@ subtypes are so inter-mosaic that a pure subtype genome (source removed) is indi
 real recombinant -- a property of the data, not a caller bug. So the harness reports it as a
 `KNOWN-LIMIT` row and excludes it from the gating specificity, rather than changing the callers.
 
+**`donorabsent_rsv` -- a second investigated known-limitation** (reported, not gating; issue #90).
+The donor's whole sub-clade (`A.D.1`) is removed, and the scan then names a neighbour (`A.D.5`) with
+four-caller agreement. Two measurements establish this is not a caller bug but a property of the
+panel: Option A (`measure_pendant.py` / `pendant-results.md`) found that donor absence is not
+recoverable from the panel's identity geometry -- these RSV `A.D.*` sub-clades are nearly
+equidistant from the tract -- and Option B (`measure_subclade_identifiability.py`) does not flag this
+region, because the stand-in beats every present lineage cleanly, so no present lineage ties it. Four
+identity-based discriminators were measured and eliminated on the issue before that. There is no
+identity or margin threshold that caveats this case without falsely caveating genuine low-divergence
+positives, so -- like `neg_hiv1` -- it is reported as a `KNOWN-LIMIT` row and excluded from the
+gating sensitivity rather than forced green. Option B still ships as a general honesty annotation for
+regions where two *present* lineages are genuinely tied; it simply does not reach this one.
+
 Two **`neg_within`** controls (`negwithin_measles`, `negwithin_dengue`) add a distinct false-positive
 mode: an intra-clade splice (a genome recombined from two members of one clade) must not read as a
 *cross-clade* event. This was previously deferred because lineage-aware panel reduction kept a single
