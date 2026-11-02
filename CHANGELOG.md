@@ -22,12 +22,26 @@ about its reach: it flags a region only when two *present* lineages are statisti
 tied. It does **not** flag the issue's own `donorabsent_rsv` case, whose true lineage is
 absent entirely and whose named stand-in (a different sub-clade) still beats every present
 lineage cleanly -- consistent with the Option A measurement, which found that donor
-absence is not recoverable from the panel's identity geometry. So the harness's
-donor-absent gate stays red; this addresses the part of the report that is about confident
-presentation of an unresolvable sub-clade, not the scored case. Measured across the
-hybrid harness: flagged 8 of 17 judgeable donor-absent runs and 1 of 24 donor-present
-cases (a 6-informative-site region where the caveat is honest). New columns are appended,
-so a reader selecting by name is unaffected.
+absence is not recoverable from the panel's identity geometry. So it addresses the part of
+the report that is about confident presentation of an unresolvable sub-clade, not the
+scored `donorabsent_rsv` case (reclassified below). Measured across the hybrid harness:
+flagged 8 of 17 judgeable donor-absent runs and 1 of 24 donor-present cases (a
+6-informative-site region where the caveat is honest). New columns are appended, so a
+reader selecting by name is unaffected.
+
+### `donorabsent_rsv` is a reported-not-gating known limitation (issue #90)
+
+With Option B shipped and the Option A measurement in hand, the `donorabsent_rsv` harness
+case is marked `known_limit`, like `neg_hiv1`: an investigated miss that reflects a data
+limit (the donor's whole lineage is absent and its absence is not recoverable from the
+panel's identity geometry), not a regression, and with no identity or margin threshold that
+caveats it without falsely caveating genuine low-divergence positives. The `run_hybrids.py`
+gate accounting now excludes a known-limitation *positive* from the sensitivity denominator
+and the headline pass total, exactly as it already did for a known-limitation negative's
+specificity -- previously only negatives were excluded, so a known-limitation positive still
+counted against the gate. The must-pass gate reads 39/39 with two known limitations
+(`neg_hiv1`, `donorabsent_rsv`) reported separately, sensitivity 29/29, specificity 10/10,
+one skip (`oropouche`). No caller changed; this is harness accounting and documentation.
 
 ## [1.3.0] - 2026-10-29
 
