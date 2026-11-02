@@ -35,6 +35,16 @@ with `--compare`).
 > **not** re-run: it measured the barcode caller and the consensus panel, neither of which the
 > audit touched.
 
+> **Update (2026-11-02, after issue #90 was closed).** The "39 of 41" above counted
+> `donorabsent_rsv` and `neg_hiv1` as failures of the gate. `donorabsent_rsv` is now marked a
+> known limitation as well, and the harness leaves a known-limitation *positive* out of the
+> sensitivity denominator, as it already did for a negative's specificity. The same results
+> now read **39 of 39 gating, sensitivity 29/29, specificity 10/10, two known limitations
+> (`neg_hiv1`, `donorabsent_rsv`), one skip (`oropouche`)**. No caller changed and nothing
+> was re-run; only the accounting moved. The reason `donorabsent_rsv` cannot be fixed from the
+> panel is in `validation/pendant-results.md`. Passages below that say it PASSes describe an
+> earlier version of the case and are kept as the record of that stage.
+
 ## Result
 
 | config | PASS | donor attribution improved vs baseline |
@@ -254,6 +264,12 @@ donors, deferred with `neg_within`. Phase 2 (multi-breakpoint / short-tract topo
 (frontier inter-species / reassortment, XFAIL) remain separate cycles.
 
 ### Donor-absent finding closed (donor_undercovered caveat)
+
+> **Superseded.** This section describes `donorabsent_rsv` as first defined, with only the
+> donor's own clade (`A.D.1.8`) removed, which left its close relatives in the panel. The
+> case was later corrected to remove the donor's whole sub-clade (issue #90). With that, the
+> `donor_undercovered` caveat described below does not fire, the case fails, and it is now a
+> known limitation. See the update at the top of this file.
 
 The `donorabsent_rsv` FAIL above was a genuine attribution limitation: with the true donor clade
 removed, the caller attributed the region to a present, close sibling and the "donor may be

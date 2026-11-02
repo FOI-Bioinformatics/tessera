@@ -14,9 +14,10 @@ resolution. It then scans the alignment in sliding windows, comparing the query 
 each reference: a recombination event shows up where the query is close to reference
 A across most of its length but close to reference B over a region.
 
-Detection combines three complementary methods: an **HMM segmentation** caller, a
-scan-aware **3SEQ** triplet test, and a **parent-free** PHI/Rmin diagnostic that fires
-even when the true donor is absent from the panel. Tessera also recruits and curates
+Detection runs an ensemble of four region callers -- an **HMM segmentation** caller, a
+scan-aware **3SEQ** triplet test, **MaxChi** and **Bootscan** -- and merges what they find,
+alongside a **parent-free** PHI/Rmin diagnostic that fires even when the true donor is
+absent from the panel. Tessera also recruits and curates
 the reference panel for you, types references by lineage, and writes a self-contained
 HTML report. It is a small, dependency-free Python package; alignment is delegated to
 a pluggable [aligner backend](docs/aligners.md).
@@ -124,8 +125,10 @@ reassortment detection for segmented viruses).
 `example_data/` holds two small, pre-aligned synthetic alignments that run directly
 with `tessera recomb` (no aligner needed) and contrast the detection methods:
 
-- `divergent.msa.fasta` -- parents ~11 % apart, a large insert. The default HMM caller
-  localizes the mosaic confidently (q ~1e-29); the figure below shows the crossover.
+- `divergent.msa.fasta` -- parents ~11 % apart, a large insert. The HMM caller
+  (`--method hmm`) localizes the mosaic confidently (q ~1e-29); the figure below shows the
+  crossover. The default ensemble reports the same region, with the most significant
+  member's q-value.
 - `cryptic_insert.msa.fasta` -- parents ~1 % apart, a short 800 bp insert. The HMM
   finds nothing, but `--method 3seq` recovers it (q ~1e-12) -- the case the triplet
   test exists for.
@@ -174,8 +177,9 @@ reference-coverage gaps. The full file list and the meaning of each column are i
 ## Documentation
 
 - [Aligner backends](docs/aligners.md) -- choosing and tuning the alignment backend.
-- [Detection methods and output](docs/detection-methods.md) -- the HMM, 3SEQ, and
-  PHI/Rmin callers, low-divergence windowing, and every output file.
+- [Detection methods and output](docs/detection-methods.md) -- the ensemble and its
+  callers (HMM, 3SEQ, MaxChi, Bootscan), the PHI/Rmin diagnostic, low-divergence
+  windowing, and every output file.
 - [Building and curating the reference panel](docs/reference-panels.md) -- recruiting
   donors, finding and filling missing references, seed modes and sources, and panel
   curation.
@@ -189,6 +193,21 @@ applies no genome-wide multiple-testing correction across regions. Confirm stron
 candidates with a dedicated method (3SEQ, GARD, RDP). When a region's donor is itself a
 poor match, the result flags a possible missing reference rather than a confident
 event.
+
+**A donor that is missing from the panel.** Tessera names the closest reference it has,
+and that is not always the true parent. If the donor's own lineage is absent but a
+neighbouring one is present, a region can be attributed to the neighbour with every caller
+agreeing and no caveat: the `donor_undercovered` flag fires only when the named donor is
+itself a poor match, and near-equidistant sub-clades (RSV-A `A.D.*`, for instance) are not.
+On the hybrid benchmark no panel-internal signal separated those cases from correct
+attributions without also caveating correct ones (`validation/pendant-results.md`), so
+this is a documented limit rather than something Tessera detects, and the corresponding
+benchmark case (`donorabsent_rsv`) is reported as a known limitation, not gated. What it
+does report: with lineage labels, a region whose named donor the query does not
+significantly prefer over another *present* lineage is marked `subclade_identifiable = no`,
+with the tied lineages in `tied_lineages`. That flagged 8 of 17 judgeable donor-absent
+benchmark runs and 1 of 24 donor-present cases, so a `yes` is not evidence that the
+donor's lineage is present. Read a named sub-clade as the closest available reference.
 
 **False regions at the default setting.** In 10-replicate runs of
 `validation/run_specificity.py` on simulated clonal data -- four clades about 16 % apart,

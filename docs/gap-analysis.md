@@ -7,6 +7,15 @@
 > selection and, decisively, deriving the HMM major parent by plurality best-match. See
 > `validation/attribution-results.md` for the current, measured state. The gaps and reasoning
 > below are retained as the record of how that agenda was framed.
+>
+> **Later finding (2026-11-02), on G2.** G2 says Tessera "already handles a missing donor
+> honestly". That holds when the missing donor leaves the query far from every reference,
+> which shows up as a coverage gap. It does not hold when a close, near-equidistant relative
+> is present: the region is then attributed to that relative with no caveat, and no
+> panel-internal signal separated those cases from correct attributions without also
+> caveating correct ones (issue #90, now closed; `validation/pendant-results.md`). What was
+> added is a flag for lineages that are genuinely tied (`subclade_identifiable`); the
+> remaining case is documented as a known limitation in the README.
 
 A review of where Tessera underperforms, grounded in its testing results and the published
 methods it draws on. The aim is to separate what the tool does well from what it does not,

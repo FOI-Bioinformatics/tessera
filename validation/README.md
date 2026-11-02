@@ -709,7 +709,12 @@ measures **specificity** (false positives), not only sensitivity. The default ru
   panel, matching the spliced tract at 0.9854-0.9875 against the true donor's 0.9947. A
   stand-in that close *is* the donor's lineage, so naming it was the right answer at the
   resolution the panel supported, and the case was demanding a `donor_absent` caveat that
-  would have been false. One naming level up removes the close relatives too.
+  would have been false. One naming level up removes the close relatives too. With the
+  whole sub-clade removed the run still names a neighbouring sub-clade and reports no
+  gap, and nothing panel-internal separates that from a correct attribution (issue #90),
+  so its one live entry, `donorabsent_rsv`, is a **known limitation**: reported, not gating
+  (see below). Its scorer still records a FAIL; the results table prints `KNOWN-LIMIT`
+  and the gate leaves it out.
 - `panel_equidistant` -- two candidate donors equally close to the query; the caller must
   attribute the true one (a tie-break guard).
 

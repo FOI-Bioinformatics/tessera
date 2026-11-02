@@ -218,6 +218,17 @@ region's top hits are siblings and the parents never surface; the run reports th
 ("no distinct parental lineage found in NCBI") rather than masking it. BLAST ranks by
 similarity, so it cannot escape an over-represented lineage.
 
+**A query of several contigs.** A draft assembly is a supported query, and recruitment
+searches all of it: the records are joined in file order (the order a multi-contig backbone
+is laid out in for alignment) and cut into windows as one sequence, and the run logs a
+warning saying so. A window that spans the join between two contigs mixes them, as it
+does in the alignment backbone. Searching the
+first contig alone would recruit references for that contig and leave the rest to show up
+as coverage gaps, which an offline `--candidate-pool` or Nextclade run has no way to close.
+The one place Tessera deliberately does *not* join the contigs is taxon detection
+(`detect` without `--taxon`): that probe names the organism, so it takes the first 1500 bp
+of the **longest** contig, one clean stretch rather than a chimera.
+
 ## Seed source: seeding from a finite pool
 
 For an over-represented lineage, seed from a **finite pool** instead

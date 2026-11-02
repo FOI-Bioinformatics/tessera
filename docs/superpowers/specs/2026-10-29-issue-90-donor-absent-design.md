@@ -33,6 +33,16 @@ kinds of evidence remain, what would falsify each, and what the decision actuall
 > separates almost as well overall yet misses `donorabsent_rsv` itself, so this note's
 > motivating case should not be used to pick the scaling.
 >
+> **Final disposition (2026-11-02).** Option B was built (`flag_subclade_identifiability`,
+> `recombination_regions.tsv` columns `subclade_identifiable` / `tied_lineages`) and
+> measured with `validation/measure_subclade_identifiability.py`: it flags 8 of 17
+> judgeable donor-absent runs and 1 of 24 donor-present cases, and it does not flag
+> `donorabsent_rsv` itself, because the named stand-in beats every present lineage cleanly.
+> Option C was then applied: `donorabsent_rsv` is a reported-not-gating known limitation,
+> and the harness gate leaves a known-limitation positive out of the sensitivity
+> denominator. Option A was not built. Issue #90 is closed. The decision on Option C was
+> the maintainer's, as this note said it should be.
+>
 > Nothing below is rewritten; it is the note as written before the measurement.
 
 ## The failure, as isolated on the issue
