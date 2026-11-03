@@ -509,10 +509,17 @@ donor, because a tie is equally what a genuine close relative produces. It does 
 establish that a donor is absent, and it cannot: if the true lineage is missing and the
 named neighbour still beats every lineage that *is* present, nothing ties it and the
 region reads `yes`. On the hybrid benchmark it flagged 8 of 17 judgeable runs with the
-donor's lineage removed and 1 of 24 with it present (`validation/README.md`), and it did
-not flag the benchmark's own donor-absent case (`donorabsent_rsv`), which is reported as
-a known limitation. A `yes` therefore means only "the panel can tell this donor from the
-other lineages in it".
+donor's lineage removed and 1 of 24 with it present, counting each run's primary region
+(`validation/README.md`), and it did not flag the benchmark's own donor-absent case
+(`donorabsent_rsv`), which is reported as a known limitation. A `yes` therefore means only
+"the panel can tell this donor from the other lineages in it".
+
+Over every called region, not only the primary one, the flag depends heavily on how many
+callers found the region. With the donor present it marks 14 of 16 regions that only one
+caller found and 1 of 25 that two or more callers found; with the donor removed the
+figures are 11 of 11 and 10 of 20. A `no` on a single-caller region says little, since
+those regions are weakly supported to begin with. On a region several callers agree on, it
+is the informative case.
 
 The column reads `NA`, and the region is left unevaluated, with no lineage labels, on a
 donor-absent coverage row, or when the panel holds no other lineage to compare against.

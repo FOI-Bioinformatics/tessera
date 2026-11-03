@@ -963,8 +963,12 @@ the reach quoted in the changelog is reproducible against the real code. It need
 aligner, network or downloaded data.
 
 On the hybrid harness it flags 8 of 17 judgeable donor-absent runs and 1 of 24
-donor-present cases (`sars_cov_2`, a 6-informative-site region where "cannot tell outgroup
-from 22B here" is honest). It does **not** flag the issue's own `donorabsent_rsv`: its true
+donor-present cases, counting each case's primary region (`sars_cov_2`, a
+6-informative-site region where "cannot tell outgroup from 22B here" is honest). The script
+also counts every called region, by how many callers found it: with the donor present, 14
+of 16 single-caller regions are marked `no` against 1 of 25 found by two or more callers;
+with the donor removed, 11 of 11 against 10 of 20. A `no` on a single-caller region says
+little; on a multi-caller region it is the informative case. It does **not** flag the issue's own `donorabsent_rsv`: its true
 lineage is absent entirely and the named stand-in beats every present lineage cleanly, so
 no present lineage ties it -- which is the Option A finding restated, that donor absence is
 not recoverable from panel identity. Option B is an honesty annotation for genuinely

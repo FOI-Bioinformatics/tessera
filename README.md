@@ -206,8 +206,11 @@ benchmark case (`donorabsent_rsv`) is reported as a known limitation, not gated.
 does report: with lineage labels, a region whose named donor the query does not
 significantly prefer over another *present* lineage is marked `subclade_identifiable = no`,
 with the tied lineages in `tied_lineages`. That flagged 8 of 17 judgeable donor-absent
-benchmark runs and 1 of 24 donor-present cases, so a `yes` is not evidence that the
-donor's lineage is present. Read a named sub-clade as the closest available reference.
+benchmark runs and 1 of 24 donor-present cases (each case's primary region), so a `yes` is
+not evidence that the donor's lineage is present. Counted over every called region, it
+marks 14 of the 16 donor-present regions that only one caller found, but 1 of the 25 that
+two or more callers found (11 of 11 and 10 of 20 for the donor-absent runs), so a `no` on a
+single-caller region says little. Read a named sub-clade as the closest available reference.
 
 **False regions at the default setting.** In 10-replicate runs of
 `validation/run_specificity.py` on simulated clonal data -- four clades about 16 % apart,

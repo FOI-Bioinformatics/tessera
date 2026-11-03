@@ -11,10 +11,12 @@ All notable changes to Tessera are recorded here. The format follows
 > **What this release changes, and what it does not.** One behaviour change and the
 > bookkeeping around it. `recombination_regions.tsv` gains two columns at the end,
 > `subclade_identifiable` and `tied_lineages`, and the HTML report can flag a region
-> "sub-clade unresolved". No caller, threshold or default changed, so a region is called
-> exactly as in 1.3.0. The 24-pathogen headline was not re-run for this release because
-> nothing it measures changed; the figures this release re-measured are the offline
-> false-region rates, below.
+> "sub-clade unresolved". No caller, threshold or default changed, and a region is called
+> exactly as in 1.3.0: the 1.3.0 and 1.3.1 code were run on all 41 harness panels that have
+> an alignment, and the regions table (apart from the two new columns), the method
+> breakdown, the coverage gaps, the similarity windows and the window winners are identical
+> on every one. For that reason the 24-pathogen headline was not re-run; the figures this
+> release did re-measure are the offline false-region rates, below.
 
 ### Say when a donor sub-clade is not identifiable from the panel (issue #90)
 
@@ -36,8 +38,13 @@ absence is not recoverable from the panel's identity geometry. So it addresses t
 the report that is about confident presentation of an unresolvable sub-clade, not the
 scored `donorabsent_rsv` case (reclassified below). Measured across the hybrid harness:
 flagged 8 of 17 judgeable donor-absent runs and 1 of 24 donor-present cases (a
-6-informative-site region where the caveat is honest). New columns are appended, so a
-reader selecting by name is unaffected.
+6-informative-site region where the caveat is honest). Those are each case's primary
+region; a run usually reports more, and the flag behaves very differently on them. Counted
+over every called region, it marks 14 of the 16 donor-present regions that only one caller
+found, but 1 of the 25 that two or more callers found; for the donor-absent runs the
+figures are 11 of 11 and 10 of 20. A `no` on a single-caller region therefore says little,
+and on a region several callers agree on it is the informative case. New columns are
+appended, so a reader selecting by name is unaffected.
 
 ### `donorabsent_rsv` is a reported-not-gating known limitation (issue #90)
 
