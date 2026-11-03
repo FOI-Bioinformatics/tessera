@@ -575,3 +575,18 @@ def test_find_references_rejects_a_collection_that_does_not_exist(
         "--output", str(tmp_path / "out"), "--collection", str(tmp_path / "nope"),
     ])
     _rejected(result, "not found")
+
+
+# --- the collection must be a directory, and say so plainly ------------------
+
+def test_msa_names_a_collection_that_is_a_file_without_repeating_itself(
+    tmp_path: Path, no_pipeline
+) -> None:
+    afile = tmp_path / "refs.fa"
+    afile.write_text(">r\nACGT\n")
+    result = runner.invoke(app, [
+        "msa", "--query", str(_query(tmp_path)), "--collection", str(afile),
+        "--output", str(tmp_path / "m.fa"),
+    ])
+    _rejected(result, "--collection is not a directory")
+    assert "directory is not a directory" not in " ".join(result.output.split())
