@@ -7,7 +7,7 @@ exceed a set of identity thresholds.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from math import isnan
 from statistics import median
 
@@ -75,6 +75,17 @@ def _tally_winners(
         for ds in winners:
             with_ties[ds] = with_ties.get(ds, 0) + 1
     return no_ties, with_ties
+
+
+def winners_excluding(result: WindowSimilarity, labels: set[str]) -> dict[str, int]:
+    """Windows won per dataset (ties counted for each) with ``labels`` left out.
+
+    Removing a dataset from the contest hands its windows to the next closest, so this
+    is not the full tally with some keys deleted. The scan's own tally stays as it is.
+    """
+    kept = {k: v for k, v in result.similarities.items() if k not in labels}
+    reduced = replace(result, similarities=kept)
+    return _tally_winners(winners_per_window(reduced))[1]
 
 
 def _dataset_stats(result: WindowSimilarity, thresholds: tuple[float, ...]) -> dict[str, list]:

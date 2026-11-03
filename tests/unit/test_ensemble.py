@@ -333,3 +333,60 @@ def test_regions_naming_two_members_of_one_cluster_are_one_event() -> None:
     assert merged[0].methods == ("hmm", "3seq")
     assert merged[0].minor_parent == "D0"  # the most significant member names the donor
     assert len(breakdown) == 1
+
+
+# --- clone siblings (issue #112) ------------------------------------------------------
+
+def _rows(**seqs: str):
+    import numpy as np
+
+    return {k: np.frombuffer(v.encode("ascii"), dtype=np.uint8) for k, v in seqs.items()}
+
+
+def _hmm_region(lo: int, hi: int, mean_sim_minor: float) -> Region:
+    return Region(
+        minor_parent="donor", major_parent="backbone", msa_start=lo, msa_end=hi,
+        query_start=lo, query_end=hi, n_windows=3, mean_sim_minor=mean_sim_minor,
+        mean_sim_major=0.5, margin=0.1, methods=("hmm",),
+    )
+
+
+def test_a_sibling_that_carries_the_tract_is_a_clone() -> None:
+    from tessera.recomb.ensemble import clone_siblings
+
+    # Over columns 4-8 the query matches the donor; the sibling copies the query there.
+    rows = _rows(query="AAAACCCCAA", sib="AAAACCCCAA", backbone="AAAAGGGGAA")
+    region = _hmm_region(4, 8, mean_sim_minor=1.0)
+    assert clone_siblings(["sib"], [region], rows, "query") == {"sib"}
+
+
+def test_a_dropped_true_backbone_is_not_a_clone() -> None:
+    """The case ``reconcile_major``'s guard exists for: the backbone matches the query
+    everywhere except over the tract, where it is worse than the donor."""
+    from tessera.recomb.ensemble import clone_siblings
+
+    rows = _rows(query="AAAACCCCAA", true_backbone="AAAAGGGGAA")
+    region = _hmm_region(4, 8, mean_sim_minor=1.0)
+    assert clone_siblings(["true_backbone"], [region], rows, "query") == set()
+
+
+def test_no_regions_means_no_clones() -> None:
+    from tessera.recomb.ensemble import clone_siblings
+
+    assert clone_siblings(["sib"], [], _rows(query="AAAA", sib="AAAA"), "query") == set()
+
+
+def test_removing_a_clone_hands_its_windows_to_the_next_closest() -> None:
+    """The vote is retaken without the clone, not the clone's key deleted from it."""
+    import numpy as np
+
+    from tessera.recomb.analyze import winners_excluding
+    from tessera.recomb.similarity import WindowSimilarity
+
+    result = WindowSimilarity(
+        positions=[0, 1, 2], query_positions=[0, 1, 2],
+        similarities={"sib": [1.0, 1.0, 1.0], "refA": [0.9, 0.9, 0.8], "other": [0.5, 0.5, 0.95]},
+        query="q", width=3, query_cumulative=np.zeros(4),
+    )
+    assert winners_excluding(result, set()) == {"sib": 3}
+    assert winners_excluding(result, {"sib"}) == {"refA": 2, "other": 1}
