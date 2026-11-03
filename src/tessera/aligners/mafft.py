@@ -29,7 +29,7 @@ import os
 from collections.abc import Sequence
 from pathlib import Path
 
-from ..converters.mafft_merge import merge_added_fragments
+from ..converters.mafft_merge import merge_added_fragments, reversed_contigs
 from ..core.binaries import BinarySpec, check_binaries
 from ..core.executors import parallel_map
 from ..core.io import normalize_reference, read_fasta, write_fasta_record
@@ -207,6 +207,14 @@ class MafftAligner(Aligner):
                 log_prefix=f"mafft:{genome.stem}",
                 stdout_path=aligned,
             )
+            n_rev, n_added = reversed_contigs(aligned)
+            if n_rev:
+                logger.warning(
+                    "Genome '%s': %d of %d contig(s) were on the opposite strand to the "
+                    "backbone and were reverse-complemented. Positions reported for this "
+                    "genome refer to the reoriented sequence, not the input file.",
+                    genome.stem, n_rev, n_added,
+                )
             _, merged = merge_added_fragments(aligned)
             return genome.stem, merged
 

@@ -76,3 +76,11 @@ tessera msa ... --aligner progressivemauve --aligner-arg seed_weight=11
 Add an optional backend to a conda environment with
 `conda install -c bioconda sibeliaz` (or `cactus`). The provided `environment.yml`
 installs Python, the backends, and Tessera in one step.
+
+## Genome labels and strand
+
+A genome's label in the alignment is its file name without the `.gz` and sequence
+extension, with whitespace replaced by `_` (`Influenza A H3N2.fasta` becomes
+`Influenza_A_H3N2`); give `--query` that label. With MAFFT, a genome on the opposite
+strand to the backbone is reverse-complemented and a warning names it; positions reported
+for that genome refer to the reoriented sequence.

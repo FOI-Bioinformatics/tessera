@@ -26,6 +26,48 @@ def test_strip_sequence_extension() -> None:
     assert strip_sequence_extension("noext") == "noext"
 
 
+def test_label_whitespace_becomes_underscore() -> None:
+    """A label is read back by ``recomb``, which names a record by its first
+    whitespace-delimited token; a label with spaces would be cut there."""
+    assert strip_sequence_extension("Influenza A H3N2.fasta") == "Influenza_A_H3N2"
+    assert strip_sequence_extension("my query (final).fa.gz") == "my_query_(final)"
+    assert strip_sequence_extension("a\tb  c.fna") == "a_b_c"
+
+
+def test_files_sharing_a_first_word_stage_to_distinct_readable_labels(tmp_path: Path) -> None:
+    collection = tmp_path / "collection"
+    collection.mkdir()
+    (collection / "Influenza A H3N2.fasta").write_text(">x\nACGTACGT\n")
+    (collection / "Influenza A H1N1.fasta").write_text(">y\nACGTACGA\n")
+    query = tmp_path / "my query.fasta"
+    query.write_text(">q\nACGTACGT\n")
+    staged, query_staged = stage_genomes(query, collection, tmp_path / "g", _LOG)
+    labels = sorted(p.stem for p in staged)
+    assert labels == ["Influenza_A_H1N1", "Influenza_A_H3N2", "my_query"]
+    assert all(len(label.split()) == 1 for label in labels)
+    assert query_staged.stem == "my_query"
+
+
+def test_labels_that_differ_only_in_whitespace_collide(tmp_path: Path) -> None:
+    collection = tmp_path / "collection"
+    collection.mkdir()
+    (collection / "ref a.fasta").write_text(">x\nACGT\n")
+    (collection / "ref_a.fasta").write_text(">y\nACGT\n")
+    query = tmp_path / "q.fasta"
+    query.write_text(">q\nACGT\n")
+    with pytest.raises(UserInputError, match="share the label 'ref_a'"):
+        stage_genomes(query, collection, tmp_path / "g", _LOG)
+
+
+def test_reference_with_spaces_is_selectable_by_its_original_name(tmp_path: Path) -> None:
+    genomes = [tmp_path / "Ref One.fasta", tmp_path / "q.fasta"]
+    # staged names are already normalised; the user may type either spelling
+    staged = [tmp_path / "Ref_One.fasta", tmp_path / "q.fasta"]
+    ref = select_reference(staged, staged[1], False, "Ref One.fasta")
+    assert ref.name == "Ref_One.fasta"
+    assert genomes  # original names unused beyond documenting the input
+
+
 def test_query_search_sequence_single_record_is_quiet(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

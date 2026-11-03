@@ -676,3 +676,13 @@ def test_progressivemauve_names_a_genome_in_no_block(monkeypatch, tmp_path: Path
         pm_mod.ProgressiveMauveAligner().align(genomes, genomes[0], tmp_path / "out",
                                                AlignParams(threads=1), _WARN_LOG)
     assert "far" in caplog.text and "near" not in caplog.text
+
+
+def test_reversed_contigs_counts_mafft_reoriented_records(tmp_path) -> None:
+    from tessera.converters.mafft_merge import reversed_contigs
+
+    aln = tmp_path / "a.aln.fasta"
+    aln.write_text(">ref\nACGT\n>_R_ctg1 extra\n-CGT\n>ctg2\nAC--\n")
+    assert reversed_contigs(aln) == (1, 2)
+    aln.write_text(">ref\nACGT\n>ctg1\nACGT\n")
+    assert reversed_contigs(aln) == (0, 1)

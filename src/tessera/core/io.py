@@ -121,13 +121,21 @@ def normalize_reference(
 
 
 def strip_sequence_extension(name: str) -> str:
-    """Return ``name`` without a trailing ``.gz`` and/or sequence extension."""
+    """Return ``name`` as a genome label: no ``.gz`` or sequence extension, and
+    whitespace replaced by ``_``.
+
+    The label is a record's name in the alignment, and every reader of that alignment
+    names a record by its first whitespace-delimited token. A label with spaces
+    (``Influenza A H3N2``) would be cut to ``Influenza`` there, and two such genomes
+    would then collide, so whitespace is normalised here, once, for every caller.
+    """
     if name.endswith(".gz"):
         name = name[: -len(".gz")]
     for ext in SEQUENCE_EXTENSIONS:
         if name.endswith(ext):
-            return name[: -len(ext)]
-    return name
+            name = name[: -len(ext)]
+            break
+    return re.sub(r"\s+", "_", name.strip())
 
 
 def safe_filename_stem(name: str, fallback: str = "sequence") -> str:
@@ -317,6 +325,11 @@ def _stage_one(source: Path, target_dir: Path, logger: logging.Logger) -> Path:
     as a cleaned copy rather than a link to the original.
     """
     label = strip_sequence_extension(source.name)
+    if any(ch.isspace() for ch in source.name):
+        logger.info(
+            "Genome '%s' is labelled '%s' in the alignment (whitespace replaced by '_'); "
+            "use that label with --query.", source.name, label,
+        )
     target = target_dir / f"{label}.fasta"
     if source.name.endswith(".gz"):
         logger.debug("Decompressing %s -> %s", source, target)

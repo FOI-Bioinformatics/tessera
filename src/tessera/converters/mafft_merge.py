@@ -39,3 +39,18 @@ def merge_added_fragments(aligned_path: str | Path) -> tuple[str, str]:
             if base != "-" and merged[i] == ord("-"):
                 merged[i] = ord(base)
     return reference_row, merged.decode("ascii")
+
+
+# MAFFT prefixes the name of a record it reverse-complemented (``--adjustdirection``).
+REVERSED_PREFIX = "_R_"
+
+
+def reversed_contigs(aligned_path: str | Path) -> tuple[int, int]:
+    """Return ``(n_reversed, n_added)``: how many of the added contigs MAFFT
+    reverse-complemented to match the reference, and how many were added.
+
+    A contig whose own name starts with ``_R_`` is counted as reversed, since the
+    alignment cannot tell the two apart.
+    """
+    added = read_fasta(aligned_path)[1:]
+    return sum(1 for name, _ in added if name.startswith(REVERSED_PREFIX)), len(added)
