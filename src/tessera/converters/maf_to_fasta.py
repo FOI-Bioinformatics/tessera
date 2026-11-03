@@ -91,7 +91,17 @@ def maf_to_fasta(
             return name_map.get(src, name_map.get(src.split(".")[0], _species(src)))
         return _species(src)
 
-    ref_key = name_map.get(reference, reference) if name_map else _species(reference)
+    # ``name_map`` maps a MAF source name to the genome label it belongs to, so a
+    # *label* has no business being looked up in it: where some other genome carried a
+    # sequence id equal to the backbone's label, the backbone was silently redirected to
+    # that genome, and the ref_contigs check below then failed naming the wrong one.
+    # A ``reference`` that already appears as a label is therefore taken as given.
+    if not name_map:
+        ref_key = _species(reference)
+    elif reference in set(name_map.values()):
+        ref_key = reference
+    else:
+        ref_key = name_map.get(reference, reference)
 
     blocks = list(_iter_blocks(maf_path))
 

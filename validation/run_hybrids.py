@@ -151,8 +151,14 @@ HYBRIDS: list[dict] = [
     {"name": "lowdiv_rsv", "dataset": "nextstrain/rsv/a/EPI_ISL_412866",
      "case_type": "low_div", "pair_objective": "min",
      "divergence_band": [1.0, 4.0], "min_divergence": 1.0},
+    # Reported, not gating (like neg_hiv1): the donor's whole lineage is removed, and the
+    # measurements on issue #90 establish that its absence is not recoverable from the
+    # panel's identity geometry (see docs/.../2026-10-29-issue-90-donor-absent-design.md and
+    # validation/pendant-results.md). Option B (the sub-clade-unresolved flag) does not fire
+    # here because the stand-in beats every present lineage cleanly, so the case stays a true
+    # miss -- a data limit, not a regression, and so a known limitation rather than a FAIL.
     {"name": "donorabsent_rsv", "dataset": "nextstrain/rsv/a/EPI_ISL_412866",
-     "case_type": "panel_donor_absent"},
+     "case_type": "panel_donor_absent", "known_limit": True},
     # Phase-2 hard topologies + masking sibling. Multi-parent / segmented patterns reuse
     # existing datasets; datasets with too few clades CaseSkip.
     {"name": "mosaic_dengue", "dataset": "nextstrain/dengue/all",
@@ -1521,6 +1527,35 @@ def main(argv: list[str]) -> int:
     return _run_default(cases, logger)
 
 
+def _gate_summary(results: list[dict], known: set[str]) -> dict:
+    """Gate counts over scored cases, with known-limitation cases reported but not gating.
+
+    A ``known_limit`` case (neg_hiv1, donorabsent_rsv) is an investigated miss that reflects
+    a data limit, not a regression, so it is excluded from the gate's pass total and from the
+    sensitivity / specificity denominators and listed separately -- for a positive exactly as
+    for a negative, which the earlier code only did for negatives. ``sens`` counts the
+    non-negative gating cases, ``spec`` the negative ones; ``n_false_regions`` is summed over
+    the gating negatives only, so a known-limitation negative's expected false call does not
+    inflate it.
+    """
+    scored = [r for r in results if r.get("pass") is not None]
+    gating = [r for r in scored if r["name"] not in known]
+    negs = [r for r in gating if r.get("case_type") in ("neg_pure", "neg_within")]
+    pos = [r for r in gating if r not in negs]
+    return {
+        "passed": sum(1 for r in gating if r["pass"]),
+        "gated": len(gating),
+        "sens_pass": sum(1 for r in pos if r["pass"]),
+        "sens_total": len(pos),
+        "spec_pass": sum(1 for r in negs if r["pass"]),
+        "spec_total": len(negs),
+        "false_calls": sum(r.get("n_false_regions", 0) for r in negs),
+        "known": [r for r in scored if r["name"] in known],
+        "skipped": sum(1 for r in results if r.get("skip") is not None),
+        "errored": sum(1 for r in results if r.get("pass") is None and r.get("skip") is None),
+    }
+
+
 def _run_default(cases: list[dict], logger: logging.Logger) -> int:
     print(f"\nTessera hybrid detection -- {len(cases)} case(s)\n" + "=" * 72)
     results: list[dict] = []
@@ -1559,27 +1594,21 @@ def _run_default(cases: list[dict], logger: logging.Logger) -> int:
               f"{r.get('mode', '-'):>9} "
               f"{r.get('phi_p', '-'):>8.8} {r.get('rmin', '-'):>4} "
               f"{r['runtime']:5.0f}s  {verdict}")
-    passed = sum(1 for r in results if r.get("pass"))
-    ran = sum(1 for r in results if r.get("pass") is not None)
-    skipped = sum(1 for r in results if r.get("skip") is not None)
-    errored = sum(1 for r in results if r.get("pass") is None and r.get("skip") is None)
-    print(f"\n{passed}/{ran} passed  ({skipped} skipped, {errored} error)")
-    scored = [r for r in results if r.get("pass") is not None]
-    all_negs = [r for r in scored if r.get("case_type") in ("neg_pure", "neg_within")]
-    # Known-limitation negatives are reported separately, not counted in the gating specificity.
-    known_negs = [r for r in all_negs if r["name"] in known]
-    negs = [r for r in all_negs if r["name"] not in known]
-    pos = [r for r in scored if r not in all_negs]
-    sens_pass = sum(1 for r in pos if r["pass"])
-    spec_pass = sum(1 for r in negs if r["pass"])
-    false_calls = sum(r.get("n_false_regions", 0) for r in negs)
-    if known_negs:
-        kl = ", ".join(f"{r['name']} ({r.get('n_false_regions', 0)} region(s))" for r in known_negs)
+    s = _gate_summary(results, known)
+    print(f"\n{s['passed']}/{s['gated']} passed (gating; "
+          f"{len(s['known'])} known-limitation, {s['skipped']} skipped, {s['errored']} error)")
+    if s["known"]:
+        kl = ", ".join(
+            f"{r['name']} ({r.get('n_false_regions', 0)} region(s))"
+            if r.get("case_type") in ("neg_pure", "neg_within")
+            else r["name"]
+            for r in s["known"]
+        )
         print(f"\nknown-limitation(s), reported not gating -- see validation/README.md: {kl}")
-    print(f"sensitivity {sens_pass}/{len(pos)}  "
-          f"specificity {spec_pass}/{len(negs)} ({false_calls} false call(s))  "
-          f"({skipped} skipped, {errored} error)")
-    return 1 if errored else 0
+    print(f"sensitivity {s['sens_pass']}/{s['sens_total']}  "
+          f"specificity {s['spec_pass']}/{s['spec_total']} ({s['false_calls']} false call(s))  "
+          f"({s['skipped']} skipped, {s['errored']} error)")
+    return 1 if s["errored"] else 0
 
 
 def _run_compare(cases: list[dict], logger: logging.Logger) -> int:

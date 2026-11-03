@@ -174,6 +174,12 @@ def get_logger(output_dir: Path | None = None) -> logging.Logger:
     path that is an existing file is checked here. It is rejected with the message every
     other command gives (:func:`_require_output_directory`) instead of a raw
     ``FileExistsError`` traceback.
+
+    Creating the directory is checked here for the same reason: a path whose parent
+    does not exist, or that the user cannot write to, raised its ``OSError`` from
+    inside logging setup -- before any command had entered ``stage_errors`` -- and so
+    reached the user as a traceback under "Unexpected error" rather than as the input
+    problem it is.
     """
     level: int = _RUN_STATE["log_level"]  # type: ignore[assignment]
     if output_dir is not None:
@@ -182,7 +188,14 @@ def get_logger(output_dir: Path | None = None) -> logging.Logger:
         except UserInputError as exc:
             configure_logging(level=level).error("%s", exc)
             raise typer.Exit(code=1) from exc
-    return configure_logging(output_dir=output_dir, level=level)
+    try:
+        return configure_logging(output_dir=output_dir, level=level)
+    except OSError as exc:
+        configure_logging(level=level).error(
+            "Cannot write the run log to %s: %s. Choose an output path in a directory "
+            "that exists and is writable.", output_dir, exc,
+        )
+        raise typer.Exit(code=1) from exc
 
 
 @contextmanager

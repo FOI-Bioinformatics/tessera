@@ -147,9 +147,21 @@ def _tiles(length: int, tile: int) -> list[tuple[int, int]]:
     if tile <= 0 or length <= tile:
         return [(0, length)]
     step = max(MIN_SUBSEQ, tile // 2)
-    starts = list(range(0, length - tile + 1, step))
-    if starts[-1] != length - tile:
-        starts.append(length - tile)
+    tail = length - tile
+    starts = list(range(0, tail + 1, step))
+    if starts[-1] != tail:
+        # The remainder is always shorter than one step, and a tile for it that starts
+        # only a few bases past the previous one is a second BLAST submission asking
+        # almost the same question -- each paced at one per ten seconds and each
+        # counting against NCBI's load. Where an earlier tile still covers the start,
+        # the last tile moves to the end rather than a new one being added; where
+        # there is no earlier tile, a single tile is stretched over the whole gap.
+        if tail - starts[-1] >= step // 2:
+            starts.append(tail)
+        elif len(starts) > 1:
+            starts[-1] = tail
+        else:
+            return [(0, length)]
     return [(s, s + tile) for s in starts]
 
 

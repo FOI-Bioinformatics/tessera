@@ -9,7 +9,12 @@ from pathlib import Path
 import pytest
 
 from tessera.core.errors import UserInputError
-from tessera.core.io import select_reference, stage_genomes, strip_sequence_extension
+from tessera.core.io import (
+    query_search_sequence,
+    select_reference,
+    stage_genomes,
+    strip_sequence_extension,
+)
 
 _LOG = logging.getLogger("tessera.test")
 
@@ -61,6 +66,34 @@ def test_reference_with_spaces_is_selectable_by_its_original_name(tmp_path: Path
     ref = select_reference(staged, staged[1], False, "Ref One.fasta")
     assert ref.name == "Ref_One.fasta"
     assert genomes  # original names unused beyond documenting the input
+
+
+def test_query_search_sequence_single_record_is_quiet(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    logger = logging.getLogger("test.query_search.single")
+    with caplog.at_level(logging.WARNING, logger=logger.name):
+        seq = query_search_sequence([("contig1", "ACGTACGT")], logger)
+    assert seq == "ACGTACGT"
+    assert caplog.records == []
+
+
+def test_query_search_sequence_concatenates_all_contigs_and_warns(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # A draft-assembly query: recruitment must search every contig, not the first
+    # alone, or the later contigs read as coverage gaps nothing was recruited to fill.
+    logger = logging.getLogger("test.query_search.multi")
+    records = [("contig1", "AAAA"), ("contig2", "CCCC"), ("contig3", "GGGG")]
+    with caplog.at_level(logging.WARNING, logger=logger.name):
+        seq = query_search_sequence(records, logger)
+    assert seq == "AAAACCCCGGGG"
+    assert any("3 records" in r.message for r in caplog.records)
+
+
+def test_query_search_sequence_drops_gaps(caplog: pytest.LogCaptureFixture) -> None:
+    logger = logging.getLogger("test.query_search.gaps")
+    assert query_search_sequence([("q", "AC-GT--A")], logger) == "ACGTA"
 
 
 def test_stage_genomes_handles_gz_and_plain(tmp_path: Path) -> None:

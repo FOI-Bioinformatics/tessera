@@ -212,6 +212,40 @@ def test_mask_sibling_fail_on_sibling_donor(tmp_path):
     assert rh._score_single_insert(tmp_path, clade_of, si, 5, "tip", 1.0)["pass"] is True
 
 
+def test_gate_summary_excludes_known_limit_positive_and_negative():
+    # 29 positive passes + a known-limit positive miss (donorabsent_rsv) + 10 negative
+    # passes + a known-limit negative miss (neg_hiv1, one expected false region). Both known
+    # cases drop out of the gate and the sens/spec denominators, and are listed separately.
+    results = [{"name": f"p{i}", "pass": True, "case_type": "single_insert"} for i in range(29)]
+    results.append({"name": "donorabsent_rsv", "pass": False, "case_type": "panel_donor_absent"})
+    results += [{"name": f"n{i}", "pass": True, "case_type": "neg_pure"} for i in range(10)]
+    results.append({"name": "neg_hiv1", "pass": False, "case_type": "neg_pure",
+                    "n_false_regions": 1})
+    results.append({"name": "oropouche", "pass": None, "skip": "data limit"})
+
+    s = rh._gate_summary(results, {"donorabsent_rsv", "neg_hiv1"})
+    assert (s["passed"], s["gated"]) == (39, 39)  # no gating case fails
+    assert (s["sens_pass"], s["sens_total"]) == (29, 29)  # donorabsent_rsv excluded
+    assert (s["spec_pass"], s["spec_total"]) == (10, 10)  # neg_hiv1 excluded
+    assert s["false_calls"] == 0  # the known-limit negative's false region is not counted
+    assert {r["name"] for r in s["known"]} == {"donorabsent_rsv", "neg_hiv1"}
+    assert (s["skipped"], s["errored"]) == (1, 0)
+
+
+def test_gate_summary_counts_a_real_failure_and_an_error():
+    results = [
+        {"name": "ok", "pass": True, "case_type": "single_insert"},
+        {"name": "regressed", "pass": False, "case_type": "single_insert"},  # a real FAIL
+        {"name": "neg_hiv1", "pass": False, "case_type": "neg_pure", "n_false_regions": 1},
+        {"name": "broke", "pass": None},  # neither skip nor scored -> an error
+    ]
+    s = rh._gate_summary(results, {"neg_hiv1"})
+    assert (s["passed"], s["gated"]) == (1, 2)  # the real failure still gates
+    assert (s["sens_pass"], s["sens_total"]) == (1, 2)
+    assert s["errored"] == 1
+    assert [r["name"] for r in s["known"]] == ["neg_hiv1"]
+
+
 def test_parse_signal_reads_an_untestable_phi_header(tmp_path):
     """The profile header carries NA when the PHI test could not have rejected; the
     harness must still find the Rmin that follows it."""

@@ -25,6 +25,9 @@ validation/
   run_method_comparison.py      per-caller detection on the real recombinants
   run_method_comparison_hybrids.py  GENECONV gap probe on the hard synthetic cases
   run_deep_typing.py   run the real --deep-typing lineage ladder, check nextclade-nn
+  probe_donor_absent.py   build real donor-absent runs for issue #90 (probe, not a case)
+  measure_pendant.py   the pendant-branch statistic for issue #90's Option A (no aligner)
+  measure_subclade_identifiability.py   issue #90 Option B flag's reach (no aligner)
   data/                downloaded sequences + run artifacts (gitignored)
 ```
 
@@ -77,6 +80,18 @@ default harness run does not describe the shipped default. Measured at 3 replica
 The positive control was detected 3/3 with the correct donor at both gates (median
 breakpoint error 55 bp). Treat a non-zero total at `--min-methods 2` as a regression to
 explain, and quote the `--min-methods 1` row when describing what a default run reports.
+
+That table is the first measurement and is kept as the record. The current one, at 10
+replicates (40 runs per gate) on 2026-11-02, commit `4ee5020`:
+
+| gate | runs with a false region | false regions | per caller | positive control |
+|---|---|---|---|---|
+| `--min-methods 2` (harness default) | 1/40 (2 %, CI 0-13 %) | 1 | 3seq = 1, maxchi = 1 | 9/10, correct donor 9/10, median breakpoint error 10 bp |
+| `--min-methods 1` (CLI default) | 16/40 (40 %, CI 26-55 %) | 19 | hmm = 16, maxchi = 3, 3seq = 1 | 10/10, correct donor 10/10, median breakpoint error 9 bp |
+
+The per-caller counts are of regions, and a region that two callers found is counted once
+per caller, so they can sum to more than the false-region total. Quote this table, not the
+first one, for what a default run reports.
 
 **Caveat.** JC69 on a fixed topology is simpler than real viral evolution, and modest
 replicate counts carry real sampling error -- hence the intervals. These numbers
@@ -706,7 +721,12 @@ measures **specificity** (false positives), not only sensitivity. The default ru
   panel, matching the spliced tract at 0.9854-0.9875 against the true donor's 0.9947. A
   stand-in that close *is* the donor's lineage, so naming it was the right answer at the
   resolution the panel supported, and the case was demanding a `donor_absent` caveat that
-  would have been false. One naming level up removes the close relatives too.
+  would have been false. One naming level up removes the close relatives too. With the
+  whole sub-clade removed the run still names a neighbouring sub-clade and reports no
+  gap, and nothing panel-internal separates that from a correct attribution (issue #90),
+  so its one live entry, `donorabsent_rsv`, is a **known limitation**: reported, not gating
+  (see below). Its scorer still records a FAIL; the results table prints `KNOWN-LIMIT`
+  and the gate leaves it out.
 - `panel_equidistant` -- two candidate donors equally close to the query; the caller must
   attribute the true one (a tie-break guard).
 
@@ -745,6 +765,19 @@ independent PHI/Rmin test corroborates the signal (`parent_free_support=yes`). R
 subtypes are so inter-mosaic that a pure subtype genome (source removed) is indistinguishable from a
 real recombinant -- a property of the data, not a caller bug. So the harness reports it as a
 `KNOWN-LIMIT` row and excludes it from the gating specificity, rather than changing the callers.
+
+**`donorabsent_rsv` -- a second investigated known-limitation** (reported, not gating; issue #90).
+The donor's whole sub-clade (`A.D.1`) is removed, and the scan then names a neighbour (`A.D.5`) with
+four-caller agreement. Two measurements establish this is not a caller bug but a property of the
+panel: Option A (`measure_pendant.py` / `pendant-results.md`) found that donor absence is not
+recoverable from the panel's identity geometry -- these RSV `A.D.*` sub-clades are nearly
+equidistant from the tract -- and Option B (`measure_subclade_identifiability.py`) does not flag this
+region, because the stand-in beats every present lineage cleanly, so no present lineage ties it. Four
+identity-based discriminators were measured and eliminated on the issue before that. There is no
+identity or margin threshold that caveats this case without falsely caveating genuine low-divergence
+positives, so -- like `neg_hiv1` -- it is reported as a `KNOWN-LIMIT` row and excluded from the
+gating sensitivity rather than forced green. Option B still ships as a general honesty annotation for
+regions where two *present* lineages are genuinely tied; it simply does not reach this one.
 
 Two **`neg_within`** controls (`negwithin_measles`, `negwithin_dengue`) add a distinct false-positive
 mode: an intra-clade splice (a genome recombined from two members of one clade) must not read as a
@@ -888,6 +921,54 @@ The first run of this measurement is written up in
 verdict or attribution change) and the consensus panel is a net regression (it improves donor
 attribution on two cases but degrades backbone attribution on two others), so neither was
 promoted -- the value of measuring before committing.
+
+## Donor-absent attribution: issue #90's Option A (`measure_pendant.py`)
+
+When the true donor's lineage is missing from the panel, the scan still names a donor from a
+neighbouring sub-clade -- with four-caller agreement and no caveat. Four candidate
+discriminators were measured on issue #90 and eliminated, all of them functions of pairwise
+identity. The design note
+[`docs/superpowers/specs/2026-10-29-issue-90-donor-absent-design.md`](../docs/superpowers/specs/2026-10-29-issue-90-donor-absent-design.md)
+proposed a fifth of a different kind -- how the query's tract *attaches* to the panel, not how
+well its best reference matches -- and recommended measuring it before building any of it.
+
+`measure_pendant.py` is that measurement: it restricts the alignment to a called region's
+columns, neighbour-joins a p-distance matrix over the panel plus the query's tract (plain
+numpy, no tree library), and scores the tract's pendant branch against the panel's own pendant
+lengths. It re-runs the eliminated identity discriminator on the same cases as a control. It
+needs no aligner, network or downloaded data -- only the artifacts an earlier `run_hybrids.py`
+run left in `data/hybrids/`.
+
+`probe_donor_absent.py` supplies what the harness lacks: it has one donor-absent case, and one
+case calibrates nothing. The probe builds the rest for real (panel re-recruited from the
+surviving lineages, re-aligned), reusing each positive case's dataset and parent pair. It is a
+probe, not a harness case -- `run_hybrids.HYBRIDS` and the must-pass headline are untouched.
+It needs an aligner and the Nextclade datasets.
+
+The result is in [`pendant-results.md`](pendant-results.md): against 17 real donor-absent runs
+and 20 donor-present cases, the statistic reaches AUC 0.932 where identity reaches 0.791 on the
+same cases -- so it is genuinely new information -- but it cannot caveat every donor-absent case
+without falsely caveating 9 of 20 correct attributions, and it is undefined wherever the panel
+holds only 2--3 members. Nothing was built from it. The design note's claim that the statistic
+is scale-free is specifically contradicted, and the write-up says which quantity leaks.
+
+## Donor sub-clade identifiability: issue #90's Option B (`measure_subclade_identifiability.py`)
+
+Option B is the part of #90 that was built: `flag_subclade_identifiability` annotates a
+called region when the query does not significantly prefer the named donor's lineage over
+every *other* present lineage, so the report no longer offers one sub-clade with
+four-caller agreement where the panel cannot resolve it. This script runs the shipped
+function over the per-case artifacts of `run_hybrids.py` and `probe_donor_absent.py`, so
+the reach quoted in the changelog is reproducible against the real code. It needs no
+aligner, network or downloaded data.
+
+On the hybrid harness it flags 8 of 17 judgeable donor-absent runs and 1 of 24
+donor-present cases (`sars_cov_2`, a 6-informative-site region where "cannot tell outgroup
+from 22B here" is honest). It does **not** flag the issue's own `donorabsent_rsv`: its true
+lineage is absent entirely and the named stand-in beats every present lineage cleanly, so
+no present lineage ties it -- which is the Option A finding restated, that donor absence is
+not recoverable from panel identity. Option B is an honesty annotation for genuinely
+ambiguous regions, not a fix for the scored donor-absent case.
 
 ## Expectation schema (`expected` block)
 

@@ -28,6 +28,158 @@ All notable changes to Tessera are recorded here. The format follows
   a swapped major/minor parent on a 1 %-divergent case; both are low-information
   behaviour and are not changed here.
 
+### Say when a donor sub-clade is not identifiable from the panel (issue #90)
+
+When reference lineage labels are available, each called region now reports whether the
+query significantly prefers the named donor's lineage over every *other* lineage present
+over that region (a one-sided sign test on the distinguishing sites, at the run's alpha).
+Where it does not, two new columns in `recombination_regions.tsv` --
+`subclade_identifiable` (`no`) and `tied_lineages` -- record that the panel cannot resolve
+which sub-clade the tract came from, and the HTML report flags the region "sub-clade
+unresolved". The scan still names one donor and nothing is withheld or relabelled; this is
+an annotation, since a tie is equally what a genuine close relative produces.
+
+This is Option B from the issue #90 design note, and the measurement there is explicit
+about its reach: it flags a region only when two *present* lineages are statistically
+tied. It does **not** flag the issue's own `donorabsent_rsv` case, whose true lineage is
+absent entirely and whose named stand-in (a different sub-clade) still beats every present
+lineage cleanly -- consistent with the Option A measurement, which found that donor
+absence is not recoverable from the panel's identity geometry. So it addresses the part of
+the report that is about confident presentation of an unresolvable sub-clade, not the
+scored `donorabsent_rsv` case (reclassified below). Measured across the hybrid harness:
+flagged 8 of 17 judgeable donor-absent runs and 1 of 24 donor-present cases (a
+6-informative-site region where the caveat is honest). New columns are appended, so a
+reader selecting by name is unaffected.
+
+### `donorabsent_rsv` is a reported-not-gating known limitation (issue #90)
+
+With Option B shipped and the Option A measurement in hand, the `donorabsent_rsv` harness
+case is marked `known_limit`, like `neg_hiv1`: an investigated miss that reflects a data
+limit (the donor's whole lineage is absent and its absence is not recoverable from the
+panel's identity geometry), not a regression, and with no identity or margin threshold that
+caveats it without falsely caveating genuine low-divergence positives. The `run_hybrids.py`
+gate accounting now excludes a known-limitation *positive* from the sensitivity denominator
+and the headline pass total, exactly as it already did for a known-limitation negative's
+specificity -- previously only negatives were excluded, so a known-limitation positive still
+counted against the gate. The must-pass gate reads 39/39 with two known limitations
+(`neg_hiv1`, `donorabsent_rsv`) reported separately, sensitivity 29/29, specificity 10/10,
+one skip (`oropouche`). No caller changed; this is harness accounting and documentation.
+
+## [1.3.0] - 2026-10-29
+
+> **What the validation numbers in this release do and do not cover.** The callers
+> changed in this release, so the evidence behind them is worth stating precisely.
+> Bootscan's run-length null no longer depends on the block grid's phase, which changes
+> what that caller reports. Two offline harnesses were re-measured on the change, both
+> before and after, and both came out equal or better:
+> `validation/run_specificity.py --reps 10` is identical to the digit (1 of 40 runs with
+> a false region, positive control 9/10, median breakpoint error 10 bp), and
+> `validation/run_regimes.py` improved its near-identical clonal control from 1 of 10
+> runs reporting false regions to 0 of 10, with detection unchanged at 10 of 10 on every
+> case. **The 24-pathogen attribution headline was then re-measured too, and holds.**
+> `run_hybrids.py` on `4a49bfd` reproduces **23 PASS, 0 FAIL, 1 SKIP** across the 24
+> pathogen cases: every one that runs is detected with both parents named correctly, the
+> single SKIP is `oropouche` (its L-segment genomes are all > 98 % ANI, a documented data
+> limit), and the two cases that used to fail attribution, `rsv_a` and `flu_h3n2_ha`,
+> both pass. The whole gate, positives and negatives together, is **39 of 41 with 1
+> skipped and 0 errors**: sensitivity 29/30, specificity 10/10 with no false call. The
+> two non-passes are both pre-existing and known -- `donorabsent_rsv` (issue #90) and
+> `neg_hiv1`, which is reported as a known limitation rather than gating. So the Bootscan
+> change cost no detection and no attribution on the curated set.
+
+### Multi-contig query recruitment (post-1.3 audit, second pass)
+
+A second audit pass, after the headline was re-measured, found that panel recruitment
+read only the query's first record. Two fixes, both behavioural and both confined to
+reference recruitment -- the aligner and the scan already handled every contig.
+
+- **References are recruited across every contig of a multi-contig query.** Both
+  recruitment paths -- BLAST seeding (`_seed_collection`) and pool/Nextclade selection
+  (`select_regional`) -- took `records[0]`, so a draft-assembly query's windows, and the
+  references chosen to cover them, spanned the first contig alone. The aligner
+  concatenates the whole query and the scan reads all of it, so the later contigs were
+  scanned but never recruited for, surfacing as coverage gaps that only round-2+ NCBI
+  BLAST could close -- and on an offline `--candidate-pool` or `--nextclade` run, nothing
+  closed them. Recruitment now concatenates the records in file order (the layout the
+  aligner already uses for a multi-contig backbone) and warns when the query has more
+  than one, so the join is not silent.
+- **Taxon detection probes the longest contig, not the first.** `detect_taxon` built its
+  organism-naming BLAST probe from `records[0]`, so a draft assembly whose first contig
+  was a short fragment could fail to name the taxon even with ample sequence on later
+  contigs. It now takes the longest record; the probe stays a single contiguous stretch
+  (never a concatenation), since a window spanning a contig junction would BLAST a
+  chimera of two contigs.
+
+Issue #90 (naming a donor whose lineage is absent from the panel) was also measured this
+pass rather than fixed: `validation/measure_pendant.py` and `validation/pendant-results.md`
+record that the proposed pendant-branch statistic carries real signal but cannot gate a
+caveat, so nothing was built from it. See the measurement for the decision it leaves open.
+
+### The low-severity findings of the post-1.3 audit
+
+Seven items, none of which changes a verdict. Each is a number, a name or a message that
+was wrong or misleading, or a failure reported as a traceback rather than as the input
+problem it was.
+
+- **A gap search submitted two near-identical BLAST queries.** `_tiles(601, 400)` gave
+  tiles starting at 200 and 201: two submissions asking almost the same question, each
+  paced at one per ten seconds and each counting against NCBI's load. Where an earlier
+  tile still covers the start the last tile now moves to the end; where there is none, a
+  single tile is stretched over the gap. Coverage of the whole gap is unchanged and
+  tested.
+- **A sequence id equal to the backbone's label could redirect the backbone.**
+  `maf_to_fasta` looked the backbone *label* up in `name_map`, which maps a MAF source
+  name to a genome label. Where another genome carried a sequence id equal to the
+  backbone's label, the backbone was silently swapped for that genome, and the
+  `ref_contigs` check then failed naming the wrong one. A reference that already appears
+  as a label is taken as given.
+- **A version-insensitive accession match treated any dot as a version.**
+  `_base_accession` split on the first dot, so `strain.B.1` was typed by `strain.A.1`'s
+  lineage: both reduced to `strain`. Only a trailing `.<digits>` is a version now, and
+  where two versions of one accession carry different lineages the match is resolved in
+  sorted order rather than by dict order, so a run is reproducible.
+- **A mistyped `$TESSERA_TOOL_TIMEOUT` was ignored silently.** `TESSERA_TOOL_TIMEOUT=30s`
+  fell back to the default and said nothing, so a user could believe their setting was
+  in force. The fallback is unchanged -- it keeps a limit rather than removing one -- and
+  now warns, naming the value it could not read.
+- **An odd `--window-size` left a coverage gap one column short of its own last
+  window.** The gap's span was derived as `centre + half` while the windows it describes
+  run `[centre - half, centre - half + window_size)`, so the breakpoint relabel silently
+  skipped a gap's last window. Both now use the same arithmetic.
+- **A gap with no comparable bases drove the fill loop's convergence measure.** A
+  `low_information` gap has `mean_best = nan`; counted, `max(0.0, threshold - nan)`
+  contributed exactly zero, so a round still holding such gaps measured as a round with
+  nothing left to close, and `--min-improvement` could never fire while only they
+  remained. `min()` over a nan was also decided by the order the gaps arrived in, so the
+  reported worst similarity flipped between `nan` and the real worst gap. Both leave
+  those gaps out; they remain search targets.
+- **An output path that cannot be created reached the user as a traceback.** The run log
+  opens before any command enters the error handler, so a path whose parent does not
+  exist raised its `OSError` out of logging setup under "Unexpected error". It is now
+  the input problem it is, naming the path and what to do.
+
+### A breakpoint interval is no longer reported outside the region it belongs to (issue #96)
+
+- **The defect.** The interval and the span were derived on different bases: the
+  interval from the HMM's window grid and posterior, the span from the first column that
+  distinguishes the parents. Where those sites are sparse the first of them can lie far
+  beyond the window where the path switched, so the interval could end thousands of
+  bases before its own region. On the clonal mpox pool run behind the issue, region 1
+  spanned 64305-91737 while its interval sat at 50680-55657: 8.6 kb short of the region,
+  and 5 kb wide. Both numbers were individually defensible; printing them side by side
+  was what misled.
+- **The fix.** The interval runs on to meet the span. Nothing between the end of the
+  band and the first distinguishing column rules out the switch having happened there,
+  so stopping short claimed a precision the sites do not support. It is deliberately
+  **not** clipped into the span, which would discard the genuine uncertainty before the
+  region's first informative column, and where it already reaches the span -- 59 of the
+  70 regions on disk when the issue was filed -- nothing changes. The 11 that sat just
+  outside, by 2 to 99 bp, are extended by that much.
+- **A guard, not only a fix.** A test asserts the rule on the issue's own numbers, and a
+  property test over every region of both example datasets, across four callers, asserts
+  that no reported interval fails to touch its own region. Which regions are called is
+  untouched: only the coordinates reported for them change.
+
 ### A draft query could not be aligned at all by MAFFT 7.525
 
 - **The defect.** MAFFT 7.525 segfaults inside `pairlocalalign` whenever

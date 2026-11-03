@@ -52,6 +52,14 @@ def default_timeout(fallback: float | None) -> float | None:
     try:
         seconds = float(text)
     except ValueError:
+        # Falling back is the safe reading of a typo -- it keeps a limit rather than
+        # removing one -- but it used to be silent, so a mistyped "30s" left the user
+        # believing their setting was in force.
+        logging.getLogger(__name__).warning(
+            "Ignoring %s=%r: expected a number of seconds, or 'none' to disable. "
+            "Using %s.", _TIMEOUT_ENV, raw,
+            "no limit" if fallback is None else f"{fallback:g}s",
+        )
         return fallback
     return seconds if seconds > 0 else None
 

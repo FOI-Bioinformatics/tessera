@@ -23,8 +23,9 @@ ruff check src tests validation
 pytest -m "not requires_binary"
 ```
 
-The fast suite runs in a few seconds and needs no external tools, network, or downloaded
-data. The full suite additionally needs an aligner on `PATH`; see
+The fast suite takes several minutes (about eight, last timed in a single process) and
+needs no external tools, network, or downloaded data. For a quick loop while editing, run
+the one test module you changed. The full suite additionally needs an aligner on `PATH`; see
 [docs/aligners.md](docs/aligners.md).
 
 For the aligner-dependent work, `environment.yml` creates a conda environment named
@@ -79,7 +80,10 @@ python validation/run_specificity.py --reps 3
 - **Aligners are plugins.** New backends are added through the `tessera.aligners`
   entry-point group; core never imports a specific adapter.
 - **External tools go through `core/process.run_tool`** — one choke point, no
-  `shell=True`, arguments as lists.
+  `shell=True`, arguments as lists. It also stops a timed-out tool's whole process group,
+  so a wrapper script cannot leave its children running. The one exception is the
+  `--version` probe in `core/binaries.py`, a bounded (30 s) call that follows the same
+  no-shell, list-arguments rule.
 - **Errors are `TesseraError` subclasses** raised from library code. Library code never
   calls `sys.exit`; `cli/main.py` turns exceptions into clean exits.
 - **Modest scientific language** in code and documentation. State what passes, what

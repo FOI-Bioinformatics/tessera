@@ -59,6 +59,31 @@ def read_fasta(path: str | Path) -> list[tuple[str, str]]:
     return records
 
 
+def query_search_sequence(
+    records: list[tuple[str, str]], logger: logging.Logger
+) -> str:
+    """The gap-free query sequence that recruitment searches, across every contig.
+
+    A draft-assembly query holds several records. Recruitment searches the query
+    region by region, so each contig has to contribute: taking only the first record
+    recruits references for the first contig alone, while the aligner concatenates the
+    whole query and the scan reads all of it, so the later contigs then surface as
+    coverage gaps nothing was recruited to fill. The records are joined in file order,
+    the same order a multi-contig backbone is laid out in for alignment, and a
+    multi-record query is logged so the join is not silent. A window spanning the join
+    of two contigs is as chimeric here as it is in that backbone, which is acceptable
+    for recruiting each flank's relatives.
+    """
+    if len(records) > 1:
+        logger.warning(
+            "Query has %d records (a draft assembly); concatenating them to recruit "
+            "references across every contig, not the first alone. A window spanning a "
+            "contig junction may mix two contigs, as it does in the alignment backbone.",
+            len(records),
+        )
+    return "".join(seq for _, seq in records).replace("-", "")
+
+
 def write_fasta_record(handle: TextIO, name: str, seq: str, width: int = 80) -> None:
     """Write one ``>name`` record to ``handle``, wrapping the sequence at ``width``."""
     handle.write(f">{name}\n")

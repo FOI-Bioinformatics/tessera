@@ -29,6 +29,7 @@ from ..core.errors import UserInputError
 from ..core.io import (
     _require_fasta,
     collection_genomes,
+    query_search_sequence,
     read_fasta,
     safe_filename_stem,
     strip_sequence_extension,
@@ -46,6 +47,7 @@ DATASETS = ToolCapabilities(
     required_binaries=(BinarySpec("datasets", version_args=("--version",)),),
 )
 
+_TAXON_PROBE_BP = 1500  # length of the single-contig BLAST probe for taxon detection
 DEFAULT_SEED_WINDOW = 1500  # query window width (bp) for regional matching
 DEFAULT_PER_WINDOW = 2  # candidates to keep per window
 DEFAULT_ANI_FLOOR = 70.0  # drop pool genomes below this genome-wide ANI as unrelated
@@ -97,7 +99,12 @@ def detect_taxon(
     records = read_fasta(query_fasta)
     if not records:
         raise UserInputError(f"Query FASTA {query_fasta} has no sequence.")
-    probe = records[0][1].replace("-", "")[:1500]
+    # The probe is one contiguous stretch, not a concatenation: this search only names
+    # the organism, and a window spanning a contig junction would BLAST a chimera of two
+    # contigs. Take the longest record, so a draft assembly whose first contig is a short
+    # fragment still probes with real sequence rather than a stub.
+    longest = max((seq.replace("-", "") for _, seq in records), key=len)
+    probe = longest[:_TAXON_PROBE_BP]
     logger.info("Detecting the query's taxon from a short BLAST probe...")
     try:
         hits = blast_subsequence(
@@ -362,7 +369,7 @@ def select_regional(
     # Drop genomes unrelated to the query (keep everything if the floor removes all).
     related = [g for g in pool if whole[g][0] >= ani_floor] or pool
 
-    query_seq = records[0][1].replace("-", "")
+    query_seq = query_search_sequence(records, logger)
     n_windows = max(1, len(query_seq) // window)
     # Integer division gives a query between one and two windows long a single window
     # over the whole of it, which is whole-genome selection under another name (a 2.9 kb

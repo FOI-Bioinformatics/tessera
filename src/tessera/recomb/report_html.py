@@ -297,6 +297,14 @@ def _regions_html(
                              'this region than across the rest of its own genome, so '
                              'the comparison behind the region was not between '
                              'comparably aligned sequences">backbone degraded</span>')
+            if r.subclade_identifiable is False:
+                tied = html.escape(", ".join(r.tied_lineages))
+                flags.append(
+                    '<span class="flag" title="the query does not prefer this donor over '
+                    f'other present lineage(s) ({tied}) here, so the sub-clade is not '
+                    'identifiable from this panel; the named donor may not be the true '
+                    'one">sub-clade unresolved</span>'
+                )
             flag = " ".join(flags)
         support = "&ndash;" if r.support is None else f"{r.support:.2f}"
         qval = "&ndash;" if r.qvalue is None else f"{r.qvalue:.2g}"

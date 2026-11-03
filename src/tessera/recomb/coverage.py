@@ -26,6 +26,7 @@ not a missing reference.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from math import isnan
 from statistics import mean, median
@@ -33,7 +34,8 @@ from statistics import mean, median
 import numpy as np
 
 from .regions import Region
-from .similarity import WindowSimilarity, _canonical_mask
+from .similarity import WindowSimilarity, _canonical_mask, discordant_counts, region_identity
+from .stats import sign_test_pvalue
 
 # The kind given to a gap that a called breakpoint explains. See mark_breakpoint_gaps.
 BREAKPOINT_KIND = "breakpoint"
@@ -174,8 +176,12 @@ def call_coverage_gaps(
     half = window_size // 2
 
     def span(index: int) -> tuple[int, int]:
+        # The same arithmetic the scan and the breakpoint relabel use,
+        # ``[pos - half, pos - half + window_size)``. Deriving the end as
+        # ``center + half`` instead left an odd window one column short of its own
+        # last window, so the relabel below silently skipped it.
         center = result.positions[index]
-        return max(0, center - half), min(result.width, center + half)
+        return max(0, center - half), min(result.width, center - half + window_size)
 
     # Runs of consecutive under-covered windows.
     runs: list[list[int]] = []
@@ -338,6 +344,87 @@ def flag_undercovered_regions(regions: list[Region], threshold: float) -> None:
         r.donor_undercovered = (
             not isnan(r.mean_sim_minor) and r.mean_sim_minor < threshold
         )
+
+
+def _related_lineage(a: str, b: str) -> bool:
+    """Whether two genotype labels name the same lineage or one nests in the other.
+
+    ``A.D.1`` and ``A.D.1.8`` are related (one is the other's sub-clade); ``A.D.1`` and
+    ``A.D.5`` are not. Used to exclude the donor's own lineage and its sub-/super-clades
+    from the set of competing lineages, so a region is not called ambiguous merely because
+    the donor's own descendants also match.
+    """
+    return a == b or a.startswith(b + ".") or b.startswith(a + ".")
+
+
+def flag_subclade_identifiability(
+    regions: list[Region],
+    rows: dict[str, np.ndarray],
+    query: str,
+    lineage_of_label: Callable[[str], str | None],
+    *,
+    alpha: float,
+) -> None:
+    """Flag a region whose donor sub-clade the panel cannot distinguish from another lineage.
+
+    The scan names one donor, but when the donor's true lineage is missing the named
+    reference can be a neighbour the query does not actually prefer. For each called
+    region, the donor's lineage is tested against every *other* present lineage over the
+    region's columns: the lineage's best-matching representative is compared to the named
+    donor by a one-sided sign test on the sites that distinguish the two. Where the query
+    does not significantly prefer the donor over some other lineage, the sub-clade is not
+    identifiable from this panel, and that lineage -- with the donor's own -- is recorded
+    in ``tied_lineages``.
+
+    This asserts nothing about the donor being absent: a tie is equally what a genuine
+    close relative produces. It never withholds or relabels a region, only annotates it
+    (``subclade_identifiable``). Regions already marked ``donor_absent``, a donor with no
+    lineage label, and a panel with no other lineage to test are left unevaluated
+    (``subclade_identifiable`` stays ``None``). See issue #90, Option B.
+    """
+    for r in regions:
+        if r.donor_absent:
+            continue
+        donor_lineage = lineage_of_label(r.minor_parent)
+        if not donor_lineage:
+            continue
+        # Group the other present references by lineage, dropping the query, the backbone,
+        # untyped genomes, and anything in the donor's own lineage (or its sub-/super-clade).
+        by_lineage: dict[str, list[str]] = {}
+        for label in rows:
+            if label in (query, r.major_parent):
+                continue
+            lineage = lineage_of_label(label)
+            if not lineage or _related_lineage(lineage, donor_lineage):
+                continue
+            by_lineage.setdefault(lineage, []).append(label)
+        if not by_lineage:
+            continue  # nothing to be ambiguous with; leave unevaluated
+
+        tied: list[str] = []
+        for lineage, members in by_lineage.items():
+            # The lineage's strongest contender here: the member the query matches best.
+            rep = max(
+                members,
+                key=lambda m: _nan_low(region_identity(rows, query, m, r.msa_start, r.msa_end)),
+            )
+            favour_donor, favour_rep = discordant_counts(
+                rows, query, rep, r.minor_parent, r.msa_start, r.msa_end
+            )
+            prefers_donor = (
+                favour_donor > favour_rep
+                and sign_test_pvalue(favour_donor, favour_rep) <= alpha
+            )
+            if not prefers_donor:
+                tied.append(lineage)
+
+        r.subclade_identifiable = not tied
+        r.tied_lineages = tuple(sorted({donor_lineage, *tied})) if tied else ()
+
+
+def _nan_low(value: float) -> float:
+    """``value`` with NaN mapped to ``-inf``, so an uncomparable rep never wins a max()."""
+    return float("-inf") if isnan(value) else value
 
 
 def reconcile_gaps(regions: list[Region], gap_regions: list[Region]) -> list[Region]:

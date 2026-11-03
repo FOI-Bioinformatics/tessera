@@ -30,7 +30,8 @@ Agreement can also be used as a **gate** (`--min-methods`), the control RDP5 exp
 "list events detected by more than N methods". It is **not on by default**, and the
 measurements say why. On a *redundant* panel -- several near-equidistant relatives of the
 query -- requiring two callers is a large win: on simulated clonal data, where every
-region reported is a false positive, it cuts them from 21 to 2. On the curated,
+region reported is a false positive, it cuts the runs that report one from 16 of 40 to 1
+of 40 (`validation/run_specificity.py --reps 10`, 2026-11-02). On the curated,
 dereplicated panels the hybrid harness builds it is all cost: it loses three true
 detections (`rsv_a`, `mpox`, `masksib_rsv`) and gains nothing, because every negative
 control already passes without it.
@@ -73,7 +74,14 @@ donor), a sign-test **p-value** with a Benjamini-Hochberg **q-value**
 interval**: in query coordinates, from the last window before the switch at which the
 outgoing parent's posterior is confident (0.9) to the first window at or after it at which
 the incoming parent's is, so it always spans the two windows between which the path
-switched and is never narrower than one window step. A high support with a small q-value is a confident call; a region with
+switched and is never narrower than one window step. It then runs on, where it has to,
+to reach the region's own start: the band is measured on the window grid while the
+reported span starts at the first column that distinguishes the parents, and where those
+sites are sparse the first of them can lie well beyond the window where the path
+switched. Nothing in between rules out the switch having happened there, so an interval
+that stopped short would claim a precision the sites do not support (issue #96). The
+band is never narrowed to fit the span, since that would discard the uncertainty before
+the region's first informative column. A high support with a small q-value is a confident call; a region with
 strong directional support but a large q-value (few distinguishing sites, e.g. a
 recombination between near-identical lineages) is flagged as marginal rather than
 dropped. The legacy `--method heuristic` (margin / merge-gap / min-region) is kept
@@ -484,12 +492,41 @@ is left alone.
 These rows are logged with the backbone that was rejected, and counted in
 `run_provenance.json` under `regions withheld (rejected backbone)`.
 
+## A donor the panel cannot tell from another lineage
+
+A region names one donor, but when the true donor's lineage is missing the named reference
+can be a neighbour the query does not actually prefer (issue #90). With lineage labels,
+each called region is tested for this: the named donor is compared against every *other*
+lineage present, using that lineage's best-matching member over the region, by a
+one-sided sign test on the sites that distinguish the two (`--alpha`, 0.05 by default).
+Lineages nested with the donor's own (`A.D.1` and `A.D.1.8`) are not competitors. If the
+query does not significantly prefer the donor over some other lineage, the region is
+marked `subclade_identifiable = no`, the tied lineages (the donor's own included) are
+listed in `tied_lineages`, and the report flags it "sub-clade unresolved".
+
+This is an annotation, not a filter: the region is still reported and still names its
+donor, because a tie is equally what a genuine close relative produces. It does not
+establish that a donor is absent, and it cannot: if the true lineage is missing and the
+named neighbour still beats every lineage that *is* present, nothing ties it and the
+region reads `yes`. On the hybrid benchmark it flagged 8 of 17 judgeable runs with the
+donor's lineage removed and 1 of 24 with it present (`validation/README.md`), and it did
+not flag the benchmark's own donor-absent case (`donorabsent_rsv`), which is reported as
+a known limitation. A `yes` therefore means only "the panel can tell this donor from the
+other lineages in it".
+
+The column reads `NA`, and the region is left unevaluated, with no lineage labels, on a
+donor-absent coverage row, or when the panel holds no other lineage to compare against.
+
+`validation/pendant-results.md` records why the flag compares lineages by sign test and
+not by a threshold on identity or branch length: neither separated the cases without also
+caveating correct attributions.
+
 ## Output files
 
 | File | Contents |
 |---|---|
 | `report.html` | Self-contained report: run provenance, the region table, the per-dataset stats, and an embedded interactive plot |
-| `recombination_regions.tsv` | Called regions: minor/major parent, start/end in **both MSA columns and query bases**, `length_bp` / `length_msa`, `posterior` (the HMM's mean donor posterior over its own segment, not the whole row's span; `NA` on a row no HMM segment contributed to, since no other caller measures one), `support`, `pvalue` / `qvalue` with the `test` and `statistic` that produced them, `n_windows` (base-pair scan windows overlapping the region, the same unit for every caller), mean similarities (identity over the region's own span, for a merged row the whole merged span), the calling `methods`, `donor_undercovered` (the donor is itself a poor match, so it may be standing in for an absent true donor), `major_degraded` (the backbone is gappier over this region than across the rest of its own genome, so the comparison behind the region was not between comparably aligned sequences), and `parent_free_support` (`not run` when the PHI test gave no result) |
+| `recombination_regions.tsv` | Called regions: minor/major parent, start/end in **both MSA columns and query bases**, `length_bp` / `length_msa`, `margin` (the donor's mean similarity minus the major parent's over the region), `breakpoint_lo` / `breakpoint_hi` (the breakpoint's uncertainty interval in query bases, set by the HMM; `NA` on a row no HMM segment contributed to), `posterior` (the HMM's mean donor posterior over its own segment, not the whole row's span; `NA` on a row no HMM segment contributed to, since no other caller measures one), `support`, `pvalue` / `qvalue` with the `test` and `statistic` that produced them, `n_windows` (base-pair scan windows overlapping the region, the same unit for every caller), mean similarities (identity over the region's own span, for a merged row the whole merged span), the calling `methods`, `donor_undercovered` (the donor is itself a poor match, so it may be standing in for an absent true donor), `donor_absent` (`yes` on a row that comes from a coverage gap rather than a caller: the query is far from every reference there, and `minor_parent` then names the closest reference as a stand-in, not a called donor), `major_degraded` (the backbone is gappier over this region than across the rest of its own genome, so the comparison behind the region was not between comparably aligned sequences), `parent_free_support` (`not run` when the PHI test gave no result), and `subclade_identifiable` / `tied_lineages` (whether the query significantly prefers the named donor's lineage over every *other* lineage present over this region; `no`, with the tied lineages listed, when it does not -- the panel cannot resolve which sub-clade the tract came from and the named donor may not be the true one; `NA` on an unlabelled panel, a donor-absent row, or when no other lineage is present to test against) |
 | `recombination_methods.tsv` | Ensemble breakdown (only when several methods run): one row per row of `recombination_regions.tsv`, in the same order (a donor-absent region reads `no` for every caller that ran), with `yes` / `no` per method (`not run` for a selected caller that could not run) and the parent-free flag; the parent-free flag is `not run` likewise |
 | `recombination_profile.tsv` | Parent-free signal: header with the PHI p-value (`NA` when not testable) and Rmin, then per-informative-site local incompatibility (the PHI profile) |
 | `similarity_windows.tsv` | Full per-window matrix: `msa_position`, `query_position`, `winner`, and one similarity column per dataset. Always base-pair windows (identity over all comparable columns) |

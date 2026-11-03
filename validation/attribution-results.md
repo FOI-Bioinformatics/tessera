@@ -21,6 +21,30 @@ with `--compare`).
 > tips. Only `oropouche` remains SKIP -- its L-segment genomes are all > 98 % ANI, so no
 > distinct lineages can be formed (a documented data limit, not forced).
 
+> **Update (2026-10-29, commit `4a49bfd`, after the post-1.2.0 audit).** Re-run because the
+> audit changed what two callers report: Bootscan's run-length null no longer depends on the
+> block grid's phase, and the HMM's major parent no longer depends on the order the references
+> are listed in. The headline is unchanged -- **23 PASS, 0 FAIL, 1 SKIP** over the 24 pathogen
+> cases, `oropouche` still the only SKIP, `rsv_a` and `flu_h3n2_ha` still passing -- so
+> neither change cost a detection or an attribution here. The whole gate is **39 of 41, 1
+> skipped, 0 errors**, with sensitivity 29/30 and specificity 10/10 at no false calls. Both
+> non-passes are pre-existing and expected: `donorabsent_rsv` is issue #90, whose premise and
+> measurements are recorded on the issue and whose remaining options are in
+> `docs/superpowers/specs/2026-10-29-issue-90-donor-absent-design.md`; `neg_hiv1` is the
+> documented known limitation, reported rather than gating. The `--compare` grid below was
+> **not** re-run: it measured the barcode caller and the consensus panel, neither of which the
+> audit touched.
+
+> **Update (2026-11-02, after issue #90 was closed).** The "39 of 41" above counted
+> `donorabsent_rsv` and `neg_hiv1` as failures of the gate. `donorabsent_rsv` is now marked a
+> known limitation as well, and the harness leaves a known-limitation *positive* out of the
+> sensitivity denominator, as it already did for a negative's specificity. The same results
+> now read **39 of 39 gating, sensitivity 29/29, specificity 10/10, two known limitations
+> (`neg_hiv1`, `donorabsent_rsv`), one skip (`oropouche`)**. No caller changed and nothing
+> was re-run; only the accounting moved. The reason `donorabsent_rsv` cannot be fixed from the
+> panel is in `validation/pendant-results.md`. Passages below that say it PASSes describe an
+> earlier version of the case and are kept as the record of that stage.
+
 ## Result
 
 | config | PASS | donor attribution improved vs baseline |
@@ -240,6 +264,12 @@ donors, deferred with `neg_within`. Phase 2 (multi-breakpoint / short-tract topo
 (frontier inter-species / reassortment, XFAIL) remain separate cycles.
 
 ### Donor-absent finding closed (donor_undercovered caveat)
+
+> **Superseded.** This section describes `donorabsent_rsv` as first defined, with only the
+> donor's own clade (`A.D.1.8`) removed, which left its close relatives in the panel. The
+> case was later corrected to remove the donor's whole sub-clade (issue #90). With that, the
+> `donor_undercovered` caveat described below does not fire, the case fails, and it is now a
+> known limitation. See the update at the top of this file.
 
 The `donorabsent_rsv` FAIL above was a genuine attribution limitation: with the true donor clade
 removed, the caller attributed the region to a present, close sibling and the "donor may be
