@@ -6,6 +6,16 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-03
+
+> **What this release changes, and what it does not.** One behaviour change and the
+> bookkeeping around it. `recombination_regions.tsv` gains two columns at the end,
+> `subclade_identifiable` and `tied_lineages`, and the HTML report can flag a region
+> "sub-clade unresolved". No caller, threshold or default changed, so a region is called
+> exactly as in 1.3.0. The 24-pathogen headline was not re-run for this release because
+> nothing it measures changed; the figures this release re-measured are the offline
+> false-region rates, below.
+
 ### Say when a donor sub-clade is not identifiable from the panel (issue #90)
 
 When reference lineage labels are available, each called region now reports whether the
@@ -42,6 +52,35 @@ specificity -- previously only negatives were excluded, so a known-limitation po
 counted against the gate. The must-pass gate reads 39/39 with two known limitations
 (`neg_hiv1`, `donorabsent_rsv`) reported separately, sensitivity 29/29, specificity 10/10,
 one skip (`oropouche`). No caller changed; this is harness accounting and documentation.
+
+### Documentation checked against the code, and the figures it quotes re-measured
+
+The living documents were audited against the CLI, the shipped outputs and the changes
+since 1.2.0. Every `--flag` the docs name resolves to a real option, every relative link
+resolves, and the example commands give the q-values the README states. What was wrong:
+
+- The README and `CLAUDE.md` described "three complementary methods" while the default is
+  a four-caller ensemble (HMM, 3SEQ, MaxChi, Bootscan) plus PHI/Rmin.
+- The README's known limitations did not mention a donor that is missing from the panel
+  while a close neighbour is present -- the case issue #90 was about. It now states the
+  limit, what `subclade_identifiable` does and does not show, and its measured reach.
+- `CONTRIBUTING.md` said the fast suite "runs in a few seconds"; it takes about eight
+  minutes.
+- `docs/detection-methods.md` did not name the `margin`, `breakpoint_lo`, `breakpoint_hi`
+  and `donor_absent` columns of `recombination_regions.tsv`. `donor_absent` is parsed by
+  `reassort/scan.py` and the harness, and its rows carry the closest reference in
+  `minor_parent` as a stand-in, not a called donor.
+- `docs/reference-panels.md` did not say that recruitment covers every contig of a
+  multi-contig query, or that taxon detection probes the longest one.
+
+The false-region figures the docs quoted came from earlier generations of the same
+offline harnesses, and differed between documents. Re-measured on `4ee5020`: on simulated
+clonal data (`run_specificity.py --reps 10`, 40 runs per gate) 16 of 40 runs report a
+false region at the CLI default `--min-methods 1` (the docs said 17 of 40) and 1 of 40 at
+`--min-methods 2` (the docs said 2 of 40); on near-identical panels (`run_regimes.py
+--reps 20`) 0 of 20 at both gates (the README said 1 of 20 at the default). The positive
+control is detected 10 of 10 at the default gate and 9 of 10 at `--min-methods 2`, as
+before. These are simulation results with modest replicate counts.
 
 ## [1.3.0] - 2026-10-29
 
@@ -1534,7 +1573,9 @@ simulated recombination against a documented expectation, recording measured res
   the q-value; detection sensitivity is unchanged (30/30 on the hybrid suite, including the
   low-divergence case) with fewer false positives.
 
-[Unreleased]: https://github.com/FOI-Bioinformatics/tessera/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/FOI-Bioinformatics/tessera/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/FOI-Bioinformatics/tessera/compare/v1.3.0...v1.3.1
+[1.3.0]: https://github.com/FOI-Bioinformatics/tessera/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/FOI-Bioinformatics/tessera/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/FOI-Bioinformatics/tessera/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/FOI-Bioinformatics/tessera/releases/tag/v1.0.0
