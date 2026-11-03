@@ -89,6 +89,37 @@ def reconcile_major(
     return canonical, per
 
 
+def clone_siblings(
+    excluded: list[str],
+    regions: list[Region],
+    rows: dict,
+    query: str,
+) -> set[str]:
+    """The excluded siblings that are copies of the query *including* its tract.
+
+    A sibling is set aside because it is a whole-genome relative of the query. Two
+    different genomes can look like that to the base-pair vote. The query's true
+    backbone, when the recombinant tract is short, is nearly identical to the query
+    everywhere except over the tract; over the tract it matches the query *less* well
+    than the donor does. A copy of the query matches it at least as well as the donor,
+    because it carries the tract too. Only the second kind must never be named the
+    backbone.
+
+    A sibling is a clone when, over every region the HMM called, its identity to the
+    query is at least the donor's. With no region there is nothing to test, and none is
+    returned.
+    """
+    if not excluded or not regions:
+        return set()
+    return {
+        label for label in excluded
+        if label in rows and all(
+            region_identity(rows, query, label, r.msa_start, r.msa_end) >= r.mean_sim_minor
+            for r in regions
+        )
+    }
+
+
 def is_inverted_backbone(
     region: Region, *, backbone: str | None, window_wins: dict[str, int] | None
 ) -> bool:

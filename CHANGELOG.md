@@ -6,6 +6,24 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### An excluded sibling could be reported as the major parent (issue #112)
+
+- **The defect.** The HMM sets a query's whole-genome siblings aside before it segments
+  and the log says so, but the windowed vote that `reconcile_major` consults has no such
+  step. A sibling that is a near-copy of the query (so it carries the recombinant tract
+  too) won every window, the HMM's correct major parent "won no window", and a guard
+  written for a different case replaced it with the vote winner: the sibling the run had
+  just reported as excluded. The one region found then read `minor=refB major=sib` with
+  the minor parent less similar (0.969) than the major (1.000).
+- **The fix.** An excluded sibling is a clone when, over every region the HMM called, it
+  matches the query at least as well as the donor does. The vote is then retaken without
+  the clones, so their windows go to the next closest genome. A true backbone that was
+  dropped as a sibling is not affected: over the tract it matches the query worse than the
+  donor, which is the case the original guard exists for.
+- **Not changed.** The 3SEQ, MaxChi and Bootscan callers still compete the sibling, so a
+  tract a near-copy of the query explains is called by the HMM alone, and `--min-methods 2`
+  still withholds it. Setting siblings aside for those callers is a larger change.
+
 ### `msa` output that `recomb` could not read, and silent strand flips
 
 - **Labels with spaces.** `tessera msa` labelled each genome with its file name, spaces

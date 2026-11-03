@@ -12,7 +12,7 @@ from .. import __version__
 from ..core.errors import UserInputError
 from ..core.io import strip_sequence_extension
 from ..msa.build import read_provenance
-from .analyze import analyze, winners_per_window
+from .analyze import analyze, winners_excluding, winners_per_window
 from .clusters import lineage_clusters
 from .coverage import (
     DIVERGENT_KIND,
@@ -34,6 +34,7 @@ from .diagnostics import (
     recombination_signal,
 )
 from .ensemble import (
+    clone_siblings,
     consensus_regions,
     filter_by_agreement,
     filter_by_length,
@@ -509,7 +510,14 @@ def run_recomb(
     if hmm_one_state:
         n_ran -= 1
 
-    major_parent, per_major = reconcile_major(majors, window_wins=analysis_bp.winners_with_ties)
+    clones = clone_siblings(
+        [ev.label for ev in excluded_siblings], per_method.get("hmm", []),
+        bp_result.rows, bp_result.query,
+    )
+    # A clone wins every window because it is a copy of the query, not because it is the
+    # backbone the tract sits in (issue #112), so the vote is taken without it.
+    vote = winners_excluding(bp_result, clones) if clones else analysis_bp.winners_with_ties
+    major_parent, per_major = reconcile_major(majors, window_wins=vote)
     # Parent-free corroboration needs both halves of the diagnostic: PHI to establish
     # that the alignment carries recombination at all, the Rmin intervals to say where.
     # Rmin alone counts four-gamete violations, which recurrent mutation also produces.
@@ -526,7 +534,7 @@ def run_recomb(
     # them (issue #86). The breakdown is filtered in step with the regions.
     regions, method_breakdown, inverted_regions = withhold_inverted_backbone(
         regions, method_breakdown,
-        backbone=major_parent, window_wins=analysis_bp.winners_with_ties,
+        backbone=major_parent, window_wins=vote,
     )
     if inverted_regions:
         logger.info(
