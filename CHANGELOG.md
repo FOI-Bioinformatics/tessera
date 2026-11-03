@@ -6,6 +6,28 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### `msa` output that `recomb` could not read, and silent strand flips
+
+- **Labels with spaces.** `tessera msa` labelled each genome with its file name, spaces
+  included, while every reader of the alignment names a record by its first
+  whitespace-delimited token. References such as `Influenza A H3N2.fasta` and
+  `Influenza A H1N1.fasta` both read back as `Influenza`, and `recomb` refused the
+  alignment as having duplicate identifiers; a query could not be addressed by its full
+  label either. Whitespace in a genome label is now replaced by `_` when the genome is
+  staged (one definition, `strip_sequence_extension`, shared by staging, typing lookups
+  and `--query`), and the log states the label to use. Two files that differ only in
+  whitespace versus `_` are refused as sharing a label.
+- **Strand flips are reported.** MAFFT (`--adjustdirection`) reverse-complements a genome
+  on the opposite strand to the backbone. This was silent, and the positions reported for
+  a flipped query then referred to the reoriented sequence. The MAFFT adapter now logs a
+  warning naming the genome and the number of contigs reversed. The positions themselves
+  are unchanged; they remain in the reoriented frame.
+- Found by an end-to-end robustness pass (about 110 cases through the CLI): malformed
+  inputs were all rejected cleanly, and 24 of 24 simulated recombinants were localized.
+  That pass also saw short (6-15 bp) stray regions on 12 %-divergent data with indels and
+  a swapped major/minor parent on a 1 %-divergent case; both are low-information
+  behaviour and are not changed here.
+
 ### A draft query could not be aligned at all by MAFFT 7.525
 
 - **The defect.** MAFFT 7.525 segfaults inside `pairlocalalign` whenever
