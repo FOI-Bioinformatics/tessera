@@ -7,25 +7,25 @@ dependencies:
   - pip
   # Aligner backends (external tools). sibeliaz is the default; mafft (accurate
   # base-level MSA for similar genomes) and minimap2 (fast assembly-to-reference,
-  # ideal for a fragmented query) are recommended alternatives. progressivemauve
-  # (mauve) has no conda build on some platforms (e.g. osx-arm64) and cactus is
-  # heavy; both are optional.
-  - bioconda::sibeliaz
-  - bioconda::mafft
-  - bioconda::minimap2
-  - bioconda::cactus
-  - bioconda::mauve
-  - conda-forge::boost-cpp=1.74.0
+  # ideal for a fragmented query) are recommended alternatives. No channel is named
+  # for these: mafft has a conda-forge build on osx-arm64 and none from bioconda.
+  #
+  # Left out on purpose: progressivemauve (mauve) has no osx-arm64 build, and cactus
+  # with boost-cpp=1.74.0 does not solve against Python 3.13 on linux-64. Both are
+  # optional; add them to a separate environment (docs/aligners.md).
+  - sibeliaz
+  - mafft
+  - minimap2
   # Optional: only needed by `tessera find-references --download` to fetch
   # candidate reference genomes from NCBI.
-  - bioconda::entrez-direct
+  - entrez-direct
   # Optional: panel curation (`curate-panel` and `--curate`). skani provides the
   # query-vs-reference ANI and alignment fraction used to flag siblings; skDER
   # dereplicates near-duplicate references.
-  - bioconda::skani
-  - bioconda::skder
+  - skani
+  - skder
   # Optional: `fill-references --seed-source ncbi-virus` fetches a taxon-scoped
   # genome set from NCBI Virus.
-  - conda-forge::ncbi-datasets-cli
+  - ncbi-datasets-cli
   - pip:
       - -e .

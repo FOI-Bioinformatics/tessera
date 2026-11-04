@@ -77,7 +77,13 @@ tessera msa ... --aligner progressivemauve --aligner-arg seed_weight=11
 
 Add an optional backend to a conda environment with
 `conda install -c bioconda sibeliaz` (or `cactus`). The provided `environment.yml`
-installs Python, the backends, and Tessera in one step.
+installs Python, SibeliaZ, MAFFT, minimap2, the panel-recruitment tools and Tessera in one
+step; it solves on linux-64 and osx-arm64. It leaves out two backends:
+
+- **progressiveMauve** (`mauve`) has no osx-arm64 build and needs `boost-cpp=1.74.0`
+  where it does exist.
+- **Cactus** did not solve together with Python 3.13 and the rest on linux-64 when it was
+  last tried; install it into a separate environment.
 
 ## Genome labels and strand
 
