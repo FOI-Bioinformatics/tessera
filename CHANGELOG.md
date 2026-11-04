@@ -6,6 +6,39 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### 3SEQ, MaxChi and Bootscan now compete without a near-copy of the query (#120)
+
+- **The defect.** Sibling exclusion ran only inside the HMM. The three site-based callers
+  scored the unfiltered scan, where a near-copy of the query wins every window, becomes their
+  major parent, and leaves no discriminating sites. A recombinant tract such a sibling
+  explains was therefore called by the HMM alone, and `--min-methods 2` withheld it. #112
+  fixed which parent the report names in that case; this fixes which callers can see the
+  tract, and supersedes the "Not changed" note in that entry.
+- **The fix, and a design that did not work.** Handing the HMM's sibling set to the other
+  callers whole was tried first and measured on the regimes harness: detection on
+  `redundant_backbone` fell from 10 of 10 replicates to 5 of 10, and a clonal
+  `near_identical` replicate gained a false region. The HMM's rule tolerates a short beaten
+  run, so when the tract is short it sets the true backbone aside as a sibling and then
+  peels the donor; the HMM survives that, and 3SEQ and MaxChi were the safety net that
+  recovered those replicates. They now get the scan without a sibling only when the HMM
+  reported at least one region and no other reference significantly beats that sibling in
+  any single window (`unbeaten_labels`). A real near-copy passes; the backbone, beaten
+  inside the tract, and the donor, beaten everywhere else, do not. The other members of the
+  sibling's lineage cluster go with it. The HMM runs first; with no HMM selected it is run
+  once, unreported, to take the same decision, so the choice does not depend on which
+  callers are selected or in their order. GENECONV, barcode and the legacy heuristic are
+  unchanged.
+- **Measured.** The #112 reproduction is now called by `hmm`, `3seq`, `maxchi` and
+  `bootscan` and survives `--min-methods 2` (it was `hmm` alone). `run_specificity.py
+  --reps 10` at `--min-methods 1` and 2, and `run_regimes.py --reps 10`, are identical to
+  `main` line for line, per-caller counts included. `run_hybrids.py` gives 39 of 39 gating
+  (sensitivity 29/29, specificity 10/10, `neg_hiv1` and `donorabsent_rsv` the known
+  limitations, `oropouche` skipped), and every case row matches the previous gate on `main`;
+  one case (`asym_zika`) hit a transient network error fetching the Nextclade index in the
+  full run and was rerun alone. The `sibling_tract` regime (7 of 10) does not improve: its
+  sibling differs from the query inside the tract, so it is not a twin and stays in the
+  competition.
+
 ### Seeding no longer reports a failed BLAST search as "found nothing" (#118)
 
 - **The defect.** During a DNS outage two of five seed-window searches failed, and seeding

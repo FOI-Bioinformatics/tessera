@@ -294,3 +294,28 @@ def test_min_region_judges_the_merged_span_not_each_callers_own_tract(tmp_path) 
     methods = rows[0]["methods"].split(",")
     assert len(methods) >= 2, methods
     assert any(m in methods for m in own), methods  # a site caller is still named
+
+
+# --- the site callers keep the full scan unless a sibling is a genuine twin (#120) ----
+
+def test_a_backbone_the_hmm_misreads_as_a_sibling_is_still_competed_by_the_site_callers(
+    tmp_path,
+) -> None:
+    """Seed 6004 of ``redundant_backbone``: the HMM sets the backbone lineage aside as a
+    sibling and finds nothing, and 3SEQ and MaxChi are what find the tract. Giving them the
+    HMM's decision whole removed the backbone and the donor and detection fell from 10 of 10
+    replicates to 5 of 10."""
+    seqs, _ = rg.simulate_redundant(
+        6004, tract=rg.RED_BACKBONE_TRACT, backbone_copies=rg.RED_COPIES
+    )
+    got = rg.score_lineage_tract(rg.scan(seqs, _LOG), rg.RED_BACKBONE_TRACT, lineage="D")
+    assert got["detected"]
+
+
+def test_a_chance_sibling_decision_does_not_add_a_false_region_to_a_clonal_panel() -> None:
+    """Seed 4002 of the clonal ``near_identical`` regime reported a false region from 3SEQ
+    and MaxChi when they inherited the HMM's sibling decision, which it had taken without
+    reporting any region."""
+    seqs, _ = rg.simulate_near_identical(4002, recombinant=False)
+    n_false, _ = rg.score_clonal(rg.scan(seqs, _LOG))
+    assert n_false == 0

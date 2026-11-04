@@ -49,6 +49,7 @@ from .regions import (
     RegionParams,
     call_regions,
     flag_degraded_backbone,
+    masking_twins,
     withhold_misaligned_backbone,
 )
 from .report import (
@@ -59,14 +60,21 @@ from .report import (
     print_summary,
     write_reports,
 )
+from .siblings import sibling_members
 from .similarity import (
     compute_similarity,
     compute_similarity_informative,
     informative_site_count,
     low_canonical_records,
     unaligned_records,
+    without_references,
 )
 from .typing import LINEAGES_TSV, LineageMap, lineage_of, load_lineage_map
+
+# The callers that score the base-pair scan and so need the query's siblings set aside
+# before they compete references (the HMM does it itself). GENECONV, barcode and the legacy
+# heuristic are not validated for it and keep the full scan.
+_SIBLING_AWARE_SITE_CALLERS = ("3seq", "maxchi", "bootscan")
 
 
 @dataclass
@@ -449,8 +457,37 @@ def run_recomb(
     majors: dict[str, str | None] = {}
     excluded_siblings: list = []
     withheld_regions: list[Region] = []
-    for method in params.methods:
-        res, ana = (result, analysis) if method == "hmm" else (bp_result, analysis_bp)
+    # A near-copy of the query wins every window, so a caller that competes it has no
+    # discriminating sites left (issue #120). The HMM sets such siblings aside, and the site
+    # callers get the scan without the ones that are genuine twins. They do not inherit the
+    # HMM's decision whole: its rule can drop the true backbone when the tract is short, and
+    # the site callers are the safety net there (see ``masking_twins``). The HMM runs first
+    # because its regions and siblings are what that decision rests on; with no HMM selected
+    # it is run once on its own scan, unreported, for the same purpose.
+    site_scan = (bp_result, analysis_bp)
+    site_scan_ready = False
+    twins: list = []
+    for method in sorted(params.methods, key=lambda m: m != "hmm"):
+        if method in _SIBLING_AWARE_SITE_CALLERS and not site_scan_ready:
+            site_scan_ready = True
+            hmm_params = _region_params("hmm", reference_clusters)
+            if "hmm" in params.methods:
+                hmm_regions, dropped = per_method["hmm"], excluded_siblings
+            else:
+                hmm_regions, _, dropped = call_regions(
+                    result, analysis, params.window_size, hmm_params, not_run={}
+                )
+            twins = masking_twins(result, params.window_size, hmm_params, hmm_regions, dropped)
+            aside = sibling_members(twins, reference_clusters)
+            if aside:
+                view = without_references(bp_result, aside)
+                site_scan = (view, analyze(view))
+        if method == "hmm":
+            res, ana = result, analysis
+        elif method in _SIBLING_AWARE_SITE_CALLERS:
+            res, ana = site_scan
+        else:
+            res, ana = bp_result, analysis_bp
         clusters = reference_clusters if method == "hmm" else shared_clusters
         regs, major_m, sibs = call_regions(
             res, ana, params.window_size, _region_params(method, clusters),
@@ -469,6 +506,10 @@ def run_recomb(
         majors[method] = major_m
         if method == "hmm":
             excluded_siblings = sibs
+    # Callers ran in a different order (the HMM first); everything downstream reads them in
+    # the order they were selected.
+    per_method = {m: per_method[m] for m in params.methods}
+    majors = {m: majors[m] for m in params.methods}
 
     # The barcode caller needs typed references and returns no major parent when it
     # cannot run. That is "could not test", which must not be reported as "tested and
@@ -602,6 +643,12 @@ def run_recomb(
             "competition: %s.",
             len(excluded_siblings),
             ", ".join(f"{ev.label} (leads {ev.lead_frac:.0%})" for ev in excluded_siblings),
+        )
+    if twins:
+        logger.info(
+            "Set aside %d near-copy reference(s) of the query for 3SEQ, MaxChi and Bootscan "
+            "as well (no other reference beats them in any window): %s.",
+            len(twins), ", ".join(ev.label for ev in twins),
         )
     n_agree = sum(1 for r in regions if len(r.methods) >= 2)
     logger.info(
@@ -802,6 +849,10 @@ def run_recomb(
     if excluded_siblings:
         provenance["excluded siblings (query's own lineage)"] = ", ".join(
             ev.label for ev in excluded_siblings
+        )
+    if twins:
+        provenance["siblings also set aside for 3SEQ, MaxChi and Bootscan"] = ", ".join(
+            ev.label for ev in twins
         )
     if signal is not None:
         phi_text = "not testable" if signal.phi_p is None else f"p={signal.phi_p:.4g}"

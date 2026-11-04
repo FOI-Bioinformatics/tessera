@@ -54,12 +54,12 @@ def _records(*, with_clone: bool, seed: int = 21) -> dict[str, str]:
     return dict(records)
 
 
-def _run(tmp_path: Path, records) -> tuple[list[dict[str, str]], str]:
+def _run(tmp_path: Path, records, **overrides) -> tuple[list[dict[str, str]], str]:
     msa = write_fasta(tmp_path / "msa.fasta", records)
     out = tmp_path / "out"
     run_recomb(
         RecombParams(msa=msa, output=out, query="query", window_size=500,
-                     window_step=100, plot_format="png"),
+                     window_step=100, plot_format="png", **overrides),
         logging.getLogger("tessera.test"),
     )
     with open(out / "recombination_regions.tsv", encoding="utf-8", newline="") as fo:
@@ -88,3 +88,84 @@ def test_the_panel_without_a_clone_is_unchanged(tmp_path: Path) -> None:
     assert rows
     assert {r["major_parent"] for r in rows} == {"refA"}
     assert {r["minor_parent"] for r in rows} == {"refB"}
+
+
+# --- the site callers compete without the clone as well (issue #120) -----------------
+
+def _spans(rows: list[dict[str, str]]) -> set[tuple[str, str, str, str]]:
+    return {(r["minor_parent"], r["major_parent"], r["query_start"], r["query_end"])
+            for r in rows}
+
+
+def test_the_tract_is_called_by_more_than_one_caller(tmp_path: Path) -> None:
+    """Before: only the HMM set the clone aside, so 3SEQ, MaxChi and Bootscan competed it
+    and found nothing; the one region listed ``hmm`` alone."""
+    rows, _ = _run(tmp_path, _records(with_clone=True))
+    assert rows
+    assert all(len(r["methods"].split(",")) >= 2 for r in rows), [r["methods"] for r in rows]
+
+
+def test_the_tract_survives_a_gate_of_two(tmp_path: Path) -> None:
+    rows, _ = _run(tmp_path, _records(with_clone=True), min_methods=2)
+    assert {r["minor_parent"] for r in rows} == {"refB"}
+    assert {r["major_parent"] for r in rows} == {"refA"}
+
+
+def test_a_site_caller_alone_also_sets_the_clone_aside(tmp_path: Path) -> None:
+    """Sibling detection does not depend on the HMM being among the selected callers."""
+    rows, _ = _run(tmp_path, _records(with_clone=True), methods=("3seq",))
+    assert {r["minor_parent"] for r in rows} == {"refB"}
+    assert {r["major_parent"] for r in rows} == {"refA"}
+
+
+def test_the_order_of_the_selected_callers_does_not_change_the_result(tmp_path: Path) -> None:
+    (tmp_path / "f").mkdir()
+    (tmp_path / "b").mkdir()
+    forward, _ = _run(tmp_path / "f", _records(with_clone=True), methods=("hmm", "3seq"))
+    backward, _ = _run(tmp_path / "b", _records(with_clone=True), methods=("3seq", "hmm"))
+    assert _spans(forward) == _spans(backward)
+
+
+def test_without_sibling_exclusion_the_clone_still_masks_the_event(tmp_path: Path) -> None:
+    """Guard: ``--no-exclude-siblings`` keeps its meaning for every caller."""
+    rows, _ = _run(tmp_path, _records(with_clone=True), exclude_siblings=False)
+    assert rows == []
+
+
+def test_a_clonal_query_with_a_copy_of_itself_reports_nothing(tmp_path: Path) -> None:
+    """Guard: a sibling is set aside only when removing it exposes a mosaic, so a query
+    with no recombinant tract is untouched however many copies of it the panel holds."""
+    records = _records(with_clone=False)
+    clonal = records["refA"]
+    records["query"] = _mutate(clonal, 0.005, random.Random(5))
+    records["sib"] = _mutate(records["query"], 0.0005, random.Random(6))
+    rows, _ = _run(tmp_path, records)
+    assert rows == []
+
+
+def _twins(tmp_path: Path, records, *, regions_found: bool = True):
+    from tessera.recomb.analyze import analyze
+    from tessera.recomb.regions import RegionParams, call_regions, masking_twins
+    from tessera.recomb.similarity import compute_similarity
+
+    msa = write_fasta(tmp_path / "msa.fasta", records)
+    result = compute_similarity(str(msa), "query", window_size=500, window_step=100)
+    params = RegionParams.with_defaults(500, method="hmm")
+    regions, _, dropped = call_regions(result, analyze(result), 500, params)
+    return masking_twins(result, 500, params, regions if regions_found else [], dropped), dropped
+
+
+def test_the_clone_is_a_masking_twin(tmp_path: Path) -> None:
+    twins, dropped = _twins(tmp_path, _records(with_clone=True))
+    assert [e.label for e in dropped] == ["sib"]
+    assert [e.label for e in twins] == ["sib"]
+
+
+def test_a_sibling_decision_the_hmm_did_not_back_with_a_region_is_not_inherited(
+    tmp_path: Path,
+) -> None:
+    """On a clonal query the HMM's guard can fire by chance and drop a reference without
+    reporting anything; the other callers must not change because of it."""
+    twins, dropped = _twins(tmp_path, _records(with_clone=True), regions_found=False)
+    assert dropped  # the HMM did set it aside
+    assert twins == []

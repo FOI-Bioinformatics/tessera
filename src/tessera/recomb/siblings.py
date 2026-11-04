@@ -138,6 +138,40 @@ def _reveals_mosaic(result: WindowSimilarity, states: list[str], params) -> bool
     return False
 
 
+def unbeaten_labels(result: WindowSimilarity, alpha: float) -> set[str]:
+    """References that no other reference significantly beats in any single window.
+
+    Stricter than the HMM's own sibling rule, which tolerates a short beaten run so that a
+    tract shorter than ``min_region`` does not count against a genuine sibling. That
+    tolerance is how a true backbone is mistaken for a sibling when the recombinant tract is
+    short: the backbone is beaten inside the tract, but over too few windows to matter to
+    the rule. Here one window is enough. A real near-copy of the query is never beaten --
+    it carries the tract too -- whereas the backbone is beaten by the donor inside the
+    tract, and the donor by the backbone everywhere else. Computed among every reference in
+    ``result``, not progressively as siblings are peeled.
+    """
+    profiles = _profiles(result, list(result.similarities), alpha)
+    return {label for label, ev in profiles.items() if ev.coverage > 0 and ev.beaten_frac == 0.0}
+
+
+def sibling_members(
+    excluded: list[SiblingEvidence], clusters: list[list[str]] | None
+) -> set[str]:
+    """Every reference the excluded siblings stand for.
+
+    The HMM competes pooled lineages, so the label it drops is a cluster's representative;
+    the cluster's other members are near-duplicates of it and mask the event just as it
+    does. A label in no cluster stands for itself.
+    """
+    members: set[str] = set()
+    for evidence in excluded:
+        members.add(evidence.label)
+        for cluster in clusters or []:
+            if evidence.label in cluster:
+                members.update(cluster)
+    return members
+
+
 def sibling_aware_states(
     result: WindowSimilarity, params
 ) -> tuple[list[str], list[SiblingEvidence], dict[str, SiblingEvidence] | None]:
