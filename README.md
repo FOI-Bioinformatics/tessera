@@ -50,7 +50,7 @@ Tessera needs Python (>= 3.13) and at least one aligner backend, most easily ins
 with conda:
 
 ```
-conda create -n tessera -c conda-forge -c bioconda python">=3.13" mauve "boost-cpp=1.74.0"
+conda create -n tessera -c conda-forge -c bioconda python">=3.13" sibeliaz mafft minimap2
 conda activate tessera
 pip install git+https://github.com/FOI-Bioinformatics/tessera.git@v1.3.0
 ```
@@ -65,8 +65,8 @@ pip install https://github.com/FOI-Bioinformatics/tessera/releases/download/v1.3
 
 From a clone, `pip install .` works as usual.
 
-To install Python, all backends, and Tessera in one step from the provided environment
-file:
+To install Python, the three default aligners (SibeliaZ, MAFFT, minimap2), the panel-recruitment
+tools and Tessera in one step from the provided environment file:
 
 ```
 conda env create -f environment.yml
@@ -86,8 +86,9 @@ It carries mafft, minimap2, SibeliaZ, skani, skDER, Entrez Direct and the `datas
 CLI at fixed versions, and builds natively on x86 and Apple silicon. `--user` matters
 on Linux: the image runs unprivileged, so without it the container cannot write into a
 directory you own (Docker Desktop on macOS hides this). Mount a volume over `/cache` to
-keep recruited panels between runs. Cactus and progressiveMauve are
-left out (see the Dockerfile for why) and remain available through `environment.yml`.
+keep recruited panels between runs. Cactus and progressiveMauve are left out of the image
+and of `environment.yml` (see the Dockerfile and [docs/aligners.md](docs/aligners.md)); install
+either separately if you need it.
 
 See [docs/aligners.md](docs/aligners.md) for the backend options and when to use each.
 

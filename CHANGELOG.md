@@ -6,6 +6,22 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### `environment.yml` and the README conda command now solve on Apple silicon and linux-64
+
+- **The defect.** `environment.yml` listed `mauve`, `cactus` and `boost-cpp=1.74.0`. `mauve`
+  has no osx-arm64 build, `bioconda::mafft` has none either, and on linux-64 `cactus` with the
+  `boost-cpp` pin did not solve against Python 3.13 and `skder`. The README's conda command
+  named `mauve` and failed on Apple silicon for the same reason.
+- **The change.** Both now install Python, SibeliaZ, MAFFT and minimap2; the file also keeps
+  the panel-recruitment tools (Entrez Direct, skani, skDER, the NCBI `datasets` CLI) and
+  Tessera itself. Channel prefixes are dropped so MAFFT resolves from conda-forge. `cactus`,
+  `mauve` and the `boost-cpp` pin are removed; `docs/aligners.md` says why and that they are
+  installed separately.
+- **Checked.** A dry-run solve of the file and of the README command on osx-arm64 and
+  linux-64 (the linux-64 solve run from macOS with a glibc override). The environments were
+  not built or run end to end, and the Python package installs through the `pip` line as
+  before. The container remains the tested route.
+
 ### 3SEQ, MaxChi and Bootscan now compete without a near-copy of the query (#120)
 
 - **The defect.** Sibling exclusion ran only inside the HMM. The three site-based callers

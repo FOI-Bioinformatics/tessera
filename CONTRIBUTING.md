@@ -29,7 +29,7 @@ the one test module you changed. The full suite additionally needs an aligner on
 [docs/aligners.md](docs/aligners.md).
 
 For the aligner-dependent work, `environment.yml` creates a conda environment named
-`tessera` with every backend:
+`tessera` with the default aligners (SibeliaZ, MAFFT, minimap2):
 
 ```
 conda env create -f environment.yml

@@ -22,7 +22,7 @@
 #
 # Excluded on purpose: Cactus (a pipeline in its own right, with Toil and its own
 # containers) and progressiveMauve (no conda build for linux-aarch64). Both remain
-# available through environment.yml on a host that can install them.
+# available on a host that can install them (docs/aligners.md).
 
 FROM mambaorg/micromamba:1.5.8-jammy
 
