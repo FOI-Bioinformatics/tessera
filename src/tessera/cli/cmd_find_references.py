@@ -93,7 +93,7 @@ def find_references(
 
     from ..discover.run import FindRefParams, find_references
 
-    logger = get_logger()
+    logger = get_logger(output)
     with stage_errors(logger):
         _require_file(msa, "MSA file")
         _require_output_directory(output)
