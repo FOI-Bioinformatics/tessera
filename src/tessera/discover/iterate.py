@@ -1020,8 +1020,14 @@ def _copy_into(genomes: list[Path], collection: Path, logger: logging.Logger) ->
 
 
 def _blast_or_none(
-    seq: str, params: FillParams, logger: logging.Logger, *, entrez_query: str | None = None
+    seq: str, params: FillParams, logger: logging.Logger, *, entrez_query: str | None = None,
+    failures: list[BlastError] | None = None,
 ) -> list:
+    """One seed search; ``[]`` when it fails, so the batch can go on.
+
+    A failed search and one that found nothing both give ``[]``. The caller that must
+    tell them apart passes ``failures``, which receives each ``BlastError`` (issue #118).
+    """
     try:
         return blast_subsequence(
             seq, max_hits=params.seed_hits, logger=logger, email=params.email,
@@ -1029,6 +1035,8 @@ def _blast_or_none(
         )
     except BlastError as exc:
         logger.warning("  BLAST failed for a seed search, skipping: %s", exc)
+        if failures is not None:
+            failures.append(exc)
         return []
 
 
@@ -1052,10 +1060,17 @@ def _seed_negative_lineage(
     the regional parent -- surfaces. Returns ``[]`` if no lineage token can be
     identified (the caller then falls back to taxonomy diversity).
     """
-    hits = _blast_or_none(query_seq[:1500], params, logger)
+    probe_failed: list[BlastError] = []
+    hits = _blast_or_none(query_seq[:1500], params, logger, failures=probe_failed)
     token = _dominant_lineage_token(hits)
     if token is None:
-        logger.info("Could not identify the query's lineage from BLAST titles; skipping.")
+        if probe_failed:
+            logger.warning(
+                "The negative-lineage search could not run: its lineage probe failed (%s); "
+                "skipping.", probe_failed[0],
+            )
+        else:
+            logger.info("Could not identify the query's lineage from BLAST titles; skipping.")
         return []
     organism = _organism_from_title(hits[0].title) if hits else ""
     entrez_query = (f'"{organism}"[Organism] NOT "{token}"') if organism else f'NOT "{token}"'
@@ -1064,14 +1079,25 @@ def _seed_negative_lineage(
     )
     window = max(params.seed_window, MIN_SUBSEQ)
     selected: list[str] = []
+    failed: list[BlastError] = []
+    n_searched = 0
     for i in range(0, len(query_seq), window):
         chunk = query_seq[i : i + window]
         if len(chunk) < MIN_SUBSEQ:
             continue
-        for hit in _blast_or_none(chunk, params, logger, entrez_query=entrez_query):
+        n_searched += 1
+        for hit in _blast_or_none(
+            chunk, params, logger, entrez_query=entrez_query, failures=failed
+        ):
             if _keep(hit, exclude, params) and not _is_sibling_hit(hit) \
                     and hit.accession not in selected:
                 selected.append(hit.accession)
+    if failed:
+        logger.warning(
+            "%d of %d negative-lineage windows could not be searched (%s); the parents "
+            "recruited are those from the other windows.",
+            len(failed), n_searched, failed[0],
+        )
     return selected[:SEED_TOTAL_CAP]
 
 
@@ -1093,8 +1119,15 @@ def _seed_whole(
         "No starting references: seeding from a whole-query NCBI search (top %d hit(s))...",
         params.seed_hits,
     )
-    hits = _blast_or_none(query_seq, params, logger)
+    failed: list[BlastError] = []
+    hits = _blast_or_none(query_seq, params, logger, failures=failed)
     if not hits:
+        if failed:
+            raise BlastError(
+                f"Could not seed the collection: the whole-query BLAST failed ({failed[0]}). "
+                "Searches that completed are cached, so re-run when NCBI is reachable, or "
+                "pass --collection or --seed-source."
+            ) from failed[0]
         raise UserInputError(
             "Could not seed the collection (whole-query BLAST returned nothing)."
         )
@@ -1138,11 +1171,24 @@ def _seed_windowed(
         len(chunks), label,
     )
     per_window_hits: list[list] = []  # each window's hits after the self/--exclude filter
+    failed: list[BlastError] = []  # searches that could not run, as opposed to finding nothing
     for chunk in chunks:
         if len(chunk) < MIN_SUBSEQ:
             continue
-        hits = _blast_or_none(chunk, params, logger)
+        hits = _blast_or_none(chunk, params, logger, failures=failed)
         per_window_hits.append([h for h in hits if _keep(h, exclude, params)])
+    n_searched = len(per_window_hits)
+    if failed and len(failed) == n_searched:
+        raise BlastError(
+            f"Could not seed from NCBI: every seed search failed (first error: {failed[0]}). "
+            "Searches that completed are cached, so re-run when NCBI is reachable, or pass "
+            "--collection or --seed-source."
+        ) from failed[0]
+    if failed:
+        logger.warning(
+            "%d of %d seed windows could not be searched (%s); what follows reflects the "
+            "other %d.", len(failed), n_searched, failed[0], n_searched - len(failed),
+        )
 
     selected: list[str] = []
     dropped_siblings: set[str] = set()
@@ -1162,7 +1208,14 @@ def _seed_windowed(
     # Parents mode left nothing (only siblings anywhere, or a clonal query): fall back
     # to the per-window best hits so the collection is never empty.
     if not selected:
-        if drop_siblings and dropped_siblings:
+        if drop_siblings and dropped_siblings and failed:
+            logger.info(
+                "Every window that could be searched (%d of %d) returned only siblings of "
+                "the query; %d could not be searched, so nothing is known about those "
+                "regions. Seeding the best hits instead.",
+                n_searched - len(failed), n_searched, len(failed),
+            )
+        elif drop_siblings and dropped_siblings:
             logger.info(
                 "Every window's hits were siblings of the query; seeding the best hits "
                 "instead (no distinct parental lineage found in NCBI)."
@@ -1181,6 +1234,12 @@ def _seed_windowed(
     # would switch the seed source under a false explanation. Same rule as _seed_whole.
     kept_hits = [h for kept in per_window_hits for h in kept]
     saturated = bool(kept_hits) and all(_is_sibling_hit(h) for h in kept_hits)
+    if saturated and failed:
+        logger.warning(
+            "The conclusion that the query's lineage saturates NCBI rests on the %d window(s) "
+            "that could be searched; the %d that could not were not checked for a parent.",
+            n_searched - len(failed), len(failed),
+        )
     return selected[:SEED_TOTAL_CAP], saturated
 
 
