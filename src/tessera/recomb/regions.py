@@ -31,7 +31,7 @@ from ..core.errors import UserInputError
 from .analyze import AnalysisResult, rank_datasets
 from .clusters import _window_bounds, clustered_view, lineage_clusters
 from .hmm import DEFAULT_JUMP_RATE, Segment, segment_query
-from .siblings import SiblingEvidence, sibling_aware_states
+from .siblings import SiblingEvidence, sibling_aware_states, unbeaten_labels
 from .similarity import GAP, WindowSimilarity, discordant_counts, region_identity
 from .stats import benjamini_hochberg, sign_test_pvalue
 from .threeseq import triplet_steps
@@ -371,7 +371,9 @@ def call_regions(
     """Call recombinant regions.
 
     Returns ``(regions, major_parent, excluded_siblings)`` -- the third element lists
-    the query's whole-genome siblings set aside before segmenting (HMM caller only).
+    the query's whole-genome siblings set aside before segmenting (HMM caller only; the run
+    then gives the site callers the scan without the ones that are genuine twins of the
+    query, see :func:`masking_twins`).
 
     A caller that ran but could not test (the HMM left with one state) records why in
     ``not_run`` under its own name, when a mapping is given; its result is unchanged.
@@ -408,6 +410,53 @@ HMM_ONE_STATE = (
 )
 
 
+def _pooled_view(
+    result: WindowSimilarity, window_size: int, params: RegionParams
+) -> tuple[WindowSimilarity, dict[str, int]]:
+    """The scan the HMM competes: near-duplicate references pooled into lineage clusters
+    (a no-op for a curated panel, with few references or all singletons).
+
+    Returns the view and each representative's member count. Shared by the HMM and by
+    :func:`find_siblings`, so both decide on the same scan.
+    """
+    work = result
+    cluster_size: dict[str, int] = {}
+    pooled = params.reference_clusters
+    if pooled is None:
+        pooled = lineage_clusters(result, window_size, params)
+    if pooled:
+        work, cluster_size = clustered_view(result, _with_singletons(result, pooled))
+    return work, cluster_size
+
+
+def masking_twins(
+    result: WindowSimilarity,
+    window_size: int,
+    params: RegionParams,
+    regions: list[Region],
+    excluded: list[SiblingEvidence],
+) -> list[SiblingEvidence]:
+    """Which of the HMM's excluded siblings are safe to set aside for the other callers.
+
+    The HMM drops a sibling to expose a mosaic, and its rule can drop the wrong reference:
+    when the tract is short the true backbone looks like a sibling, and the donor can be
+    peeled after it. The HMM survives that, and the site callers are the safety net where it
+    does not, so they must not inherit its decision whole. A sibling is a *masking twin* only
+    when both hold:
+
+    - the HMM reported at least one region, so the decision is corroborated (on a clonal
+      query it can fire by chance, and then changes what the other callers see);
+    - no other reference significantly beats it in any window
+      (:func:`tessera.recomb.siblings.unbeaten_labels`), which a backbone beaten inside
+      the tract, or a donor beaten everywhere else, is not.
+    """
+    if not regions or not excluded:
+        return []
+    work, _ = _pooled_view(result, window_size, params)
+    safe = unbeaten_labels(work, params.sibling_alpha)
+    return [ev for ev in excluded if ev.label in safe]
+
+
 def _call_regions_hmm(
     result: WindowSimilarity, window_size: int, params: RegionParams,
     not_run: dict[str, str] | None = None,
@@ -425,15 +474,7 @@ def _call_regions_hmm(
         only = next(iter(result.similarities), None)
         return [], only, []
 
-    # Front-end: pool near-duplicate references into lineage clusters and compete the
-    # pooled lineages. A no-op for a curated panel (few refs, or all singletons).
-    work = result
-    cluster_size: dict[str, int] = {}
-    pooled = params.reference_clusters
-    if pooled is None:
-        pooled = lineage_clusters(result, window_size, params)
-    if pooled:
-        work, cluster_size = clustered_view(result, _with_singletons(result, pooled))
+    work, cluster_size = _pooled_view(result, window_size, params)
     if len(work.similarities) < 2 and not_run is not None:
         # One state cannot switch, so the decode below cannot call a region whatever
         # the data. The run continues unchanged; the caller is reported as not run.

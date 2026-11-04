@@ -337,7 +337,10 @@ parents depends on the taxon: it works when they are genotype/lineage representa
 less so for fine genotype-specific recombinants. Disable with `--no-auto-diversify`.
 This complements the caller-side defence: `tessera recomb` excludes whole-genome
 siblings from the competition (`--exclude-siblings`, on by default), so a sibling that
-still slips into the panel cannot win every window and mask the event.
+still slips into the panel cannot win every window and mask the event. The HMM decides
+which are siblings; 3SEQ, MaxChi and Bootscan compete without those that are genuine
+near-copies of the query (see
+[Siblings of the query](detection-methods.md#siblings-of-the-query)).
 
 ## Curating a panel for detection
 

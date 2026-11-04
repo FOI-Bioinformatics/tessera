@@ -114,7 +114,8 @@ def recomb(
     exclude_siblings: bool = typer.Option(
         True, "--exclude-siblings/--no-exclude-siblings",
         help="Set aside the query's whole-genome siblings (its own lineage) before "
-        "calling, so a sibling cannot win every window and mask recombination (hmm).",
+        "calling, so a sibling cannot win every window and mask recombination (hmm; 3seq, "
+        "maxchi and bootscan drop the genuine near-copies among them).",
     ),
     cluster_lineages: bool = typer.Option(
         True, "--cluster-lineages/--no-cluster-lineages",

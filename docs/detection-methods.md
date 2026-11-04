@@ -59,6 +59,29 @@ caller, including the legacy heuristic). The same `--method` is available on `te
 detect` and `tessera
 fill-references`. The individual callers are described below.
 
+### Siblings of the query
+
+A reference that is a near-copy of the query carries the same mosaic, so it wins every
+window, becomes the major parent, and leaves no discriminating sites for any caller to
+test. `--exclude-siblings` (on by default) sets such references aside. The HMM decides: a
+whole-genome sibling is removed only when removing it exposes a significant mosaic among
+the remaining references, so a query with no recombinant tract is untouched however many
+near-copies of it the panel holds.
+
+3SEQ, MaxChi and Bootscan do not inherit that decision whole, because the HMM's rule can
+drop the wrong reference. It tolerates a short run of windows in which another reference
+beats the candidate, so when the recombinant tract is short the true backbone looks like a
+sibling, and the donor can be peeled after it. The HMM survives that; the site callers are
+the safety net where it does not. A sibling is set aside for them only when both hold: the
+HMM reported at least one region (on a clonal query its guard can fire by chance), and no
+other reference significantly beats it in any single window. A real near-copy passes,
+because it carries the tract too; the backbone is beaten inside the tract and the donor
+everywhere else, so neither does. The callers then compete without the near-copy and the
+other members of its lineage cluster, and can corroborate the HMM. With no HMM selected it
+is run once, unreported, to take the same decision, so the choice does not depend on which
+callers are selected or in what order. GENECONV, barcode and the legacy heuristic keep the
+full scan. The log names the references set aside, and `run_provenance.json` records them.
+
 ### False regions at the default setting
 
 In 10-replicate runs of `validation/run_specificity.py` on simulated clonal data -- four

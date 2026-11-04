@@ -29,7 +29,7 @@ multi-contig query the mapping follows MSA order.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 import pandas as pd
@@ -526,6 +526,33 @@ def discordant_counts(
     favor_minor = int(np.count_nonzero(canon & q_minor & ~q_major))
     favor_major = int(np.count_nonzero(canon & q_major & ~q_minor))
     return favor_minor, favor_major
+
+
+def without_references(result: WindowSimilarity, labels: set[str]) -> WindowSimilarity:
+    """``result`` with the references in ``labels`` set aside.
+
+    Removed from every per-label mapping (``similarities``, ``numerators``,
+    ``denominators``), with the per-window best reference recomputed over the survivors.
+    ``rows`` keeps every genome, as :func:`tessera.recomb.clusters.clustered_view` does:
+    the discordant-site tests read it by label and only ever for references still in the
+    competition. Labels that are not in the scan are ignored, and ``result`` is not
+    modified.
+
+    Used to give the site callers the scan the HMM already competes: with the query's
+    whole-genome siblings removed, a near-copy of the query no longer wins every window
+    (issue #120).
+    """
+    keep = [label for label in result.similarities if label not in labels]
+    similarities = {label: result.similarities[label] for label in keep}
+    best_sim, best_label = _best_per_window(similarities, len(result.positions))
+    return replace(
+        result,
+        similarities=similarities,
+        numerators={k: v for k, v in result.numerators.items() if k not in labels},
+        denominators={k: v for k, v in result.denominators.items() if k not in labels},
+        best_sim=best_sim,
+        best_label=best_label,
+    )
 
 
 def _best_per_window(
