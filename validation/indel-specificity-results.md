@@ -48,8 +48,8 @@ sequences) gave the same pattern with lower counts: no region at 0 or 0.1 %, 2 o
 - **`--min-methods 2` removes short regions** (they were single-caller) but not the
   long multi-caller ones. Its cost on true detections is documented elsewhere and is not
   re-measured here.
-- Local gap density is higher around the short regions than the genome average in about
-  two thirds of them (4-7 gap columns in a 65-75 column neighbourhood, against 1-2
+- Local gap density is higher around the short regions than the genome average in just over
+  half of them (4-7 gap columns in a 65-75 column neighbourhood, against 1-2
   expected), which is consistent with clustered indels contributing. It is not the whole
   explanation: the rest sit in ordinary gap density.
 
