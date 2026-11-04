@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/figures/tessera-banner-on-dark.png">
+    <img src="docs/figures/tessera-banner.png" alt="Tessera: genomic recombination and reassortment detection" width="800">
+  </picture>
+</p>
+
 # Tessera
 
 Tessera identifies recombination events in a query sequence, set of contigs, or
