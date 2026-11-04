@@ -597,6 +597,7 @@ consensus beats the current donor's by at least `--reattribute-margin` (default 
 | `similarity_top{N}.{fmt}` | Static plot of the nearest `--top-n` datasets, called regions shaded. `--plot-format` chooses the format: `pdf` (default), `png` or `svg` |
 | `informative_sites_top{N}.{fmt}` | Only under informative-site windowing: the same plot for identity at informative sites |
 | `similarity_pair.{fmt}` | Static plot of the major parent against the donor of the longest called region, regions shaded (the two leading window winners when no donor was called) |
+| `tessera.log` | The run log at debug level (the console shows info), appended to if the directory already holds one |
 | `run_provenance.json` | Machine-readable record of the run: Tessera version, parameters, caller description, and -- when the alignment came from `tessera msa` -- the aligner, its version and its arguments |
 
 ### Reading `pvalue`, `support` and the lengths

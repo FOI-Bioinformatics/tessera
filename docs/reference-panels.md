@@ -214,7 +214,7 @@ Besides the report and its TSVs (see
 | `final.msa.fasta` | One more alignment, built when the last round downloaded references (no further search), so the reported panel and the alignment describe the same set. |
 | `panel.msa.fasta` | The alignment the report describes: a copy of the last build. This is the file `build-panel` leaves for `tessera recomb`. |
 | `<alignment>.provenance.json` | Beside each alignment, named from it without `.fasta` (`panel.msa.provenance.json`): the aligner, its version and its arguments, as for `tessera msa`. |
-| `tessera.log` | The run log at debug level (the console shows info). Written by `detect`, `build-panel`, `reassort` and `type-lineages`; `fill-references`, `find-references`, `msa` and `recomb` write none. |
+| `tessera.log` | The run log at debug level (the console shows info). Written by every command that takes an output directory (`detect`, `build-panel`, `fill-references`, `find-references`, `curate-panel`, `type-lineages`, `reassort`, `recomb`); `msa`, whose output is a single file, writes none. The file is appended to, so `build-panel` followed by `recomb` into the same directory leaves one log. |
 
 ## Seed modes: where the starting references come from
 

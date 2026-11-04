@@ -39,6 +39,21 @@ All notable changes to Tessera are recorded here. The format follows
   sibling differs from the query inside the tract, so it is not a twin and stays in the
   competition.
 
+### Every command with an output directory keeps a run log (#122)
+
+- **The gap.** `detect`, `build-panel`, `reassort` and `type-lineages` wrote a debug-level
+  `tessera.log` into their output directory; `fill-references`, `find-references`,
+  `curate-panel` and `recomb` did not, although `detect` runs the same fill loop as
+  `fill-references` and the log is what shows a retried or skipped NCBI request.
+- **The change.** Those four commands now pass their output directory to the logger, so all
+  eight commands that take one write `tessera.log` there (`msa`, whose output is a single
+  file, still writes none). The file is appended to, so `build-panel` followed by `recomb`
+  into the same directory, as the documentation suggests, leaves one combined log.
+  CONTRIBUTING asks for it when reporting a problem.
+- **Side effect.** As for the other four, the output directory is created before the
+  command validates its other inputs, so an invocation rejected for a bad input leaves
+  the directory behind holding only `tessera.log`, which records the rejection.
+
 ### Seeding no longer reports a failed BLAST search as "found nothing" (#118)
 
 - **The defect.** During a DNS outage two of five seed-window searches failed, and seeding

@@ -172,7 +172,7 @@ def recomb(
     from ..recomb.regions import parse_methods
     from ..recomb.run import RecombParams, run_recomb
 
-    logger = get_logger()
+    logger = get_logger(output)
     with stage_errors(logger):
         _require_file(msa, "MSA file")
         _require_lineage_map(lineage_map)
