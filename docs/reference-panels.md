@@ -175,7 +175,11 @@ helps `efetch` and `datasets`, which is where most of the request volume is.
 
 Transient network failures are retried with exponential backoff. A failure that persists
 is still reported: a search that could not run and a search that found nothing are
-different outcomes, and Tessera does not report the first as the second.
+different outcomes, and Tessera does not report the first as the second. Seeding counts
+the windows it could not search separately from those that returned nothing: if some
+failed it says how many, and that a conclusion such as "only siblings were found" rests on
+the others; if every search failed it stops with that error, and the searches that did
+complete are cached, so a re-run repeats only the failed ones.
 
 ### Re-running recruitment
 

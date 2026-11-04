@@ -6,6 +6,27 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Seeding no longer reports a failed BLAST search as "found nothing" (#118)
+
+- **The defect.** During a DNS outage two of five seed-window searches failed, and seeding
+  then logged "Every window's hits were siblings of the query ... (no distinct parental
+  lineage found in NCBI)", a conclusion it had not established. A failed search and one that
+  found nothing both came back as an empty list. An earlier fix already kept an
+  all-failed run from counting as saturation; the partial-failure case, and two places with
+  the same conflation, remained.
+- **The fix.** Seeding now records which searches failed. With some windows failed it warns
+  how many (`2 of 5 seed windows could not be searched`), and says the "only siblings"
+  conclusion rests on the others instead of claiming no parental lineage exists; the switch
+  to the negative-lineage and NCBI Virus diversity paths is kept, since without it a
+  sibling-only seed leaves no gap for a later round to recruit a parent. With every window
+  failed it stops with "every seed search failed" and the first error, instead of the
+  generic "Could not seed any reference". The whole-query seeder distinguishes a failed
+  search from an empty result, and the negative-lineage step distinguishes a failed lineage
+  probe from titles that name no lineage, and counts failed windows.
+- **Not run.** The hybrids gate: seeding is a network-only path that the harness does not
+  use. The partial-failure path is covered by unit tests with a stubbed `blast_subsequence`;
+  it cannot be reproduced reliably against the live service.
+
 ### Documentation audit
 
 - **Release metadata.** `CITATION.cff` still said 1.2.0 after the 1.3.0 release, and the
