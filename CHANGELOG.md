@@ -6,6 +6,15 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Two small `msa` input checks
+
+- A `--collection` that is a file was reported as "--collection directory is not a
+  directory". It now reads "--collection is not a directory: <path>" (the same label is
+  used by `find-references`).
+- `msa` builds an alignment from a collection of one reference, but `recomb` then refuses
+  it (two donors are needed). `msa` now warns at build time, so the problem is seen
+  before the second step. The alignment is still written, since it is valid.
+
 ### An excluded sibling could be reported as the major parent (issue #112)
 
 - **The defect.** The HMM sets a query's whole-genome siblings aside before it segments

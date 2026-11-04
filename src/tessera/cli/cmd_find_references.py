@@ -100,7 +100,7 @@ def find_references(
         # Silently ignored when absent, which made every hit read as "new" and, with
         # --download, undid the only protection the two paths being distinct gives.
         if collection is not None:
-            _require_directory(collection, "--collection directory")
+            _require_directory(collection, "--collection")
         if download is not None:
             _require_output_directory(download)
         _require_scan_windows(window_size, window_step)

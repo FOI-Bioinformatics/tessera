@@ -64,7 +64,7 @@ def msa(
                 "--reference and --query-as-backbone both choose the backbone; give one."
             )
         _require_output_file(output, "--output")
-        _require_directory(collection, "--collection directory")
+        _require_directory(collection, "--collection")
         _require_file(query, "--query file")
         if output.exists():
             logger.warning("Overwriting the existing alignment %s.", output)

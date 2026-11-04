@@ -30,6 +30,10 @@ from ..core.io import select_reference, stage_genomes
 DEFAULT_ALIGNER = "sibeliaz"
 
 
+# Recombination is a switch between donors; below this `recomb` refuses the alignment.
+MIN_REFERENCES_FOR_DETECTION = 2
+
+
 @dataclass
 class MsaParams:
     query: Path
@@ -69,6 +73,14 @@ def build_msa(params: MsaParams, logger: logging.Logger) -> Path:
             genomes, query_staged, params.query_as_backbone, params.reference
         )
         logger.info("Reference (backbone): %s", reference.stem)
+        n_references = len(genomes) - 1
+        if n_references < MIN_REFERENCES_FOR_DETECTION:
+            logger.warning(
+                "The collection holds %d reference(s) besides the query; the alignment is "
+                "built, but `tessera recomb` needs at least %d to have two donors to "
+                "switch between and will refuse it.",
+                n_references, MIN_REFERENCES_FOR_DETECTION,
+            )
 
         align_params = AlignParams(
             threads=params.threads,
