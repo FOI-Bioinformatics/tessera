@@ -7,14 +7,16 @@ with `--aligner` and tune with repeatable `--aligner-arg key=value`.
 
 | Backend | Best for | Notes |
 |---|---|---|
-| `sibeliaz` (default) | Moderately divergent genomes, including rearrangements | Installs cleanly via conda; `kmer`, `abundance`, `bubble`, `filtermemory` |
-| `mafft` | Similar, largely collinear genomes | True base-level alignment, the canonical input for the window method; adds a fragmented query with `--addfragments` and reorients reverse-strand genomes or contigs (`--adjustdirection`). `maxiterate`, `retree`, `op`, `ep`, `sixmerpair` |
+| `sibeliaz` (default for `msa`) | Moderately divergent genomes, including rearrangements | Installs cleanly via conda; `kmer`, `abundance`, `bubble`, `filtermemory` |
+| `mafft` (default for `detect`, `build-panel`, `fill-references`, `reassort --scan-segments`) | Similar, largely collinear genomes | True base-level alignment, the canonical input for the window method; adds a fragmented query with `--addfragments` and reorients reverse-strand genomes or contigs (`--adjustdirection`). `maxiterate`, `retree`, `op`, `ep`, `sixmerpair` |
 | `minimap2` | Speed and assembly/contig queries | Fast assembly-to-reference projection; `preset` (default `asm20`, e.g. `asm10` for closer genomes) |
 | `progressivemauve` | Genomes with large rearrangements/inversions | Tolerant but slow, heavy, and not available as a conda build on all platforms; `seed_weight`, `single` |
 | `cactus` | Same-species pangenomes | Resource heavy (Toil/containers); two genome labels that differ only in `.` and `_` are refused, as Cactus sample names cannot contain `.` |
 
-`sibeliaz` is the default: it installs cleanly across platforms and, on the example
-data, reproduces `progressivemauve`'s recombination coordinates. For very similar,
+The default depends on the command. `tessera msa` defaults to `sibeliaz`: it installs
+cleanly across platforms and, on the example data, reproduces `progressivemauve`'s
+recombination coordinates. The commands that recruit a panel and scan it (`detect`,
+`build-panel`, `fill-references`, and `reassort --scan-segments`) default to `mafft`. For very similar,
 collinear genomes `mafft` gives the most faithful base-level signal and `minimap2`
 the fastest run (and the best fit for a fragmented query); `progressivemauve` remains
 an option for genomes with large rearrangements. Every backend reports the alignment in

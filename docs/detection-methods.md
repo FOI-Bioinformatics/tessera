@@ -1,7 +1,8 @@
 # Detection methods and output
 
 Tessera computes, in sliding windows across the MSA, the similarity of the query to
-each reference (1 = identical, 0 = no similarity). The reference winning the most
+each reference (1 = identical, 0 = no similarity; `--metric pdist`, the proportion of matching
+comparable columns, is the only metric). The reference winning the most
 windows is the **major parent** (the backbone donor). On top of that windowed
 similarity it runs one or more parent-attributed callers, plus a parent-free
 diagnostic that runs for every method.
@@ -14,8 +15,10 @@ better on divergent parents (the `divergent` example); MaxChi and Bootscan add t
 votes, though not independent ones (see the MaxChi section). By default Tessera runs
 **four** of them (`--method hmm,3seq,maxchi,bootscan`) and merges their regions into one
 consensus, sharing the single similarity scan so the extra callers are cheap. On the
-synthetic harness this leaves the verdict set unchanged but corroborates the donor in 17
-of 18 cases (vs 12 with hmm,3seq alone), raising confidence without over-calling.
+synthetic harness as it stood when the ensemble was introduced (18 cases) this left the
+verdict set unchanged but corroborated the donor in 17 of 18 cases (vs 12 with hmm,3seq
+alone), raising confidence without over-calling; the harness has since grown to 41 cases
+and that comparison has not been repeated on it.
 
 The merge is transparent -- no combined score is invented. Two regions are the same
 event when they overlap in query coordinates and name the same donor -- the same
@@ -55,6 +58,30 @@ single-method report), `--method hmm,3seq` (the two fastest), or `--method all` 
 caller, including the legacy heuristic). The same `--method` is available on `tessera
 detect` and `tessera
 fill-references`. The individual callers are described below.
+
+### False regions at the default setting
+
+In 10-replicate runs of `validation/run_specificity.py` on simulated clonal data -- four
+clades about 16 % apart, four tips per clade about 2.4 % apart and a non-recombinant
+query, so every reported region is false -- the default `--min-methods 1` reported at
+least one false region in 16 of 40 runs (40 %, 95 % CI 26-55 %); 16 of the 19 regions came
+from the HMM (measured 2026-11-02 on commit `4ee5020`, and again on 2026-11-04 with the
+same result). Requiring two agreeing callers (`--min-methods 2`) lowered this to 1 of 40
+(2 %, CI 0-13 %) and detected 9 of 10 simulated 3 kb tracts, against 10 of 10 at the
+default. On panels of near-identical references (about 0.2 % apart; 20 replicates of
+`validation/run_regimes.py`) no run reported a false region at either gate: 0 of 20
+(CI 0-16 %) each, measured 2026-11-02 on the same commit.
+
+The default stays at 1 because an earlier, reverted attempt to default to a gate of two
+(PR #47) lost three true detections on the curated hybrid benchmark (`rsv_a`, `mpox`,
+`masksib_rsv`), where at very low divergence only the HMM has power. A rerun of
+`run_hybrids.py` at the present gate and on the present callers (2026-10-29, commit
+`4a49bfd`) keeps all three of those detections and the whole 24-pathogen headline: 23 PASS,
+0 FAIL, 1 SKIP. For a panel holding several near-equidistant relatives of the query,
+consider `--min-methods 2`, and treat a region found by one caller as a candidate to
+confirm. These are simulation results with modest replicate counts; see
+`validation/README.md` and
+`docs/superpowers/specs/2026-10-01-min-methods-default-decision.md`.
 
 ## HMM caller (`--method hmm`)
 
@@ -350,7 +377,7 @@ significant when columns near each other on the genome are more compatible than 
 random reordering -- the signature of shared local genealogy under recombination --
 with a one-sided permutation p-value. **Rmin** (Hudson & Kaplan 1985) is the minimum
 number of recombination events the incompatibilities force, with the intervals as
-breakpoint candidates. Both are dependency-free.
+breakpoint candidates. Both are plain numpy.
 
 **The two are not interchangeable, and only one of them is a test.** Hudson-Kaplan
 bounds recombination *under the infinite-sites model*: it counts four-gamete
@@ -521,11 +548,21 @@ donor-absent coverage row, or when the panel holds no other lineage to compare a
 not by a threshold on identity or branch length: neither separated the cases without also
 caveating correct attributions.
 
+## Donor re-attribution (opt-in)
+
+At low divergence a near-identical genome of an adjacent clade can win a region's donor by
+chance. With `--reattribute-donors` (off by default; `recomb`, `detect` and
+`fill-references`) a *called* region's donor is refined, after detection and the backbone
+are fixed, to the clade whose consensus best matches the query over that region. It needs
+a typed panel (lineage labels) and does nothing on an untyped one, and it never changes
+which regions are called or the backbone. A donor is replaced only when the clade's
+consensus beats the current donor's by at least `--reattribute-margin` (default 0.03).
+
 ## Output files
 
 | File | Contents |
 |---|---|
-| `report.html` | Self-contained report: run provenance, the region table, the per-dataset stats, and an embedded interactive plot |
+| `report.html` | Self-contained report: run provenance, the region table, the per-dataset stats, and an embedded interactive plot. `--organism` sets the species name in its header (default: the taxon) |
 | `recombination_regions.tsv` | Called regions: minor/major parent, start/end in **both MSA columns and query bases**, `length_bp` / `length_msa`, `margin` (the donor's mean similarity minus the major parent's over the region), `breakpoint_lo` / `breakpoint_hi` (the breakpoint's uncertainty interval in query bases, set by the HMM; `NA` on a row no HMM segment contributed to), `posterior` (the HMM's mean donor posterior over its own segment, not the whole row's span; `NA` on a row no HMM segment contributed to, since no other caller measures one), `support`, `pvalue` / `qvalue` with the `test` and `statistic` that produced them, `n_windows` (base-pair scan windows overlapping the region, the same unit for every caller), mean similarities (identity over the region's own span, for a merged row the whole merged span), the calling `methods`, `donor_undercovered` (the donor is itself a poor match, so it may be standing in for an absent true donor), `donor_absent` (`yes` on a row that comes from a coverage gap rather than a caller: the query is far from every reference there, and `minor_parent` then names the closest reference as a stand-in, not a called donor), `major_degraded` (the backbone is gappier over this region than across the rest of its own genome, so the comparison behind the region was not between comparably aligned sequences), `parent_free_support` (`not run` when the PHI test gave no result), and `subclade_identifiable` / `tied_lineages` (whether the query significantly prefers the named donor's lineage over every *other* lineage present over this region; `no`, with the tied lineages listed, when it does not -- the panel cannot resolve which sub-clade the tract came from and the named donor may not be the true one; `NA` on an unlabelled panel, a donor-absent row, or when no other lineage is present to test against) |
 | `recombination_methods.tsv` | Ensemble breakdown (only when several methods run): one row per row of `recombination_regions.tsv`, in the same order (a donor-absent region reads `no` for every caller that ran), with `yes` / `no` per method (`not run` for a selected caller that could not run) and the parent-free flag; the parent-free flag is `not run` likewise |
 | `recombination_profile.tsv` | Parent-free signal: header with the PHI p-value (`NA` when not testable) and Rmin, then per-informative-site local incompatibility (the PHI profile) |
@@ -534,7 +571,7 @@ caveating correct attributions.
 | `similarity_stats.tsv` | Per-dataset similarity statistics (median, windows above identity thresholds) |
 | `window_winners.tsv` | Per-dataset count of windows won (ties included) |
 | `coverage_gaps.tsv` | Stretches where even the closest reference is below the best-similarity threshold, with a `kind`: `divergent` (the query is far from every reference -- a possible missing reference), `low_information` (too few comparable bases to judge -- shown in the report as its own note, not as a possible missing reference), `local_dip` (the closest reference matches the stretch less well than it does elsewhere but still closely in absolute terms -- usually a locally poor alignment; its own note in the report, never a possible missing reference, never bridged into a donor-absent region and never searched for by `find-references` or the fill loop), or `breakpoint` (windows straddling a called breakpoint: each under-threshold window is matched, to the threshold, by a single switch between the region's two parents; not a missing reference, and it does not caveat the region). Two gaps no more than `--merge-gap` alignment columns apart (default: one window size) are reported as one |
-| `similarity_top{N}.{fmt}` | Static plot of the nearest `--top-n` datasets, called regions shaded |
+| `similarity_top{N}.{fmt}` | Static plot of the nearest `--top-n` datasets, called regions shaded. `--plot-format` chooses the format: `pdf` (default), `png` or `svg` |
 | `informative_sites_top{N}.{fmt}` | Only under informative-site windowing: the same plot for identity at informative sites |
 | `similarity_pair.{fmt}` | Static plot of the major parent against the donor of the longest called region, regions shaded (the two leading window winners when no donor was called) |
 | `run_provenance.json` | Machine-readable record of the run: Tessera version, parameters, caller description, and -- when the alignment came from `tessera msa` -- the aligner, its version and its arguments |
@@ -598,7 +635,7 @@ sites and recovers the shaded region (q ~1e-12).*
 
 ## References
 
-The callers and statistics reimplemented here (dependency-free numpy) follow these
+The callers and statistics reimplemented here (numpy only) follow these
 sources:
 
 - **HMM segmentation + per-clade consensus (jpHMM-style).** Schultz A-K, Zhang M,

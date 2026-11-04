@@ -106,7 +106,8 @@ MSA labels the query by name, not accession), so a near-identical, near-full-len
 hit is auto-skipped; use `--keep-self-hits` to keep it, or `--exclude <accession>` to
 drop specific records.
 
-A gap longer than `--subtile` (default 400 bp) is searched in overlapping
+Each gap search keeps the best `--max-hits` BLAST hits (default 5; each seed search keeps
+`--seed-hits`, default 10). A gap longer than `--subtile` (default 400 bp) is searched in overlapping
 sub-intervals, not as one subsequence. A short divergent tract inside a longer gap is
 otherwise diluted by the gap's high-matching flanks: one whole-gap BLAST returns the
 flanks' donor and hides the tract's. (On a norovirus capsid gap this is the difference
@@ -185,7 +186,9 @@ resumed run after a crash, or a later round asking about the same window costs n
 and contacts nobody. Empty results are cached too: "nothing matched here" took just as
 long to establish. Entries expire after two weeks, because `nt` grows and a hit list
 reused indefinitely would quietly stop reflecting the database being searched. Reuse is
-logged with the entry's age, and deleting the directory forces a fresh search.
+logged with the entry's age, and deleting the directory forces a fresh search. Fetched
+NCBI Virus panels are cached per taxon under the same root; `--cache-dir` (or
+`$TESSERA_CACHE`) moves it.
 
 The recruited `<output>/collection` directory is *not* reused: `detect` and
 `fill-references` rebuild it each run. That is deliberate -- it keeps your input
@@ -193,6 +196,21 @@ collection untouched and guarantees a known starting state rather than an unknow
 two runs' downloads. Rebuilding it costs only the `efetch` downloads, which are small and
 run at NCBI's several-per-second limit; the part that used to make a re-run expensive was
 the BLAST, and that is now cached.
+
+### Files a panel-building run leaves behind
+
+Besides the report and its TSVs (see
+[detection-methods.md](detection-methods.md#output-files)), `detect`, `fill-references` and
+`build-panel` write the alignments they built and a working copy of the panel:
+
+| File | Contents |
+|---|---|
+| `collection/` | The working copy of the references, rebuilt on every run. A hidden marker, `.tessera-working-collection`, beside it tells a later run that the directory is Tessera's own and safe to clear. Without that marker (or one of the run's other output files, for output from an older release) Tessera refuses to clear a non-empty `collection/`. |
+| `round<N>.msa.fasta` | The alignment built at round N of the fill loop. |
+| `final.msa.fasta` | One more alignment, built when the last round downloaded references (no further search), so the reported panel and the alignment describe the same set. |
+| `panel.msa.fasta` | The alignment the report describes: a copy of the last build. This is the file `build-panel` leaves for `tessera recomb`. |
+| `<alignment>.provenance.json` | Beside each alignment, named from it without `.fasta` (`panel.msa.provenance.json`): the aligner, its version and its arguments, as for `tessera msa`. |
+| `tessera.log` | The run log at debug level (the console shows info). Written by `detect`, `build-panel`, `reassort` and `type-lineages`; `fill-references`, `find-references`, `msa` and `recomb` write none. |
 
 ## Seed modes: where the starting references come from
 
@@ -295,7 +313,14 @@ masking sibling (e.g. SARS-CoV-2 sublineages), add `--seed-keep-siblings`. NCBI 
 When every genome in the pool is a sibling, none is dropped (the pool would be empty),
 and the run logs a warning that no distinct parental lineage was found in the pool.
 
-## Auto-diversify
+## Negative-lineage search and auto-diversify
+
+When a seed search saturates -- every hit is a sibling of the query -- `fill-references`
+and `detect` first try a **negative-lineage** search (`--negative-lineage`, on by
+default): the query's own lineage is read from the titles of the hits, and each region is
+searched again with that lineage excluded, which surfaces the divergent parents of a
+heavily sequenced taxon without downloading a panel. When the lineage cannot be read from
+the titles the step is skipped and the run logs it. Disable it with `--no-negative-lineage`.
 
 By default (`--auto-diversify`), BLAST seeding will **switch to the `ncbi-virus`
 diversity path automatically** when it finds only siblings -- i.e. when the query's
@@ -329,7 +354,9 @@ tessera curate-panel --query CRF01_AE.fasta --collection collection/ --output cu
 ```
 
 A *sibling* is a reference whose ANI to the query exceeds the backbone's by a margin
-**and** that covers most of the query -- a whole-genome relative. A regional parent
+(`--sibling-margin`, default 3.0 percentage points) **and** that covers most of the query
+(`--af-min`, default 80 % of the query) -- a whole-genome relative. Near-duplicates are
+collapsed at `--derep-ani` (default 99 % ANI). A regional parent
 (for example an env-only reference) has high ANI but low coverage and is kept. The rule
 is relative to the backbone (the query's closest whole-genome match), so it needs no
 per-organism identity cutoff: it flags HIV subtype relatives (~12 % apart) and

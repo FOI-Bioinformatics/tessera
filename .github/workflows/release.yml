@@ -44,6 +44,11 @@ jobs:
             exit 1
           fi
           echo "version $pkg"
+          cff="$(sed -n 's/^version: *//p' CITATION.cff | head -n 1)"
+          if [ "$cff" != "$pkg" ]; then
+            echo "::error::CITATION.cff says version $cff but the package is $pkg"
+            exit 1
+          fi
 
       - name: Build and check
         run: |
