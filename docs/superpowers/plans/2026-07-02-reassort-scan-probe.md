@@ -252,7 +252,7 @@ Expected: PASS (5 passed) -- the scorer is unchanged; the added `main`/`_run_pro
 Run (aligner env; not CI):
 ```bash
 export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"
-export NCBI_EMAIL="andreas.sjodin@gmail.com"
+export NCBI_EMAIL="you@example.org"
 python validation/run_reassort_scan.py
 ```
 Expected: an `HA localization` line (XPASS when a region overlaps the true insert span) plus the

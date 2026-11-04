@@ -92,7 +92,7 @@ def assign_by_nearest_reference(
 
 def _reference_tips(
     *, query: Path, nextclade_dataset: str | None, email: str | None,
-    cache_dir: Path | None, logger: logging.Logger,
+    cache_dir: Path | None, logger: logging.Logger, taxon: str | None = None,
 ) -> dict[Path, str]:
     """Resolve a Nextclade dataset and return its clade-labelled tips, one representative
     per clade. Empty when no dataset resolves. ``resolve_dataset`` auto-detects the dataset
@@ -104,7 +104,9 @@ def _reference_tips(
     try:
         # resolve_dataset(query, override, *, email, logger): the override (an explicit
         # dataset path) wins; otherwise the dataset is auto-detected from the query genome.
-        dataset = resolve_dataset(query, nextclade_dataset, email=email, logger=logger)
+        dataset = resolve_dataset(
+            query, nextclade_dataset, email=email, logger=logger, taxon=taxon,
+        )
     except Exception as exc:  # noqa: BLE001 - no dataset is a normal, non-fatal outcome
         logger.info("No Nextclade dataset for reference typing (%s); skipping.", exc)
         return {}
@@ -151,7 +153,8 @@ def assign_lineages(
 
     if untyped:
         labeled = _reference_tips(query=untyped[0], nextclade_dataset=nextclade_dataset,
-                                  email=email, cache_dir=cache_dir, logger=logger)
+                                  email=email, cache_dir=cache_dir, logger=logger,
+                                  taxon=taxon)
         if labeled:
             nn = assign_by_nearest_reference(untyped, labeled, ani_floor=ref_ani_floor,
                                              logger=logger)

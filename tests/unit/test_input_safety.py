@@ -466,3 +466,26 @@ def test_a_non_directory_at_the_working_collection_path_is_a_user_error(
     assert dest.exists() or dest.is_symlink()
     if kind == "symlink":
         assert (tmp_path / "elsewhere" / "keep.fasta").exists()
+
+
+def test_type_lineages_passes_an_explicit_taxon_to_the_reference_step(
+    monkeypatch, tmp_path
+) -> None:
+    """``--taxon`` is documented as the taxon for the Nextclade reference step; it used to
+    reach only the metadata step, so the BLAST probe ran anyway and could pick another
+    organism's dataset."""
+    import logging
+
+    from tessera.discover import lineage_assign as la
+
+    seen: dict = {}
+
+    def fake_resolve(query, override, *, email, logger, taxon=None):
+        seen["taxon"] = taxon
+        raise RuntimeError("stop here: no dataset")
+
+    monkeypatch.setattr(la, "resolve_dataset", fake_resolve)
+    g = tmp_path / "g.fasta"
+    g.write_text(">x\nACGT\n")
+    la.assign_lineages([g], taxon="Echovirus E11", logger=logging.getLogger("t"))
+    assert seen["taxon"] == "Echovirus E11"

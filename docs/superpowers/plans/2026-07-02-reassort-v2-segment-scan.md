@@ -704,7 +704,7 @@ or that is unassigned, is reported as not scanned rather than dropped.
 Run (aligner env; not CI):
 ```bash
 export PATH="$PATH:$HOME/miniforge3/envs/recomfi-aln/bin"
-export NCBI_EMAIL="andreas.sjodin@gmail.com"
+export NCBI_EMAIL="you@example.org"
 ```
 Build a two-record query where HA is an intragenic mosaic of two H3N2 HA clades and NA is a single
 clade (reuse the harness's `_segment_consensus` to fetch two HA clade consensuses, splice them at
