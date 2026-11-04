@@ -49,7 +49,7 @@ def curate_panel(
     """
     from ..discover.panel import curate_collection
 
-    logger = get_logger()
+    logger = get_logger(output)
     with stage_errors(logger):
         _require_file(query, "Query file")
         _require_directory(collection, "Collection directory")

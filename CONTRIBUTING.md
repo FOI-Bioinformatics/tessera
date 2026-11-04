@@ -106,7 +106,7 @@ very different rates; pass `--min-methods 1` to measure the CLI default.
 
 ## Reporting a problem
 
-Include the Tessera version, the command, and `run_provenance.json` from the output
-directory. That file records the parameters, the caller configuration, and — when the
+Include the Tessera version, the command, and `run_provenance.json` and `tessera.log` from
+the output directory. That file records the parameters, the caller configuration, and — when the
 alignment came from `tessera msa` — the aligner and its version, which is usually the
 first thing worth knowing.

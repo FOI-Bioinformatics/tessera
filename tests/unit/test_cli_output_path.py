@@ -28,6 +28,7 @@ def no_pipeline(monkeypatch):
     monkeypatch.setattr("tessera.discover.run.find_references", _must_not_run)
     monkeypatch.setattr("tessera.discover.panel.curate_collection", _must_not_run)
     monkeypatch.setattr("tessera.cli.cmd_reassort.assign_segments", _must_not_run)
+    monkeypatch.setattr("tessera.recomb.run.run_recomb", _must_not_run)
 
 
 def _args(command: str, tmp_path: Path, occupied: Path) -> list[str]:
@@ -41,7 +42,7 @@ def _args(command: str, tmp_path: Path, occupied: Path) -> list[str]:
         return [command, "--collection", str(collection), *common]
     if command == "curate-panel":
         return [command, "--query", str(query), "--collection", str(collection), *common]
-    if command == "find-references":
+    if command in ("find-references", "recomb"):
         return [command, "--msa", "example_data/divergent.msa.fasta", "--query", "query",
                 *common]
     return [command, "--query", str(query), *common]
@@ -49,7 +50,7 @@ def _args(command: str, tmp_path: Path, occupied: Path) -> list[str]:
 
 @pytest.mark.parametrize("command", [
     "detect", "build-panel", "fill-references", "find-references", "curate-panel",
-    "type-lineages", "reassort",
+    "type-lineages", "reassort", "recomb",
 ])
 def test_command_rejects_an_output_path_that_is_a_file(
     tmp_path: Path, no_pipeline, command: str
@@ -66,12 +67,18 @@ def test_command_rejects_an_output_path_that_is_a_file(
     assert occupied.read_text() == "not a directory\n"  # left untouched
 
 
-@pytest.mark.parametrize("command", ["detect", "build-panel", "type-lineages", "reassort"])
+@pytest.mark.parametrize("command", [
+    "detect", "build-panel", "type-lineages", "reassort",
+    "fill-references", "find-references", "curate-panel", "recomb",  # issue #122
+])
 def test_a_new_nested_output_directory_is_still_created(
     tmp_path: Path, no_pipeline, command: str
 ) -> None:
-    """Guard (passes before and after): the check must not stop a command
-    from creating an output directory that does not exist yet (the run log goes there)."""
+    """Every command that takes an output directory keeps its run log there, and the
+    check must not stop it creating a directory that does not exist yet.
+
+    ``fill-references``, ``find-references``, ``curate-panel`` and ``recomb`` wrote no
+    ``tessera.log`` until issue #122, although ``detect`` runs the same loop and does."""
     out = tmp_path / "new" / "nested" / "out"
     runner.invoke(app, _args(command, tmp_path, out))
     assert out.is_dir()
