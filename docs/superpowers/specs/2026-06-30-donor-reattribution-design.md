@@ -2,7 +2,7 @@
 
 ## Context
 
-The gap analysis (`docs/gap-analysis.md`, G1) found that Tessera's two synthetic-harness FAILs
+The gap analysis (`docs/archive/gap-analysis.md`, G1) found that Tessera's two synthetic-harness FAILs
 are *attribution* misses, not detection misses: the recombination is found but a parent is
 named as the wrong adjacent sub-clade. The G1 measurement
 (`validation/attribution-results.md`) then ruled out the obvious panel-composition fixes:

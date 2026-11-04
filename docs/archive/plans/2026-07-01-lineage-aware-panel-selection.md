@@ -646,7 +646,7 @@ EOF
 
 ## Execution Handoff
 
-Plan complete and saved to `docs/superpowers/plans/2026-07-01-lineage-aware-panel-selection.md`. Two execution options:
+Plan complete and saved to `docs/archive/plans/2026-07-01-lineage-aware-panel-selection.md`. Two execution options:
 
 1. **Subagent-Driven (recommended)** - fresh subagent per task, review between tasks, fast iteration.
 2. **Inline Execution** - execute tasks in this session with checkpoints.

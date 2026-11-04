@@ -723,7 +723,7 @@ segment scan.
 
 ## Revisions after the plans were written
 
-The four implementation plans (`docs/superpowers/plans/2026-10-12-audit-4-index.md`) were
+The four implementation plans (`docs/archive/plans/2026-10-12-audit-4-index.md`) were
 written against `4b35e39`, and every planned test was run there. That checked the findings
 above against the code a second time and corrected several. The plans and the index hold
 where they disagree with this document; the main corrections are:

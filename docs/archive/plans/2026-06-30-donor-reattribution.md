@@ -400,7 +400,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 **Files:**
 - Modify: `validation/run_hybrids.py` (`COMPARE_CONFIGS`, `_build_and_score` to pass the flag)
 - Modify: `validation/README.md` (document the `reattribute` config)
-- Modify: `docs/gap-analysis.md` and `validation/attribution-results.md` (record the outcome once measured)
+- Modify: `docs/archive/gap-analysis.md` and `validation/attribution-results.md` (record the outcome once measured)
 
 **Interfaces:**
 - Consumes: `RecombParams.reattribute_donors` (Task 2); the existing `_build_and_score` / `COMPARE_CONFIGS` machinery.
@@ -479,7 +479,7 @@ export PATH="$HOME/miniforge3/envs/recomfi-aln/bin:$PATH"
 python validation/run_hybrids.py --compare
 ```
 
-Expected acceptance: the `reattribute` column flips `rsv_a` to PASS (donor `exact`, backbone still `exact`) with **zero regressions** on the 16 baseline PASSes and no new donor `mismatch`. Record the measured outcome in `validation/attribution-results.md` and, if clean, note in `docs/gap-analysis.md` that G1 has a working caller-level fix (promotion to default-when-typed is a separate later cycle). If a regression appears, raise `--reattribute-margin` and re-measure before promoting.
+Expected acceptance: the `reattribute` column flips `rsv_a` to PASS (donor `exact`, backbone still `exact`) with **zero regressions** on the 16 baseline PASSes and no new donor `mismatch`. Record the measured outcome in `validation/attribution-results.md` and, if clean, note in `docs/archive/gap-analysis.md` that G1 has a working caller-level fix (promotion to default-when-typed is a separate later cycle). If a regression appears, raise `--reattribute-margin` and re-measure before promoting.
 
 ---
 
