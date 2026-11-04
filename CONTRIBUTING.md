@@ -23,8 +23,8 @@ ruff check src tests validation
 pytest -m "not requires_binary"
 ```
 
-The fast suite takes several minutes (about eight, last timed in a single process) and
-needs no external tools, network, or downloaded data. For a quick loop while editing, run
+The fast suite takes a few minutes (about four, last timed on an Apple-silicon laptop in a
+single process) and needs no external tools, network, or downloaded data. For a quick loop while editing, run
 the one test module you changed. The full suite additionally needs an aligner on `PATH`; see
 [docs/aligners.md](docs/aligners.md).
 
@@ -47,6 +47,16 @@ the aligners on `PATH` works.
 - `mypy` is clean. CI runs it as a blocking step over `src/tessera`.
 - New behaviour has a test that fails without the change. A test that passes either way
   documents intent but does not protect it.
+- A user-visible change has an entry under `## [Unreleased]` in `CHANGELOG.md`: what was
+  wrong, what changed, and what was measured or left alone.
+
+## Releasing
+
+The version lives in `src/tessera/__init__.py`, and `CITATION.cff` must carry the same
+version (a test fails when they differ, and the release workflow checks the tag against
+both). To cut a release: move the `[Unreleased]` entries under a new `## [X.Y.Z] - date`
+heading in `CHANGELOG.md` (the date the release is published), update `__version__` and
+`CITATION.cff` (`version` and `date-released`), and tag `vX.Y.Z`.
 
 ## Changing detection behaviour
 
@@ -72,10 +82,13 @@ data. Every region it reports is a false positive by construction.
 python validation/run_specificity.py --reps 3
 ```
 
+The harness defaults to `--min-methods 2`, the CLI default is 1, and the two report
+very different rates; pass `--min-methods 1` to measure the CLI default.
+
 ## Conventions
 
-- **Dependency-free by design.** No new runtime dependency without discussion;
-  reimplement in numpy rather than add a binary. The PHI/Rmin, 3SEQ, MaxChi and Bootscan
+- **Few runtime dependencies by design.** No new one without discussion; reimplement
+  in numpy rather than add a binary. The PHI/Rmin, 3SEQ, MaxChi and Bootscan
   callers all follow this.
 - **Aligners are plugins.** New backends are added through the `tessera.aligners`
   entry-point group; core never imports a specific adapter.

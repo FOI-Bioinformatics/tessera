@@ -6,6 +6,36 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Documentation audit
+
+- **Release metadata.** `CITATION.cff` still said 1.2.0 after the 1.3.0 release, and the
+  1.3.0 changelog heading carried the date its section was cut (2026-10-29) rather than the
+  release date (2026-11-02). `CITATION.cff` now carries 1.3.0 and `date-released`; a unit
+  test compares its version with the package's, and the release workflow checks the tag
+  against it as well. CONTRIBUTING now describes the release steps and the changelog
+  convention.
+- **Wording.** "Dependency-free" described a package with six runtime dependencies; it now
+  says what is meant (the statistical callers are reimplemented in numpy). `aligners.md`
+  named `sibeliaz` as the default, which is true only for `msa`; `detect`, `build-panel`,
+  `fill-references` and `reassort --scan-segments` default to `mafft`. The
+  "17 of 18 cases" ensemble comparison is marked as measured on the earlier 18-case
+  harness (it now has 41), and the suite timing is corrected.
+- **Previously undocumented.** The files a panel-building run writes (`round<N>.msa.fasta`,
+  `final.msa.fasta`, `panel.msa.fasta`, the provenance sidecars, `tessera.log`, the
+  working-collection marker), the curation thresholds (`--sibling-margin`, `--af-min`,
+  `--derep-ani`), `--max-hits`, `--seed-hits`, `--cache-dir`, `--organism`, `--plot-format`,
+  `--metric`, the default-on negative-lineage search, and opt-in donor re-attribution
+  (`--reattribute-donors`, `--reattribute-margin`).
+- **Layout.** The measured false-region figures moved from the README's "Known limitations"
+  to `docs/detection-methods.md` (the README keeps a summary and a link). The 2026-07-01
+  gap analysis and the executed implementation plans moved to `docs/archive/`; design
+  records stay in `docs/superpowers/specs/`. The README's documentation index lists
+  CONTRIBUTING, the changelog and the validation harnesses.
+- **Not changed.** `environment.yml` and the README's conda command do not solve on Apple
+  silicon (`mauve` has no osx-arm64 build) and `environment.yml` conflicts on linux-64
+  (`cactus` with `boost-cpp=1.74.0` against Python 3.13 and `skder`); the container is the
+  tested route. The install guidance is left as it was until the supported path is chosen.
+
 ### `type-lineages --taxon` now reaches the Nextclade reference step
 
 - **The defect.** The help describes `--taxon` as the taxon for the Nextclade reference
@@ -105,7 +135,7 @@ counted against the gate. The must-pass gate reads 39/39 with two known limitati
 (`neg_hiv1`, `donorabsent_rsv`) reported separately, sensitivity 29/29, specificity 10/10,
 one skip (`oropouche`). No caller changed; this is harness accounting and documentation.
 
-## [1.3.0] - 2026-10-29
+## [1.3.0] - 2026-11-02
 
 > **What the validation numbers in this release do and do not cover.** The callers
 > changed in this release, so the evidence behind them is worth stating precisely.
@@ -580,7 +610,7 @@ problem it was.
 ### Caller behaviour, plan C Task 6: pool clade labels
 
 Completes the one task of plan C
-(`docs/superpowers/plans/2026-10-01-audit-c-caller-behaviour.md`) that was held back when
+(`docs/archive/plans/2026-10-01-audit-c-caller-behaviour.md`) that was held back when
 its end-to-end gate was not met, rebased onto the plan D-G work. The investigation behind
 the decision is `docs/superpowers/specs/2026-10-19-audit-c-task6-investigation.md`.
 
@@ -1265,7 +1295,7 @@ What this measurably changed, on the simulated and curated harnesses (10 replica
   reports sensitivity beside specificity. Rates carry Wilson confidence intervals. Unlike the other
   harnesses it needs no aligner, no network and no downloaded data; the simulation and scoring
   logic is unit-tested in CI. This closes gap **G3** ("no specificity measurement") from
-  `docs/gap-analysis.md`: the nine `neg_pure` controls measure a verdict on nine favourable real
+  `docs/archive/gap-analysis.md`: the nine `neg_pure` controls measure a verdict on nine favourable real
   panels, which can neither estimate a rate nor sample the redundant-panel regime where the
   callers are most likely to over-call.
 

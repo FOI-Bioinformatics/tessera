@@ -7,9 +7,10 @@ Guidance for agents working in this repository.
 Tessera detects recombination in a query genome against a reference panel. It builds a
 reference-anchored pseudo-MSA (one backbone sequence), scans it in sliding windows, and
 calls recombinant regions with an ensemble of four callers (HMM, 3SEQ, MaxChi, Bootscan)
-plus a parent-free PHI/Rmin diagnostic. It is a dependency-free
-Python package (numpy / pandas / matplotlib / plotly / biopython / typer); alignment is
-delegated to external aligner binaries through a plugin registry.
+plus a parent-free PHI/Rmin diagnostic. It is a small Python package with six runtime
+dependencies (numpy / pandas / matplotlib / plotly / biopython / typer), whose statistical
+callers are reimplemented in numpy; alignment is delegated to external aligner binaries
+through a plugin registry.
 
 For the user-facing overview see [README.md](README.md). For depth:
 
@@ -61,8 +62,8 @@ in `pyproject.toml` (line length 100, `E/F/I/UP/B`).
 
 ## Conventions
 
-- Dependency-free by design: no new runtime dependency without discussion; reimplement
-  in numpy rather than add a binary. The PHI/Rmin and 3SEQ callers follow this.
+- Few runtime dependencies by design: no new one without discussion; reimplement in
+  numpy rather than add a binary. The PHI/Rmin and 3SEQ callers follow this.
 - Aligner adapters are added via the entry-point registry, never imported directly by
   core.
 - Use modest scientific language in code and documentation; avoid overstating results.
@@ -90,6 +91,10 @@ construction a false positive.
 ```
 python validation/run_specificity.py --reps 3
 ```
+
+The harness defaults to `--min-methods 2`; the CLI default is 1. The two give very
+different rates (1 of 40 runs with a false region against 16 of 40 at 10 replicates), so
+quote the gate with the number. Pass `--min-methods 1` for the CLI default.
 
 ## Notes
 

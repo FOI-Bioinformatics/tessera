@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.11+, numpy, pytest, ruff, mypy. No new dependency.
 
-**Spec:** `docs/superpowers/specs/2026-10-12-audit-swot-gap.md` (items A1-A14 in section 1.1; B2; the code half of B4; the two "further items from this pass" -- trailing unscanned columns and the incompatible-pair list; the "Caller side" test gaps in section 3; gap G2). Read sections 1.1 and 3 before starting. Read also `docs/superpowers/plans/2026-10-01-audit-c-caller-behaviour.md` (the discipline this plan follows) and `docs/superpowers/specs/2026-10-01-min-methods-default-decision.md` (Task 15 appends to it).
+**Spec:** `docs/superpowers/specs/2026-10-12-audit-swot-gap.md` (items A1-A14 in section 1.1; B2; the code half of B4; the two "further items from this pass" -- trailing unscanned columns and the incompatible-pair list; the "Caller side" test gaps in section 3; gap G2). Read sections 1.1 and 3 before starting. Read also `docs/archive/plans/2026-10-01-audit-c-caller-behaviour.md` (the discipline this plan follows) and `docs/superpowers/specs/2026-10-01-min-methods-default-decision.md` (Task 15 appends to it).
 
 ## Global Constraints
 
@@ -3056,7 +3056,7 @@ MSG
 
 ### Task 16: Callers that could not test do not count toward the agreement gate; `--merge-gap` reaches the coverage diagnostic  (audit items: B7, gate half; B6, coverage half -- both handed over by plan F)
 
-Plan F (`docs/superpowers/plans/2026-10-12-audit-f-reporting-cli.md`) reports these two cases faithfully but leaves alone the part that changes which regions are reported (its Global Constraints, the two "does not do" items). This task decides both.
+Plan F (`docs/archive/plans/2026-10-12-audit-f-reporting-cli.md`) reports these two cases faithfully but leaves alone the part that changes which regions are reported (its Global Constraints, the two "does not do" items). This task decides both.
 
 **1. A one-state HMM stops counting toward `--min-methods`.** When lineage clustering pools every reference into one lineage, the HMM decodes one state and cannot call a region whatever the data; plan F Task 3 reports it as "not run" but keeps it in the count. Then `--method hmm,3seq --min-methods 2` can only be met by a caller that tested nothing: every 3SEQ region is suppressed and the run reads as a negative. Reproduced on plan G's candidate code with plan F's own panel (five references 0.25 % apart, a real 6 kb tract, `--no-informative-sites`): no region at all; with this task, the 3SEQ region is reported and the provenance reads `1 (requested 2; 1 caller ran)`. **Decision: it stops counting**, as an unrunnable barcode caller already does (plan B, item B6), through the same clamp and the same `gate_lowered` warning and provenance line. The effect is confined to that clamp: it changes a result only when the callers that can test number fewer than `--min-methods` (with the default four callers and `--min-methods 2` it changes nothing). A one-reference panel needs no handling: `run_recomb` refuses fewer than two references before any caller runs (`run.py:280`).
 

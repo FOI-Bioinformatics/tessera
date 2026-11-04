@@ -26,8 +26,9 @@ scan-aware **3SEQ** triplet test, **MaxChi** and **Bootscan** -- and merges what
 alongside a **parent-free** PHI/Rmin diagnostic that fires even when the true donor is
 absent from the panel. Tessera also recruits and curates
 the reference panel for you, types references by lineage, and writes a self-contained
-HTML report. It is a small, dependency-free Python package; alignment is delegated to
-a pluggable [aligner backend](docs/aligners.md).
+HTML report. It is a small Python package with six runtime dependencies (the statistical
+callers are reimplemented in numpy rather than calling external programs); alignment is
+delegated to a pluggable [aligner backend](docs/aligners.md).
 
 Segmented viruses (influenza, bunyaviruses, reoviruses) also **reassort** -- they swap
 whole segments between parents, which the single-backbone scan cannot represent. The
@@ -190,6 +191,13 @@ reference-coverage gaps. The full file list and the meaning of each column are i
 - [Building and curating the reference panel](docs/reference-panels.md) -- recruiting
   donors, finding and filling missing references, seed modes and sources, and panel
   curation.
+- [Contributing](CONTRIBUTING.md) -- setup, checks before a pull request, and how to
+  validate a change to detection behaviour.
+- [Changelog](CHANGELOG.md) -- what changed in each release, with the measurements behind it.
+- [Validation harnesses](validation/README.md) -- the benchmarks behind the numbers quoted
+  here, and how to run them.
+- [Archive](docs/archive/README.md) -- the original gap analysis and executed
+  implementation plans, kept for the record.
 
 ## Known limitations
 
@@ -204,38 +212,21 @@ event.
 **A donor that is missing from the panel.** Tessera names the closest reference it has,
 and that is not always the true parent. If the donor's own lineage is absent but a
 neighbouring one is present, a region can be attributed to the neighbour with every caller
-agreeing and no caveat: the `donor_undercovered` flag fires where the references match the
-query poorly, and a near-equidistant sub-clade (RSV-A `A.D.*`, for instance) matches it well.
-On the hybrid benchmark no panel-internal signal separated those cases from correct
-attributions without also caveating correct ones (`validation/pendant-results.md`), so
-this is a documented limit rather than something Tessera detects, and the corresponding
-benchmark case (`donorabsent_rsv`) is reported as a known limitation, not gated. What it
-does report: with lineage labels, a region whose named donor the query does not
-significantly prefer over another *present* lineage is marked `subclade_identifiable = no`,
-with the tied lineages in `tied_lineages`. That flagged 8 of 17 judgeable donor-absent
-benchmark runs and 1 of 24 donor-present cases, so a `yes` is not evidence that the
-donor's lineage is present. Read a named sub-clade as the closest available reference.
+agreeing. No panel-internal signal separated those cases from correct attributions without
+also caveating correct ones, so this is a documented limit: the `donor_undercovered` and
+`subclade_identifiable` flags narrow it but do not remove it (see
+[A donor the panel cannot tell from another lineage](docs/detection-methods.md#a-donor-the-panel-cannot-tell-from-another-lineage)).
+Read a named sub-clade as the closest available reference.
 
-**False regions at the default setting.** In 10-replicate runs of
-`validation/run_specificity.py` on simulated clonal data -- four clades about 16 % apart,
-four tips per clade about 2.4 % apart and a non-recombinant query, so every reported region
-is false -- the default `--min-methods 1` reported at least one false region in 16 of 40
-runs (40 %, 95 % CI 26-55 %); 16 of the 19 regions came from the HMM (measured 2026-11-02
-on commit `4ee5020`). Requiring two agreeing
-callers (`--min-methods 2`) lowered this to 1 of 40 (2 %, CI 0-13 %) and detected 9 of 10
-simulated 3 kb tracts, against 10 of 10 at the default. On
-panels of near-identical references (about 0.2 % apart; 20 replicates of
-`validation/run_regimes.py`) no run reported a false region at either gate: 0 of 20 (CI 0-16 %)
-each, measured 2026-11-02 on the same commit. The
-default stays at 1 because an earlier, reverted attempt to default to a gate of two (PR #47)
-lost three true detections on the curated hybrid benchmark (`rsv_a`, `mpox`, `masksib_rsv`),
-where at very low divergence only the HMM has power. A rerun of `run_hybrids.py` at the
-present gate and on the present callers (2026-10-29, commit `4a49bfd`) keeps all three of
-those detections and the whole 24-pathogen headline: 23 PASS, 0 FAIL, 1 SKIP. For a panel holding several near-equidistant relatives of
-the query, consider `--min-methods 2`, and treat a region found by one caller as a candidate
-to confirm. These are simulation results with modest replicate counts; see
-`validation/README.md` and
-`docs/superpowers/specs/2026-10-01-min-methods-default-decision.md`.
+**False regions at the default setting.** On simulated clonal data, where every reported
+region is false, the default `--min-methods 1` reported a false region in 16 of 40 runs
+(40 %, 95 % CI 26-55 %), mostly from the HMM; requiring two agreeing callers lowered this
+to 1 of 40 (2 %) and detected 9 of 10 simulated tracts instead of 10 of 10. The default
+stays at 1 because a gate of two lost three true detections on the curated hybrid
+benchmark. For a panel holding several near-equidistant relatives of the query, consider
+`--min-methods 2`, and treat a region found by one caller as a candidate to confirm. These
+are simulation results with modest replicate counts; the measurements and the decision are
+in [docs/detection-methods.md](docs/detection-methods.md#false-regions-at-the-default-setting).
 
 ## Development
 

@@ -1,6 +1,6 @@
 # G1 attribution measurement -- results
 
-The gap analysis (`docs/gap-analysis.md`) prioritised parental **attribution** and recommended
+The gap analysis (`docs/archive/gap-analysis.md`) prioritised parental **attribution** and recommended
 measuring, before any product change, whether the **barcode** caller and a **per-clade
 consensus** panel close the two attribution FAILs (`rsv_a`, `flu_h3n2_ha`). This records the
 result of running `python validation/run_hybrids.py --compare` over all 24 datasets (18 run,

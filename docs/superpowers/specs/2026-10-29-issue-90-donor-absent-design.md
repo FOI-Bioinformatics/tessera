@@ -173,7 +173,7 @@ Ordered, and the first item is the only one that should start now.
    reporting the tract's pendant-length quantile for every scorable case plus
    `donorabsent_rsv`. Publish the distribution in `validation/` next to the attribution
    results, whichever way it comes out. This is the project's own evaluate-first
-   precedent from `docs/gap-analysis.md` G1, where the barcode caller was measured
+   precedent from `docs/archive/gap-analysis.md` G1, where the barcode caller was measured
    before promotion and found inert.
 2. **Option B is worth doing regardless of Option A's outcome**, because it is true,
    cheap, and addresses the part of the complaint that is about presentation: a name
