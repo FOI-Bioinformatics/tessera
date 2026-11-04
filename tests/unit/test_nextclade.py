@@ -473,3 +473,46 @@ def test_a_cut_transfer_is_reported_as_an_input_problem(monkeypatch, logger) -> 
     monkeypatch.setattr(nc, "urlopen", fake_urlopen)
     with pytest.raises(UserInputError, match="Could not fetch the Nextclade dataset index"):
         nc.fetch_index()
+
+
+# --- an explicit taxon replaces detection (type-lineages --taxon) -----------------------
+
+def _no_detection(*args, **kwargs):
+    raise AssertionError("an explicit taxon must not trigger a BLAST probe")
+
+
+def test_an_explicit_taxon_maps_to_a_dataset_without_detection(monkeypatch, tmp_path, logger):
+    _patch_index(monkeypatch)
+    monkeypatch.setattr(nc, "detect_taxon", _no_detection)
+    q = tmp_path / "q.fasta"
+    q.write_text(">q\nACGT\n")
+    ds = nc.resolve_dataset(
+        q, None, email=None, logger=logger, taxon="Human immunodeficiency virus 1",
+    )
+    assert ds.path == "community/neherlab/hiv-1/hxb2"
+
+
+def test_an_explicit_taxon_wins_over_nextclade_sort(monkeypatch, tmp_path, logger):
+    """The user's word is not second-guessed by a content-based guess."""
+    _patch_index(monkeypatch)
+    monkeypatch.setattr(nc, "detect_taxon", _no_detection)
+    monkeypatch.setattr(nc.shutil, "which", lambda name: "/usr/bin/nextclade")
+    monkeypatch.setattr(nc, "_sort_dataset", _no_detection)
+    q = tmp_path / "q.fasta"
+    q.write_text(">q\nACGT\n")
+    ds = nc.resolve_dataset(
+        q, None, email=None, logger=logger, taxon="Human immunodeficiency virus",
+    )
+    assert ds.path == "community/neherlab/hiv-1/hxb2"
+
+
+def test_an_explicit_taxon_that_maps_to_nothing_is_refused_not_re_detected(
+    monkeypatch, tmp_path, logger
+):
+    _patch_index(monkeypatch)
+    monkeypatch.setattr(nc, "detect_taxon", _no_detection)
+    monkeypatch.setattr(nc.shutil, "which", lambda name: None)
+    q = tmp_path / "q.fasta"
+    q.write_text(">q\nACGT\n")
+    with pytest.raises(UserInputError, match="Could not map the taxon 'echovirus e11'"):
+        nc.resolve_dataset(q, None, email=None, logger=logger, taxon="Echovirus E11")

@@ -6,6 +6,19 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### `type-lineages --taxon` now reaches the Nextclade reference step
+
+- **The defect.** The help describes `--taxon` as the taxon for the Nextclade reference
+  step, but it was passed only to the metadata step. The reference step ran its own BLAST
+  probe on a collection genome regardless: with `--taxon "Echovirus E11"` on an
+  E11/CVB1 collection it reported "Detected taxon: Coxsackievirus B1", and a wrong
+  detection could select another organism's dataset.
+- **The fix.** `resolve_dataset` takes an optional `taxon`. An explicit taxon is mapped
+  through the alias table ahead of `nextclade sort` and the BLAST probe, so the user's
+  word is not second-guessed; a name that maps to no dataset is refused with a message
+  naming it, not re-detected. Detection by BLAST is unchanged when no taxon is given.
+  `detect --taxon` is unaffected: its help scopes it to NCBI Virus recruitment.
+
 ### Two small `msa` input checks
 
 - A `--collection` that is a file was reported as "--collection directory is not a

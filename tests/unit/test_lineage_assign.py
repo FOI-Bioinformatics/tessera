@@ -95,7 +95,7 @@ def test_reference_tips_parses_and_picks_one_per_clade(monkeypatch, tmp_path):
         path = "nextstrain/x"
         tag = "2020"
 
-    monkeypatch.setattr(la, "resolve_dataset", lambda q, o, *, email, logger: _DS())
+    monkeypatch.setattr(la, "resolve_dataset", lambda q, o, *, email, logger, taxon=None: _DS())
     monkeypatch.setattr(la, "build_pool", lambda ds, *, cache_dir, logger: [t1, t2, t3, t4])
     monkeypatch.setattr(la, "first_header", lambda p: headers[p])
 
@@ -124,7 +124,7 @@ def test_reference_tips_treat_every_non_clade_marker_as_no_clade(monkeypatch, tm
         path = "nextstrain/x"
         tag = "2020"
 
-    monkeypatch.setattr(la, "resolve_dataset", lambda q, o, *, email, logger: _DS())
+    monkeypatch.setattr(la, "resolve_dataset", lambda q, o, *, email, logger, taxon=None: _DS())
     monkeypatch.setattr(la, "build_pool", lambda ds, *, cache_dir, logger: tips)
     monkeypatch.setattr(la, "first_header", lambda p: headers[p])
 

@@ -229,10 +229,32 @@ def _sort_dataset(query: Path, index: dict[str, dict], logger) -> str | None:
     return None
 
 
+def _map_taxon(taxon: str, index: dict, logger: logging.Logger) -> NextcladeDataset:
+    """The dataset for a taxon name, by the alias table; refuses a name it cannot map."""
+    # Longest keyword first, so a more specific name is not captured by a shorter one,
+    # and each candidate checked against the subtype its dataset is for.
+    for keyword in sorted(_ALIAS, key=len, reverse=True):
+        path = _ALIAS[keyword]
+        if path in index and _alias_applies(keyword, taxon):
+            logger.info("Mapped '%s' to the Nextclade dataset '%s'.", taxon, path)
+            return _entry_to_dataset(path, index[path])
+    raise UserInputError(
+        f"Could not map the taxon '{taxon}' to a Nextclade dataset. "
+        f"Pass --nextclade-dataset <path> explicitly (see {_INDEX_URL})."
+    )
+
+
 def resolve_dataset(
-    query: Path, override: str | None, *, email: str | None, logger: logging.Logger
+    query: Path, override: str | None, *, email: str | None, logger: logging.Logger,
+    taxon: str | None = None,
 ) -> NextcladeDataset:
-    """Resolve the Nextclade dataset for ``query`` (override / sort / BLAST+alias)."""
+    """Resolve the Nextclade dataset for ``query``.
+
+    Order: an explicit dataset path, then an explicit ``taxon`` (the caller's own word,
+    so it is not second-guessed by ``nextclade sort`` or a BLAST probe, and a name that
+    maps to nothing is refused rather than re-detected), then ``nextclade sort``, then a
+    BLAST probe mapped through the alias table.
+    """
     index = fetch_index()
     if override:
         if override not in index:
@@ -243,24 +265,23 @@ def resolve_dataset(
         logger.info("Using the Nextclade dataset '%s' (from --nextclade-dataset).", override)
         return _entry_to_dataset(override, index[override])
 
+    if taxon:
+        return _map_taxon(taxon.strip().lower(), index, logger)
+
     if shutil.which("nextclade") is not None:
         path = _sort_dataset(query, index, logger)
         if path:
             logger.info("nextclade sort selected the dataset '%s'.", path)
             return _entry_to_dataset(path, index[path])
 
-    taxon = detect_taxon(query, email=email, logger=logger).lower()
-    # Longest keyword first, so a more specific name is not captured by a shorter one,
-    # and each candidate checked against the subtype its dataset is for.
-    for keyword in sorted(_ALIAS, key=len, reverse=True):
-        path = _ALIAS[keyword]
-        if path in index and _alias_applies(keyword, taxon):
-            logger.info("Mapped '%s' to the Nextclade dataset '%s'.", taxon, path)
-            return _entry_to_dataset(path, index[path])
-    raise UserInputError(
-        f"Could not map the query's taxon ('{taxon}') to a Nextclade dataset. "
-        f"Pass --nextclade-dataset <path> explicitly (see {_INDEX_URL})."
-    )
+    detected = detect_taxon(query, email=email, logger=logger).lower()
+    try:
+        return _map_taxon(detected, index, logger)
+    except UserInputError:
+        raise UserInputError(
+            f"Could not map the query's taxon ('{detected}') to a Nextclade dataset. "
+            f"Pass --nextclade-dataset <path> explicitly (see {_INDEX_URL})."
+        ) from None
 
 
 def _download_text(dataset: NextcladeDataset, role: str, logger: logging.Logger) -> str:
