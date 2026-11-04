@@ -16,6 +16,7 @@ validation/
   run_benchmark.py     PHI/Rmin power+specificity on a published simulated set
   run_specificity.py   false-positive RATE on simulated clonal data (no aligner needed)
   run_regimes.py       near-identical panels and sibling tracts, simulated (no aligner needed)
+  run_indel_specificity.py  clonal queries with indels, aligned with MAFFT (issue #121)
   characterise_false_regions.py
                        one row per false region on the clonal simulations (no aligner needed)
   run_caller_benchmark.py  region callers on the Jaya 2023 grid (per-query power/FP)
@@ -97,6 +98,19 @@ first one, for what a default run reports.
 replicate counts carry real sampling error -- hence the intervals. These numbers
 establish whether a failure mode exists and roughly how large it is, not its exact
 magnitude on real panels.
+
+## Specificity after alignment, with indels (`run_indel_specificity.py`)
+
+`run_specificity.py` simulates aligned data, so it has no alignment step and no indels. This
+harness simulates clonal queries with single-base insertions and deletions at four rates,
+aligns them with MAFFT through `tessera msa`, and scans them with the CLI defaults. Every
+region is a false positive. Needs `tessera` and `mafft` on `PATH`; a full run takes about
+five minutes. Results and what they do and do not support:
+[`indel-specificity-results.md`](indel-specificity-results.md).
+
+```
+python validation/run_indel_specificity.py --reps 2     # quick look
+```
 
 ## Specificity on real genomes, offline (`run_pool_specificity.py`)
 
