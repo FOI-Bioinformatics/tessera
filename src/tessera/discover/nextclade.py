@@ -229,8 +229,70 @@ def _sort_dataset(query: Path, index: dict[str, dict], logger) -> str | None:
     return None
 
 
-def _map_taxon(taxon: str, index: dict, logger: logging.Logger) -> NextcladeDataset:
+# How the commands that call the resolver name the option that passes a dataset by hand;
+# `reassort` overrides it with its own (`--dataset SEGMENT=<path>`).
+_DEFAULT_OPTION = "--nextclade-dataset <path>"
+
+_FLU_SEGMENTS = {1: "pb2", 2: "pb1", 3: "pa", 4: "ha", 5: "np", 6: "na", 7: "mp", 8: "ns"}
+# Influenza A/B datasets are per subtype and segment, and HA and NA have more than one
+# dataset per subtype. Where there is one, the choice below is the one the validation
+# harnesses use for H3N2 (reassort benchmark); for the others it is the first listed in
+# the index and has not been validated here.
+_FLU_PREFERRED = {
+    ("h3n2", "ha"): "nextstrain/flu/h3n2/ha/EPI1857216",
+    ("h3n2", "na"): "nextstrain/flu/h3n2/na/EPI1857215",
+    ("h1n1pdm", "ha"): "nextstrain/flu/h1n1pdm/ha/MW626062",
+    ("h1n1pdm", "na"): "nextstrain/flu/h1n1pdm/na/MW626056",
+    ("vic", "ha"): "nextstrain/flu/vic/ha/KX058884",
+    ("vic", "na"): "nextstrain/flu/vic/na/CY073894",
+    ("yam", "ha"): "nextstrain/flu/yam/ha/JN993010",
+}
+
+
+def _flu_dataset(taxon: str, index: dict) -> str | None:
+    """The influenza dataset for a taxon naming a subtype and a segment, or ``None``.
+
+    The taxon is a GenBank-style name such as ``influenza a virus (a/perth/16/2009(h3n2))
+    segment 4 hemagglutinin (ha) gene``. Both the subtype and the segment must be readable
+    from it: a name with only one of them is refused, not guessed.
+    """
+    if "influenza" not in taxon:
+        return None
+    segment = None
+    found = re.search(r"segment (\d)\b", taxon)
+    if found:
+        segment = _FLU_SEGMENTS.get(int(found[1]))
+    elif "hemagglutinin" in taxon:
+        segment = "ha"
+    elif "neuraminidase" in taxon:
+        segment = "na"
+    subtype = None
+    found = re.search(r"\(h(\d+)n(\d+)\)", taxon)
+    if "influenza a" in taxon and found:
+        subtype = f"h{found[1]}n{found[2]}"
+        if subtype == "h1n1":
+            year = re.search(r"/(\d{4})\(h1n1\)", taxon)
+            if "pdm" in taxon or (year and int(year[1]) >= 2009):
+                subtype = "h1n1pdm"
+    elif "influenza b" in taxon:
+        subtype = "vic" if "victoria" in taxon else "yam" if "yamagata" in taxon else None
+    if segment is None or subtype is None:
+        return None
+    path = _FLU_PREFERRED.get((subtype, segment))
+    if path in index:
+        return path
+    plain = f"nextstrain/flu/{subtype}/{segment}"
+    return plain if plain in index else None
+
+
+def _map_taxon(
+    taxon: str, index: dict, logger: logging.Logger, option: str = _DEFAULT_OPTION
+) -> NextcladeDataset:
     """The dataset for a taxon name, by the alias table; refuses a name it cannot map."""
+    flu = _flu_dataset(taxon, index)
+    if flu:
+        logger.info("Mapped '%s' to the Nextclade dataset '%s'.", taxon, flu)
+        return _entry_to_dataset(flu, index[flu])
     # Longest keyword first, so a more specific name is not captured by a shorter one,
     # and each candidate checked against the subtype its dataset is for.
     for keyword in sorted(_ALIAS, key=len, reverse=True):
@@ -240,13 +302,13 @@ def _map_taxon(taxon: str, index: dict, logger: logging.Logger) -> NextcladeData
             return _entry_to_dataset(path, index[path])
     raise UserInputError(
         f"Could not map the taxon '{taxon}' to a Nextclade dataset. "
-        f"Pass --nextclade-dataset <path> explicitly (see {_INDEX_URL})."
+        f"Pass {option} explicitly (see {_INDEX_URL})."
     )
 
 
 def resolve_dataset(
     query: Path, override: str | None, *, email: str | None, logger: logging.Logger,
-    taxon: str | None = None,
+    taxon: str | None = None, option: str = _DEFAULT_OPTION,
 ) -> NextcladeDataset:
     """Resolve the Nextclade dataset for ``query``.
 
@@ -260,13 +322,13 @@ def resolve_dataset(
         if override not in index:
             raise UserInputError(
                 f"'{override}' is not a Nextclade dataset. Browse the index at "
-                f"{_INDEX_URL} and pass a valid --nextclade-dataset path."
+                f"{_INDEX_URL} and pass a valid dataset path with {option}."
             )
-        logger.info("Using the Nextclade dataset '%s' (from --nextclade-dataset).", override)
+        logger.info("Using the Nextclade dataset '%s' (passed by hand).", override)
         return _entry_to_dataset(override, index[override])
 
     if taxon:
-        return _map_taxon(taxon.strip().lower(), index, logger)
+        return _map_taxon(taxon.strip().lower(), index, logger, option)
 
     if shutil.which("nextclade") is not None:
         path = _sort_dataset(query, index, logger)
@@ -276,11 +338,11 @@ def resolve_dataset(
 
     detected = detect_taxon(query, email=email, logger=logger).lower()
     try:
-        return _map_taxon(detected, index, logger)
+        return _map_taxon(detected, index, logger, option)
     except UserInputError:
         raise UserInputError(
             f"Could not map the query's taxon ('{detected}') to a Nextclade dataset. "
-            f"Pass --nextclade-dataset <path> explicitly (see {_INDEX_URL})."
+            f"Pass {option} explicitly (see {_INDEX_URL})."
         ) from None
 
 

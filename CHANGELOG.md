@@ -6,6 +6,22 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### `reassort` resolves influenza segments, and its messages are shorter and correct (#128)
+
+- **The defect.** Auto-detection mapped organisms, not influenza segments, so
+  `reassort -q ha_na.fasta` without `--dataset` ended UNDETERMINED with both segments
+  unassigned. The error told the user to pass `--nextclade-dataset`, an option `reassort`
+  does not have. For a reassortant the log printed the whole tied parent group (about a
+  hundred strains) twice.
+- **The change.** A taxon naming an influenza subtype and a segment now maps to the
+  matching `nextstrain/flu/<subtype>/<segment>` dataset; a name missing either is still left
+  unassigned. The refusal names `--dataset SEGMENT=<path>` for `reassort` (other commands keep
+  `--nextclade-dataset`). The log lists the first three parent strains and the count, and the
+  pairwise relations; the full lists stay in `constellation.tsv` and `segment_pairs.tsv`.
+- **Checked.** 16 new unit tests of the mapping and the messages. Only H3N2 HA and NA were
+  checked against live data; the other subtypes and segments follow the index naming and are
+  untested.
+
 ### `environment.yml` and the README conda command now solve on Apple silicon and linux-64
 
 - **The defect.** `environment.yml` listed `mauve`, `cactus` and `boost-cpp=1.74.0`. `mauve`

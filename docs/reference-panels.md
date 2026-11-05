@@ -439,6 +439,13 @@ is typed independently against its own Nextclade dataset
 is the
 highest-ANI tip's, ties broken by tip name, and the log lists the clades in the window.
 
+Auto-detection reads the taxon of a short BLAST probe. For influenza it needs both the subtype
+(A: from the name, e.g. `(H3N2)`; B: `Victoria` or `Yamagata` in the name) and the segment
+(`segment 4`, or hemagglutinin or neuraminidase) and maps them to the matching
+`nextstrain/flu/<subtype>/<segment>` dataset; where HA or NA has more than one dataset the
+choice is the one the H3N2 benchmark uses. Only H3N2 HA and NA have been checked here. A
+name missing either part is left unassigned, not guessed; pin it with `--dataset`.
+
 Because Nextclade flu trees label tips by strain name, the same strain appears across segment
 datasets, so the per-segment nearest strains can be compared. The call is pairwise and
 coverage-aware: two segments are concordant when a strain is near-best (within `--margin` ANI

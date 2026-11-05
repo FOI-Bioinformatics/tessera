@@ -117,7 +117,10 @@ def _type_segment(seg, seq, overrides, ani_floor, margin, email, cache_dir, tmp,
     with open(seg_fasta, "w", encoding="utf-8") as fo:
         write_fasta_record(fo, seg, seq)
     try:
-        dataset = resolve_dataset(seg_fasta, overrides.get(seg), email=email, logger=logger)
+        dataset = resolve_dataset(
+            seg_fasta, overrides.get(seg), email=email, logger=logger,
+            option="--dataset SEGMENT=<path>",
+        )
     except UserInputError as exc:  # no Nextclade dataset maps to this segment (a genuine skip)
         logger.info("[%s] no Nextclade dataset resolved (%s); unassigned.", seg, exc)
         return SegmentAssignment(seg, "?", None, None, 0.0, "unassigned"), [], set(), None
