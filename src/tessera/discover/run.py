@@ -9,11 +9,13 @@ collection directory ready to re-run with.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
 from ..core.errors import UserInputError
 from ..core.io import collection_genomes, read_fasta, strip_sequence_extension
+from ..core.ncbi import blast_interval
 from ..recomb.coverage import (
     CoverageGap,
     CoverageParams,
@@ -25,6 +27,10 @@ from .blast import BlastError, Hit, blast_subsequence
 from .fetch import efetch_available, efetch_fasta
 
 MIN_SUBSEQ = 50  # too short to BLAST meaningfully
+# Announce the cost of a gap searched in at least this many pieces. One search was about
+# 20 s in a measured run (issue #129): NCBI's job time on top of the 10 s pacing.
+_ANNOUNCE_SEARCHES = 6
+_SECONDS_PER_SEARCH = 20
 # A hit this close over near-full coverage is almost certainly the query's own
 # record (the MSA labels the query by lineage, so BLAST can't recognise it).
 SELF_HIT_IDENTITY = 99.5
@@ -202,11 +208,21 @@ def collect_candidates(
             gap.query_start, gap.query_end, len(subseq), gap.best_label, gap.mean_best,
             f" in {len(tiles)} sub-intervals" if len(tiles) > 1 else "",
         )
+        if len(tiles) >= _ANNOUNCE_SEARCHES:
+            logger.info(
+                "That is %d remote searches, paced %g s apart: roughly %d minute(s) at the "
+                "~%d s each seen so far, longer when NCBI is busy. Searches already in the "
+                "cache cost nothing.",
+                len(tiles), blast_interval(),
+                math.ceil(len(tiles) * _SECONDS_PER_SEARCH / 60), _SECONDS_PER_SEARCH,
+            )
         seen_here: set[str] = set()  # dedup an accession found in several overlapping tiles
-        for tstart, tend in tiles:
+        for number, (tstart, tend) in enumerate(tiles, start=1):
             tile_seq = subseq[tstart:tend]
             if len(tile_seq) < MIN_SUBSEQ:
                 continue
+            if len(tiles) > 1:
+                logger.info("  sub-interval %d of %d", number, len(tiles))
             try:
                 hits = blast_subsequence(
                     tile_seq, max_hits=max_hits, logger=logger, email=email,

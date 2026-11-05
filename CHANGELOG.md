@@ -6,6 +6,20 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### A gap searched in many pieces says how many searches that is (#129)
+
+- **The defect.** A query far from every starting reference is one gap spanning the genome,
+  searched in 400 bp pieces: 52 sequential remote searches, about 17 minutes a round, and the
+  log said only "in 52 sub-intervals" before going quiet.
+- **The change.** From six pieces up, the log states the number of searches and a rough time
+  (about 20 s each, longer when NCBI is busy; cached searches cost nothing), and each search
+  is numbered.
+- **Not changed, and why.** What is searched. On the measured case a single whole-query
+  search returned five copies of the query's own strain, while the 52 piece searches returned
+  73 distinct accessions, so a whole-query fallback would not replace them. Searching every
+  second piece kept 79 % of the distinct accessions; which accession a gap fill would then pick
+  was not measured, so the issue stays open on whether to space or cap the pieces.
+
 ### `reassort` resolves influenza segments, and its messages are shorter and correct (#128)
 
 - **The defect.** Auto-detection mapped organisms, not influenza segments, so
