@@ -192,9 +192,19 @@ the short calls are suppressed.
 
 When `--min-region` is not given, the HMM and the heuristic caller apply the window size
 as a floor -- the HMM to its segments before they are trimmed, so a trimmed HMM region
-can be shorter than a window -- and 3SEQ, MaxChi, Bootscan and GENECONV report regions of
-any length: finding tracts shorter than a window is what the site-based callers are for.
-Lineage clustering and sibling exclusion also read it, as a run length.
+can be shorter than a window -- and every region must also be at least 50 bp. The site
+callers (3SEQ, MaxChi, Bootscan, GENECONV) are otherwise not bounded: finding tracts
+shorter than a window is what they are for, and 50 bp is far below a window. The 50 bp
+floor exists because on aligned genomes with indels they also report runs of a few bp to a
+few tens of bp that sit on local alignment structure, some with very small q-values. On
+indel-bearing simulations (`validation/indel-specificity-results.md`) the floor cut the
+regions away from any true tract from 73 to 12 (84 %) and localised 37 of 72 tracts against 38
+without it; the one lost was a 40 bp tract, and tracts of 20 bp were not localised either way.
+A tract that short carries few informative sites at the divergences tested, so the floor is
+unlikely to cost much there, but that was measured on simulated data only. `--min-region 1`
+is the nearest thing to no floor; it is not identical to the earlier default, because an
+explicit `--min-region` also sets the run length that lineage clustering and sibling
+exclusion use, which is the window size when it is unset.
 
 ```
 Recombination regions (major parent: cowpox_KC813504):

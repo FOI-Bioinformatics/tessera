@@ -70,9 +70,10 @@ def recomb(
     min_region: int | None = typer.Option(
         None, "--min-region",
         help="Minimum length, in query bp, of every reported region, whichever caller "
-        "found it. When unset, the HMM and the heuristic caller apply the window size "
-        "as a floor -- the HMM to its segment, before its reported span is trimmed -- "
-        "and the site callers report regions of any length. A donor-absent coverage row "
+        "found it. When unset, every region must be at least 50 bp, and the HMM and the "
+        "heuristic caller also apply the window size as a floor -- the HMM to its "
+        "segment, before its reported span is trimmed. Pass 1 for the nearest thing to "
+        "no floor. A donor-absent coverage row "
         "is not a caller's region: it is not bounded, and removing a short region can "
         "leave a coverage gap with nothing overlapping it, so a bounded run can report "
         "a donor-absent row that an unbounded one did not. It also sets the shortest "

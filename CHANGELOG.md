@@ -6,6 +6,31 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Every reported region is at least 50 bp unless `--min-region` says otherwise (#121)
+
+- **The defect.** On aligned genomes with indels, 3SEQ and MaxChi reported runs of a few bp
+  to a few tens of bp that sit on local alignment structure, some with q-values far below
+  0.001. In 96 clonal runs with MAFFT, none appeared without indels or at 0.1 %, and 8 of 24
+  runs at 0.4 % and 14 of 24 at 1 % had a region (`validation/run_indel_specificity.py`).
+- **The change.** Left unset, `--min-region` now behaves as a floor of 50 bp on every region
+  (the HMM and heuristic window-size floor is unchanged). Pass `--min-region 1` for the
+  nearest thing to no floor.
+- **Measured.** With 72 recombinants carrying a 20-600 bp tract (`validation/run_indel_sensitivity.py`)
+  a 50 bp floor localised 37 tracts against 38 without one (the one lost was 40 bp) and cut
+  the regions away from any tract from 73 to 12. `run_specificity.py --reps 10`: gate 1 went
+  from 16 of 40 runs (19 regions: hmm 16, maxchi 3, 3seq 1) to 14 of 40 (17 regions: hmm 16,
+  maxchi 1, 3seq 1) with the positive control unchanged at 10/10 and 9 bp; gate 2 and
+  `run_regimes.py` are identical. `run_hybrids.py`: 39/39 gating, sensitivity 29/29,
+  specificity 10/10, and all 42 case rows equal to `main`.
+- **A side effect.** Removing a short region can leave a coverage gap that it had been
+  hiding, which is then reported as a donor-absent row (4 to 7 over the 72 runs, each a
+  595-1070 bp gap). That is the same effect `--min-region` always had.
+- **Not changed.** The long regions (hundreds of bp to 2.5 kb) that the HMM reports on
+  indel-bearing data. They look like the HMM's baseline false-region class, not an
+  alignment artifact, and a length floor does not touch them; #121 stays open for them.
+- **Not shown.** The cost on real genomes beyond the curated hybrids set, and tracts under
+  50 bp, which were not localised at any setting in the simulations.
+
 ### Documentation: what `--subtile` costs, and what a larger value did on one case (#129)
 
 - A gap searched at the default `--subtile 400` is about 50 remote searches for 10 kb. On one
