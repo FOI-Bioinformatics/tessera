@@ -164,6 +164,7 @@ address as the practical result for whoever is running it.
 |---|---|
 | `NCBI_API_KEY` | Raises the E-utilities limit from 3 to 10 requests/second. Passed to EDirect (`efetch`, `datasets`) through the environment, which is how those tools accept it. [Get one from your NCBI account.](https://www.ncbi.nlm.nih.gov/account/) |
 | `NCBI_EMAIL` (or `EMAIL`, or `--email`) | Contact address, so NCBI can reach a heavy user before blocking them. |
+| `TESSERA_BLAST_TIMEOUT` | Seconds one remote BLAST search may take, retries included (default 900). A search that exceeds it is abandoned and the gap or window is skipped, as for any failed search. `0` waits without limit. |
 | `TESSERA_BLAST_INTERVAL` | Seconds between remote BLAST submissions (default 10, per NCBI's BLAST guidance). Set to `0` only when pointing at a BLAST service of your own. |
 | `TESSERA_BLAST_CACHE_DAYS` | How long a cached BLAST result is reused (default 14). `0` disables reuse and searches every time. |
 | `TESSERA_TOOL_TIMEOUT` | Seconds before an external tool is stopped, or `none` for no limit. Downloads and queries carry a default; alignment deliberately does not, since a large panel legitimately runs for hours. |

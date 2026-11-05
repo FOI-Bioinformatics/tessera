@@ -42,6 +42,11 @@ _INTERVAL_ENV = "TESSERA_BLAST_INTERVAL"
 # stop reflecting a database that grows daily.
 BLAST_CACHE_DAYS = 14.0
 _CACHE_DAYS_ENV = "TESSERA_BLAST_CACHE_DAYS"
+# The longest one remote BLAST search may take, retries included. NCBI usually answers in
+# well under five minutes; Biopython's `qblast` polls until the job is ready and has no
+# limit of its own, so without one a lost or stuck job blocks the run for good (issue #127).
+BLAST_TIMEOUT = 900.0
+_TIMEOUT_ENV = "TESSERA_BLAST_TIMEOUT"
 _RETRIES = 3
 _BACKOFF_BASE = 2.0
 
@@ -85,6 +90,18 @@ def blast_interval() -> float:
     except ValueError:
         return BLAST_INTERVAL
     return max(0.0, seconds)
+
+
+def blast_timeout() -> float | None:
+    """Seconds one BLAST search may take (``$TESSERA_BLAST_TIMEOUT``; 0 means no limit)."""
+    raw = os.environ.get(_TIMEOUT_ENV)
+    if raw is None:
+        return BLAST_TIMEOUT
+    try:
+        seconds = float(raw.strip())
+    except ValueError:
+        return BLAST_TIMEOUT
+    return seconds if seconds > 0 else None
 
 
 def blast_cache_days() -> float:

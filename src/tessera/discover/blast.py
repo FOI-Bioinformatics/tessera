@@ -9,12 +9,20 @@ the network and is slow; it is only invoked by ``tessera find-references``.
 from __future__ import annotations
 
 import logging
+import threading
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from ..core.cache import blast_cache_path, read_blast_cache, write_blast_cache
 from ..core.errors import TesseraError
-from ..core.ncbi import blast_cache_days, blast_throttle, resolve_email, with_retries
+from ..core.ncbi import (
+    blast_cache_days,
+    blast_throttle,
+    blast_timeout,
+    resolve_email,
+    with_retries,
+)
 
 
 class BlastError(TesseraError):
@@ -35,6 +43,37 @@ def _organism(title: str) -> str:
     if title.endswith("]") and "[" in title:
         return title[title.rfind("[") + 1 : -1]
     return title.split(",")[0]
+
+
+def _within_deadline[T](call: Callable[[], T], seconds: float | None) -> T:
+    """Run ``call``, giving up with :class:`BlastError` after ``seconds``.
+
+    ``NCBIWWW.qblast`` polls NCBI until the job is reported ready and takes no timeout, so
+    a lost or stuck job would block the run for good. A Python thread cannot be stopped:
+    on timeout the worker is abandoned (it is a daemon thread, so it does not hold the
+    process open) and its late result is discarded. ``seconds`` of ``None`` waits without
+    limit.
+    """
+    outcome: dict[str, object] = {}
+
+    def work() -> None:
+        try:
+            outcome["value"] = call()
+        except BaseException as exc:  # noqa: BLE001 - handed back to the caller's thread
+            outcome["error"] = exc
+
+    worker = threading.Thread(target=work, name="tessera-blast", daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        raise BlastError(
+            f"NCBI BLAST request did not finish within {seconds:g} s and was abandoned. "
+            "NCBI may be busy; raise $TESSERA_BLAST_TIMEOUT (seconds, 0 for no limit) "
+            "to wait longer. Searches that finished are cached."
+        )
+    if "error" in outcome:
+        raise outcome["error"]  # type: ignore[misc]
+    return outcome["value"]  # type: ignore[return-value]
 
 
 def blast_subsequence(
@@ -122,7 +161,12 @@ def blast_subsequence(
         return NCBIXML.read(handle)
 
     try:
-        record = with_retries(_submit, what="NCBI BLAST request", logger=logger)
+        record = _within_deadline(
+            lambda: with_retries(_submit, what="NCBI BLAST request", logger=logger),
+            blast_timeout(),
+        )
+    except BlastError:
+        raise
     except Exception as exc:  # noqa: BLE001 - any failure becomes a clean skip
         raise BlastError(f"NCBI BLAST request failed: {exc}") from exc
 
