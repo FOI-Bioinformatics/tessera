@@ -22,6 +22,18 @@ All notable changes to Tessera are recorded here. The format follows
   checked against live data; the other subtypes and segments follow the index naming and are
   untested.
 
+### A remote BLAST search that never finishes now ends in an error instead of a hang (#127)
+
+- **The defect.** `NCBIWWW.qblast` polls NCBI until a job is ready and takes no timeout.
+  `fill-references` stalled for over half an hour, logging nothing, after its 21st search of
+  a run that planned 52.
+- **The change.** One search, retries included, may take 900 s by default
+  (`$TESSERA_BLAST_TIMEOUT`, seconds; `0` for no limit). After that the search is abandoned
+  and raises `BlastError`, which the callers already handle by skipping that gap or window.
+  The worker thread cannot be stopped and is left to finish on its own; its late result is
+  discarded. Searches that completed are cached, so a rerun resumes.
+- **Not changed.** The 52 sequential searches for a whole-query gap (#129).
+
 ### `environment.yml` and the README conda command now solve on Apple silicon and linux-64
 
 - **The defect.** `environment.yml` listed `mauve`, `cactus` and `boost-cpp=1.74.0`. `mauve`
