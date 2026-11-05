@@ -119,6 +119,16 @@ region is *detected* as a gap at all (a wide window averages it away), and `--su
 controls whether its donor is *found* once detected. Set `--subtile 0` to disable;
 very short intervals (< ~150 bp) lose BLAST specificity.
 
+Each sub-interval is one remote search, paced at least 10 s apart (about 20 s each in a
+measured run), and the intervals overlap by half. A query far from every starting reference
+is one gap spanning the genome, which at the default is about 50 searches for 10 kb and
+roughly 17 minutes; the log states the count. A larger `--subtile` makes fewer searches: on
+one Zika case (10.5 kb gap, a pool of close relatives) `--subtile 400`, `800` and `1600` made
+52, 25 and 12 searches and all three found a best candidate with the same score (identity
+times coverage, 100.09), though the accession differed. That is one case with many
+near-identical relatives, so it shows the cost can be cut there, not that it can everywhere;
+a larger value dilutes a short divergent tract again, as above.
+
 ### Fill references repeatedly
 
 To do this repeatedly until coverage stops improving, `tessera fill-references` runs

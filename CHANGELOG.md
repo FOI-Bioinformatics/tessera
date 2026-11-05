@@ -6,6 +6,13 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Documentation: what `--subtile` costs, and what a larger value did on one case (#129)
+
+- A gap searched at the default `--subtile 400` is about 50 remote searches for 10 kb. On one
+  measured case a larger value (800, 1600) cut the searches to 25 and 12 with the same best
+  candidate score; one case with many near-identical relatives, so a data point and not a
+  rule. No default changed.
+
 ### A gap searched in many pieces says how many searches that is (#129)
 
 - **The defect.** A query far from every starting reference is one gap spanning the genome,
