@@ -71,6 +71,14 @@ from .similarity import (
 )
 from .typing import LINEAGES_TSV, LineageMap, lineage_of, load_lineage_map
 
+# Shortest region reported when --min-region is not given. Measured on indel-bearing
+# simulations (validation/indel-specificity-results.md): of 72 recombinants with tracts of
+# 20-600 bp, a 50 bp floor localised 37 tracts against 38 without one, and cut the regions
+# away from any true tract from 73 to 12. A tract of a few tens of bp carries too few
+# informative sites to be called at the divergences tested, so the floor costs little there;
+# --min-region 1 gives the nearest thing to no floor.
+DEFAULT_MIN_REGION_BP = 50
+
 # The callers that score the base-pair scan and so need the query's siblings set aside
 # before they compete references (the HMM does it itself). GENECONV, barcode and the legacy
 # heuristic are not validated for it and keep the full scan.
@@ -590,18 +598,19 @@ def run_recomb(
                 "  withheld %d-%d (rejected backbone %s)",
                 region.msa_start, region.msa_end, region.major_parent,
             )
-    # --min-region, when given, bounds the length of every reported region. Left unset,
-    # only the HMM applies a floor (to its segments, before trimming); the site callers
-    # exist to find tracts shorter than a window and are not bounded by default.
-    if params.min_region is not None:
-        regions, method_breakdown, too_short = filter_by_length(
-            regions, method_breakdown, params.min_region
+    # --min-region bounds the length of every reported region. Left unset, the HMM still
+    # applies a window-sized floor to its segments (before trimming), and every region has
+    # to be at least DEFAULT_MIN_REGION_BP long: the site callers exist to find tracts
+    # shorter than a window, but on aligned genomes with indels they also report runs of a
+    # few bp to a few tens of bp that sit on local alignment structure (issue #121).
+    floor = params.min_region if params.min_region is not None else DEFAULT_MIN_REGION_BP
+    regions, method_breakdown, too_short = filter_by_length(regions, method_breakdown, floor)
+    if too_short:
+        logger.info(
+            "Removed %d region(s) shorter than %d bp (%s).", too_short, floor,
+            "--min-region" if params.min_region is not None
+            else "the default floor; --min-region sets it",
         )
-        if too_short:
-            logger.info(
-                "Removed %d region(s) shorter than --min-region %d bp.",
-                too_short, params.min_region,
-            )
     # Agreement gate: a region resting on a single caller is the weakest thing the
     # ensemble can report, so require corroboration when enough callers ran to give
     # it (clamped, so selecting one caller is not silently self-suppressing). This runs

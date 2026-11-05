@@ -17,6 +17,7 @@ validation/
   run_specificity.py   false-positive RATE on simulated clonal data (no aligner needed)
   run_regimes.py       near-identical panels and sibling tracts, simulated (no aligner needed)
   run_indel_specificity.py  clonal queries with indels, aligned with MAFFT (issue #121)
+  run_indel_sensitivity.py  short true tracts with indels, by --min-region (issue #121)
   characterise_false_regions.py
                        one row per false region on the clonal simulations (no aligner needed)
   run_caller_benchmark.py  region callers on the Jaya 2023 grid (per-query power/FP)

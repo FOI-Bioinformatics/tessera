@@ -70,3 +70,34 @@ If an aligned set is indel-rich and a region of a few bp to a few tens of bp is 
 one caller only, it is likely to be of this kind. A region of hundreds of bp or more from
 the HMM on such data deserves a look at the alignment around it before it is read as an
 event. Neither observation justifies a change to a default on this evidence.
+
+## Addendum: a 50 bp default floor (issue #121)
+
+Measured with `validation/run_indel_sensitivity.py` (6
+replicates per cell, 72 recombinants with a donor tract of 20-600 bp, indels at 0.4 %, same
+generator and window settings). A tract counts as localised when the regions naming the donor
+cover at least half of it; a region that does not come within 100 bp of the tract is stray.
+`--min-region 1` stands for "no floor".
+
+| `--min-region` | tracts localised (of 72) | stray regions |
+|---|---|---|
+| 1 | 38 | 73 |
+| 20 | 38 | 38 |
+| 50 | 37 | 12 |
+| 100 | 33 | 7 |
+
+At 50 bp the stray regions fall by 84 % and one tract is lost: a 40 bp tract at 12 %
+divergence. Tracts of 20 bp are not localised at any setting, and of 40 bp in one run of six.
+At 100 bp four more tracts are lost (the 80 bp ones), so 50 bp is the larger of the values
+tried that cost almost nothing here; 20 bp is nearly free but leaves half the stray regions.
+A first run of the same design with a throwaway script (a different draw of the sequences)
+gave 33 localised at every floor and 77, 32 and 5 stray regions at none, 20 and 50 bp.
+
+**Side effect.** Over the 72 runs, donor-absent rows went from 4 to 7 as the floor rose to
+50 bp (scratch run). Each new row was a real coverage gap of 595-1070 bp in which a stray
+short region had sat: with the region removed, the gap is reported as what it is, a stretch
+where the query is far from every reference.
+
+**Not shown.** What the floor costs on real genomes. The curated cases of `run_hybrids.py`
+(shortest gated tract one window) are unchanged: 39 of 39 gating, sensitivity 29/29,
+specificity 10/10, and all 42 case rows equal to `main`.
