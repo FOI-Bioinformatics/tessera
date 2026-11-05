@@ -20,6 +20,15 @@ from ..reassort.assign import DEFAULT_ANI_FLOOR
 from ..reassort.constellation import DEFAULT_MARGIN, MAX_MARGIN
 from .main import _require_file, _require_range, app, get_logger, stage_errors
 
+_LOGGED_STRAINS = 3
+
+
+def _few(names: list[str]) -> str:
+    """The first few names, for a log line; the full list is in constellation.tsv."""
+    if len(names) <= _LOGGED_STRAINS:
+        return ",".join(names)
+    return f"{','.join(names[:_LOGGED_STRAINS])} and {len(names) - _LOGGED_STRAINS} more"
+
 
 @app.command(name="reassort")
 def reassort(
@@ -117,7 +126,7 @@ def reassort(
                 fo.write(f"{i}\t{','.join(g.segments)}\t{','.join(g.parent_strains)}\n")
 
         mosaic = " | ".join(
-            f"group {i} {{{','.join(g.segments)}}} = {','.join(g.parent_strains) or '?'}"
+            f"group {i} {{{','.join(g.segments)}}} = {_few(g.parent_strains) or '?'}"
             for i, g in enumerate(result.groups)
         )
         # The pairwise evidence behind the verdict, for every verdict: which pair
@@ -131,8 +140,14 @@ def reassort(
 
         logger.info("Reassortment verdict: %s", result.verdict.upper())
         logger.info("Parent constellation: %s", mosaic or "(no segments assigned)")
-        if result.pair_notes:
-            logger.info("Pairwise evidence: %s", "; ".join(result.pair_notes))
+        if result.pairs:
+            # The strains behind each relation can run to a hundred names on a densely
+            # sampled tree; the log keeps the relation and segment_pairs.tsv the evidence.
+            logger.info(
+                "Pairwise evidence: %s (strains in %s)",
+                "; ".join(f"{p.segment_a}-{p.segment_b}: {p.relation}" for p in result.pairs),
+                ptsv.name,
+            )
         logger.info("Wrote %s, %s and %s", tsv, ctsv, ptsv)
 
         if result.scans:

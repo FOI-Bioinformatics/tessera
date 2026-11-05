@@ -45,7 +45,7 @@ def test_low_af_tip_is_dropped_from_ranking(tmp_path, monkeypatch):
         t.parent.mkdir(parents=True, exist_ok=True)
         t.write_text(">x\nACGT\n")
 
-    def resolve(fasta, override, *, email, logger):
+    def resolve(fasta, override, *, email, logger, option=None):
         return _DS("HA_ds") if "HA" in fasta.read_text() else _DS("NA_ds")
 
     _patch(monkeypatch,
@@ -72,7 +72,7 @@ def test_build_pool_error_propagates(tmp_path, monkeypatch):
 
     monkeypatch.setattr(assign, "skani_available", lambda: True)
     monkeypatch.setattr(assign, "resolve_dataset",
-                        lambda fasta, override, *, email, logger: _DS("HA_ds"))
+                        lambda fasta, override, *, email, logger, option=None: _DS("HA_ds"))
     monkeypatch.setattr(assign, "nextclade_cache", lambda p, t, override=None: Path("/x"))
     monkeypatch.setattr(assign, "build_pool", build_pool)
 
@@ -91,7 +91,7 @@ def test_build_pool_download_error_propagates(tmp_path, monkeypatch):
 
     monkeypatch.setattr(assign, "skani_available", lambda: True)
     monkeypatch.setattr(assign, "resolve_dataset",
-                        lambda fasta, override, *, email, logger: _DS("HA_ds"))
+                        lambda fasta, override, *, email, logger, option=None: _DS("HA_ds"))
     monkeypatch.setattr(assign, "nextclade_cache", lambda p, t, override=None: Path("/x"))
     monkeypatch.setattr(assign, "build_pool", build_pool)
 
@@ -110,7 +110,7 @@ def test_skani_short_segment_is_non_fatal(tmp_path, monkeypatch):
         t.parent.mkdir(parents=True, exist_ok=True)
         t.write_text(">x\nACGT\n")
 
-    def resolve(fasta, override, *, email, logger):
+    def resolve(fasta, override, *, email, logger, option=None):
         return _DS("HA_ds") if "HA" in fasta.read_text() else _DS("NA_ds")
 
     def skani(q, refs, logger):
@@ -142,7 +142,7 @@ def test_resolve_dataset_failure_is_non_fatal(tmp_path, monkeypatch):
     na_tip.parent.mkdir(parents=True, exist_ok=True)
     na_tip.write_text(">x\nACGT\n")
 
-    def resolve(fasta, override, *, email, logger):
+    def resolve(fasta, override, *, email, logger, option=None):
         if "HA" in fasta.read_text():
             raise UserInputError("no dataset maps to this segment")
         return _DS("NA_ds")
@@ -203,7 +203,7 @@ def test_scan_segments_scans_assigned_only(tmp_path, monkeypatch):
         t.parent.mkdir(parents=True, exist_ok=True)
         t.write_text(">x\nACGT\n")
 
-    def resolve(fasta, override, *, email, logger):
+    def resolve(fasta, override, *, email, logger, option=None):
         return _DS("HA_ds") if "HA" in fasta.read_text() else _DS("NA_ds")
 
     _patch(monkeypatch, resolve=resolve,
@@ -236,7 +236,7 @@ def test_scan_segments_marks_unassigned(tmp_path, monkeypatch):
         t.parent.mkdir(parents=True, exist_ok=True)
         t.write_text(">x\nACGT\n")
 
-    def resolve(fasta, override, *, email, logger):
+    def resolve(fasta, override, *, email, logger, option=None):
         return _DS("HA_ds") if "HA" in fasta.read_text() else _DS("NA_ds")
 
     _patch(monkeypatch, resolve=resolve,
@@ -307,7 +307,7 @@ def test_alignment_fraction_filter_uses_skani_percent_scale(tmp_path, monkeypatc
         t.parent.mkdir(parents=True, exist_ok=True)
         t.write_text(">x\nACGT\n")
 
-    def resolve(fasta, override, *, email, logger):
+    def resolve(fasta, override, *, email, logger, option=None):
         return _DS("HA_ds") if "HA" in fasta.read_text() else _DS("NA_ds")
 
     _patch(monkeypatch,
@@ -329,7 +329,7 @@ def test_scan_segments_gives_alike_named_segments_separate_directories(tmp_path,
     tip.parent.mkdir(parents=True)
     tip.write_text(">x\nACGT\n")
     _patch(monkeypatch,
-           resolve=lambda fasta, override, *, email, logger: _DS("ds"),
+           resolve=lambda fasta, override, *, email, logger, option=None: _DS("ds"),
            tips_by_path={"ds": [tip]},
            ani_by_path={"pool": {tip: (99.0, 99.0)}})
     monkeypatch.setattr(assign, "require_aligner", lambda aligner: None)
@@ -356,7 +356,7 @@ def test_scan_segments_receive_the_thread_count(tmp_path, monkeypatch):
     tip.parent.mkdir(parents=True)
     tip.write_text(">x\nACGT\n")
     _patch(monkeypatch,
-           resolve=lambda fasta, override, *, email, logger: _DS("ds"),
+           resolve=lambda fasta, override, *, email, logger, option=None: _DS("ds"),
            tips_by_path={"ds": [tip]},
            ani_by_path={"pool": {tip: (99.0, 99.0)}})
     monkeypatch.setattr(assign, "require_aligner", lambda aligner: None)
