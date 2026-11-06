@@ -6,6 +6,11 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+### Documentation
+
+- Influenza dataset mapping checked on data for H3N2, H1N1pdm and Victoria HA and NA and Yamagata HA;
+  `docs/reference-panels.md` lists what has no dataset (#128).
+
 ### Every reported region is at least 50 bp unless `--min-region` says otherwise (#121)
 
 - **The defect.** On aligned genomes with indels, 3SEQ and MaxChi reported runs of a few bp
