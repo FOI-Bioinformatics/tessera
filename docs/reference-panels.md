@@ -454,8 +454,11 @@ Auto-detection reads the taxon of a short BLAST probe. For influenza it needs bo
 (A: from the name, e.g. `(H3N2)`; B: `Victoria` or `Yamagata` in the name) and the segment
 (`segment 4`, or hemagglutinin or neuraminidase) and maps them to the matching
 `nextstrain/flu/<subtype>/<segment>` dataset; where HA or NA has more than one dataset the
-choice is the one the H3N2 benchmark uses. Only H3N2 HA and NA have been checked here. A
-name missing either part is left unassigned, not guessed; pin it with `--dataset`.
+choice is the one the H3N2 benchmark uses. The mapping was checked against the live Nextclade index for H3N2, H1N1pdm and Victoria HA and NA
+and for Yamagata HA: each pool built and typed a mutated tip to a plausible nearest strain. The name-to-dataset
+step was exercised on taxon strings, not on names returned by NCBI. Yamagata NA, other HA/NA
+subtypes such as H5N1, and an influenza B name without a lineage have no dataset and are left
+unassigned. A name missing either part is left unassigned, not guessed; pin it with `--dataset`.
 
 Because Nextclade flu trees label tips by strain name, the same strain appears across segment
 datasets, so the per-segment nearest strains can be compared. The call is pairwise and
