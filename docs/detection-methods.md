@@ -33,8 +33,8 @@ Agreement can also be used as a **gate** (`--min-methods`), the control RDP5 exp
 "list events detected by more than N methods". It is **not on by default**, and the
 measurements say why. On a *redundant* panel -- several near-equidistant relatives of the
 query -- requiring two callers is a large win: on simulated clonal data, where every
-region reported is a false positive, it cuts the runs that report one from 16 of 40 to 1
-of 40 (`validation/run_specificity.py --reps 10`, 2026-11-02). On the curated,
+region reported is a false positive, it cuts the runs that report one from 14 of 40 to 1
+of 40 (`validation/run_specificity.py --reps 10`, 2026-11-07). On the curated,
 dereplicated panels the hybrid harness builds it is all cost: it loses three true
 detections (`rsv_a`, `mpox`, `masksib_rsv`) and gains nothing, because every negative
 control already passes without it.
@@ -87,9 +87,10 @@ full scan. The log names the references set aside, and `run_provenance.json` rec
 In 10-replicate runs of `validation/run_specificity.py` on simulated clonal data -- four
 clades about 16 % apart, four tips per clade about 2.4 % apart and a non-recombinant
 query, so every reported region is false -- the default `--min-methods 1` reported at
-least one false region in 16 of 40 runs (40 %, 95 % CI 26-55 %); 16 of the 19 regions came
-from the HMM (measured 2026-11-02 on commit `4ee5020`, and again on 2026-11-04 with the
-same result). Requiring two agreeing callers (`--min-methods 2`) lowered this to 1 of 40
+least one false region in 14 of 40 runs (35 %, 95 % CI 22-50 %); 16 of the 17 regions came
+from the HMM (measured 2026-11-07 on commit `3b2e3be`). The same measurement gave 16 of 40
+on 2026-11-02 and again on 2026-11-04, before the 50 bp minimum region of #121 removed two
+MaxChi regions. Requiring two agreeing callers (`--min-methods 2`) lowered this to 1 of 40
 (2 %, CI 0-13 %) and detected 9 of 10 simulated 3 kb tracts, against 10 of 10 at the
 default. On panels of near-identical references (about 0.2 % apart; 20 replicates of
 `validation/run_regimes.py`) no run reported a false region at either gate: 0 of 20

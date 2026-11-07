@@ -83,8 +83,9 @@ The positive control was detected 3/3 with the correct donor at both gates (medi
 breakpoint error 55 bp). Treat a non-zero total at `--min-methods 2` as a regression to
 explain, and quote the `--min-methods 1` row when describing what a default run reports.
 
-That table is the first measurement and is kept as the record. The current one, at 10
-replicates (40 runs per gate) on 2026-11-02, commit `4ee5020`:
+That table is the first measurement and is kept as the record. The second, at 10
+replicates (40 runs per gate) on 2026-11-02, commit `4ee5020`, and repeated with the same
+result on 2026-11-04:
 
 | gate | runs with a false region | false regions | per caller | positive control |
 |---|---|---|---|---|
@@ -92,8 +93,20 @@ replicates (40 runs per gate) on 2026-11-02, commit `4ee5020`:
 | `--min-methods 1` (CLI default) | 16/40 (40 %, CI 26-55 %) | 19 | hmm = 16, maxchi = 3, 3seq = 1 | 10/10, correct donor 10/10, median breakpoint error 9 bp |
 
 The per-caller counts are of regions, and a region that two callers found is counted once
-per caller, so they can sum to more than the false-region total. Quote this table, not the
-first one, for what a default run reports.
+per caller, so they can sum to more than the false-region total.
+
+The current one is after the 50 bp minimum region (#121), also at 10 replicates, on 2026-11-07,
+`main` at commit `3b2e3be`:
+
+| gate | runs with a false region | false regions | per caller | positive control |
+|---|---|---|---|---|
+| `--min-methods 2` (harness default) | 1/40 (2 %, CI 0-13 %) | 1 | 3seq = 1, maxchi = 1 | 9/10, correct donor 9/10, median breakpoint error 10 bp |
+| `--min-methods 1` (CLI default) | 14/40 (35 %, CI 22-50 %) | 17 | hmm = 16, maxchi = 1, 3seq = 1 | 10/10, correct donor 10/10, median breakpoint error 9 bp |
+
+Against the second table, gate 2 and both positive controls are unchanged. At the default gate
+two MaxChi regions are gone (3 to 1), taking runs with a false region from 16 to 14, which is
+the change #121 reports for its floor; the HMM's 16 regions are untouched. Quote this table, not
+the earlier ones, for what a default run reports.
 
 **Caveat.** JC69 on a fixed topology is simpler than real viral evolution, and modest
 replicate counts carry real sampling error -- hence the intervals. These numbers

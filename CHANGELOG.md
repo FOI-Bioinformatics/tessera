@@ -8,6 +8,26 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [1.3.1] - 2026-11-07
 
+> **What changes for a user, and how it was checked.** This is a fix release, but three
+> entries below can change which regions are called, so a result need not be identical to
+> 1.3.0: a 50 bp minimum region (#121), the 3SEQ, MaxChi and Bootscan callers competing
+> without a near-copy of the query (#120), and an excluded sibling no longer being named the
+> major parent (#112). Outputs also gain two columns at the end of `recombination_regions.tsv`
+> (`subclade_identifiable`, `tied_lineages`, issue #90) and a run log in every command's
+> output directory (#122).
+>
+> To see how much that moves a result, the 1.3.0 tag and this release were run on the same
+> 41 harness panels that have an alignment, with each panel's recorded window settings and
+> lineage map. On 40 of them the regions table (apart from the two new columns), the method
+> breakdown, the coverage gaps, the similarity windows and the window winners are identical.
+> On the 41st, `neg_hiv1` (a negative control and a known limitation), one region is gone: a
+> 22 bp stretch, below the new 50 bp floor. Neither version failed on any panel. This does
+> **not** exercise #112 or #120: both matter on a panel that holds a near-copy of the query,
+> and the harness builds its panels with the query's source genomes removed. The full fast
+> test suite passes (1,197 tests). The documentation-audit entry below quotes false-region
+> rates measured before the 50 bp floor; at the default `--min-methods 1` it is now 14 of 40
+> clonal runs (1 of 40 at `--min-methods 2`), as in `docs/detection-methods.md`.
+
 ### Documentation
 
 - Influenza dataset mapping checked on data for H3N2, H1N1pdm and Victoria HA and NA and Yamagata HA;

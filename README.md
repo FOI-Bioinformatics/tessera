@@ -220,8 +220,8 @@ also caveating correct ones, so this is a documented limit: the `donor_undercove
 Read a named sub-clade as the closest available reference.
 
 **False regions at the default setting.** On simulated clonal data, where every reported
-region is false, the default `--min-methods 1` reported a false region in 16 of 40 runs
-(40 %, 95 % CI 26-55 %), mostly from the HMM; requiring two agreeing callers lowered this
+region is false, the default `--min-methods 1` reported a false region in 14 of 40 runs
+(35 %, 95 % CI 22-50 %), almost all from the HMM; requiring two agreeing callers lowered this
 to 1 of 40 (2 %) and detected 9 of 10 simulated tracts instead of 10 of 10. The default
 stays at 1 because a gate of two lost three true detections on the curated hybrid
 benchmark. For a panel holding several near-equidistant relatives of the query, consider
