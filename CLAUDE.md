@@ -93,7 +93,7 @@ python validation/run_specificity.py --reps 3
 ```
 
 The harness defaults to `--min-methods 2`; the CLI default is 1. The two give very
-different rates (1 of 40 runs with a false region against 16 of 40 at 10 replicates), so
+different rates (1 of 40 runs with a false region against 14 of 40 at 10 replicates), so
 quote the gate with the number. Pass `--min-methods 1` for the CLI default.
 
 ## Notes

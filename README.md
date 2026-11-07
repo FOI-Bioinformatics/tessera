@@ -52,7 +52,7 @@ with conda:
 ```
 conda create -n tessera -c conda-forge -c bioconda python">=3.13" sibeliaz mafft minimap2
 conda activate tessera
-pip install git+https://github.com/FOI-Bioinformatics/tessera.git@v1.3.0
+pip install git+https://github.com/FOI-Bioinformatics/tessera.git@v1.3.1
 ```
 
 Pinning the tag is deliberate -- it is what makes the install reproducible, and it is
@@ -60,7 +60,7 @@ what `run_provenance.json` will record. To install a built wheel instead, take i
 the [release page](https://github.com/FOI-Bioinformatics/tessera/releases) or by tag:
 
 ```
-pip install https://github.com/FOI-Bioinformatics/tessera/releases/download/v1.3.0/tessera-1.3.0-py3-none-any.whl
+pip install https://github.com/FOI-Bioinformatics/tessera/releases/download/v1.3.1/tessera-1.3.1-py3-none-any.whl
 ```
 
 From a clone, `pip install .` works as usual.
@@ -220,8 +220,8 @@ also caveating correct ones, so this is a documented limit: the `donor_undercove
 Read a named sub-clade as the closest available reference.
 
 **False regions at the default setting.** On simulated clonal data, where every reported
-region is false, the default `--min-methods 1` reported a false region in 16 of 40 runs
-(40 %, 95 % CI 26-55 %), mostly from the HMM; requiring two agreeing callers lowered this
+region is false, the default `--min-methods 1` reported a false region in 14 of 40 runs
+(35 %, 95 % CI 22-50 %), almost all from the HMM; requiring two agreeing callers lowered this
 to 1 of 40 (2 %) and detected 9 of 10 simulated tracts instead of 10 of 10. The default
 stays at 1 because a gate of two lost three true detections on the curated hybrid
 benchmark. For a panel holding several near-equidistant relatives of the query, consider
