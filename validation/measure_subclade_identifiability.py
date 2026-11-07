@@ -70,6 +70,7 @@ def main(argv: list[str]) -> int:
 
     present: list[tuple[str, bool | None, tuple[str, ...]]] = []
     absent: list[tuple[str, bool | None, tuple[str, ...]]] = []
+    all_regions: list[tuple[str, int, bool | None]] = []  # (class, n callers, identifiable)
     for case in _case_dirs(tuple(args.data)):
         if case.name in SKIP:
             continue
@@ -97,6 +98,16 @@ def main(argv: list[str]) -> int:
         is_absent = case.name.startswith("absent_") or case.name == "donorabsent_rsv"
         record = (case.name, region.subclade_identifiable, region.tied_lineages)
         (absent if is_absent else present).append(record)
+        # Every called region, as a real run reports them: the primary region above is one
+        # per case, but a run usually reports more, and the flag behaves differently on them.
+        every = [_region_from_row(r) for r in regions]
+        flag_subclade_identifiability(every, rows, "hybrid", lineage.get, alpha=ALPHA)
+        for row, reg in zip(regions, every, strict=True):
+            all_regions.append((
+                "absent" if is_absent else "present",
+                len([m for m in row["methods"].split(",") if m]),
+                reg.subclade_identifiable,
+            ))
 
     for label, group in (("donor-present", present), ("donor-absent", absent)):
         judged = [r for r in group if r[1] is not None]
@@ -115,7 +126,34 @@ def main(argv: list[str]) -> int:
     if not present and not absent:
         print("No case artifacts found. Run validation/run_hybrids.py first.", file=sys.stderr)
         return 2
+    _report_all_regions(all_regions)
     return 0
+
+
+def _report_all_regions(all_regions: list[tuple[str, int, bool | None]]) -> None:
+    """The flag over every called region, split by how many callers found the region.
+
+    The per-case figures above use each case's primary region. A run reports more than that,
+    and a region only one caller found is the usual case where the sub-clade is not resolved.
+    """
+    print("\n=== every called region (not only each case's primary), by number of callers ===")
+    for label in ("present", "absent"):
+        evaluated = [r for r in all_regions if r[0] == label and r[2] is not None]
+        if not evaluated:
+            continue
+        no = [r for r in evaluated if r[2] is False]
+        one = [r for r in evaluated if r[1] == 1]
+        many = [r for r in evaluated if r[1] >= 2]
+        print(f"  donor-{label}: {len(no)} of {len(evaluated)} evaluated regions marked no | "
+              f"found by 1 caller: {sum(r[2] is False for r in one)} of {len(one)} | "
+              f"found by 2+ callers: {sum(r[2] is False for r in many)} of {len(many)}")
+    evaluated = [r for r in all_regions if r[2] is not None]
+    no = [r for r in evaluated if r[2] is False]
+    one = [r for r in evaluated if r[1] == 1]
+    many = [r for r in evaluated if r[1] >= 2]
+    print(f"  both: {len(no)} of {len(evaluated)} evaluated regions marked no | "
+          f"found by 1 caller: {sum(r[2] is False for r in one)} of {len(one)} | "
+          f"found by 2+ callers: {sum(r[2] is False for r in many)} of {len(many)}")
 
 
 if __name__ == "__main__":

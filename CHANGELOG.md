@@ -6,6 +6,8 @@ All notable changes to Tessera are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-07
+
 ### Documentation
 
 - Influenza dataset mapping checked on data for H3N2, H1N1pdm and Victoria HA and NA and Yamagata HA;
@@ -1790,7 +1792,9 @@ simulated recombination against a documented expectation, recording measured res
   the q-value; detection sensitivity is unchanged (30/30 on the hybrid suite, including the
   low-divergence case) with fewer false positives.
 
-[Unreleased]: https://github.com/FOI-Bioinformatics/tessera/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/FOI-Bioinformatics/tessera/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/FOI-Bioinformatics/tessera/compare/v1.3.0...v1.3.1
+[1.3.0]: https://github.com/FOI-Bioinformatics/tessera/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/FOI-Bioinformatics/tessera/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/FOI-Bioinformatics/tessera/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/FOI-Bioinformatics/tessera/releases/tag/v1.0.0

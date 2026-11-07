@@ -52,7 +52,7 @@ with conda:
 ```
 conda create -n tessera -c conda-forge -c bioconda python">=3.13" sibeliaz mafft minimap2
 conda activate tessera
-pip install git+https://github.com/FOI-Bioinformatics/tessera.git@v1.3.0
+pip install git+https://github.com/FOI-Bioinformatics/tessera.git@v1.3.1
 ```
 
 Pinning the tag is deliberate -- it is what makes the install reproducible, and it is
@@ -60,7 +60,7 @@ what `run_provenance.json` will record. To install a built wheel instead, take i
 the [release page](https://github.com/FOI-Bioinformatics/tessera/releases) or by tag:
 
 ```
-pip install https://github.com/FOI-Bioinformatics/tessera/releases/download/v1.3.0/tessera-1.3.0-py3-none-any.whl
+pip install https://github.com/FOI-Bioinformatics/tessera/releases/download/v1.3.1/tessera-1.3.1-py3-none-any.whl
 ```
 
 From a clone, `pip install .` works as usual.
